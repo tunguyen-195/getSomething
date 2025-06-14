@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - ./models:/app/models
+      - ./uploads:/app/uploads
+    environment:
+      - BACKEND_HOST=0.0.0.0
+      - BACKEND_PORT=8000
+      - DEBUG=True
+      - DATABASE_URL=postgresql://user:password@db:5432/speech_to_information
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=speech_to_information
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: celery -A src.worker worker --loglevel=info
+    volumes:
+      - .:/app
+      - ./models:/app/models
+      - ./uploads:/app/uploads
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/speech_to_information
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+
+  celery_flower:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: celery -A src.worker flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - redis
+      - celery_worker
+
+volumes:
+  postgres_data:
+  redis_data: 

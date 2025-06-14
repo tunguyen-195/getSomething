@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@mui/icons-material": "^7.1.0",
+    "dayjs": "^1.11.13"
+  }
+}

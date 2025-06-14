@@ -1,0 +1,2 @@
+# Migration: Thêm bảng summaries cho model Summary
+# Chạy lệnh alembic revision --autogenerate -m "add summaries table" và alembic upgrade head để áp dụng migration này. 
