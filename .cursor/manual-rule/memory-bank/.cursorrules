@@ -1,0 +1,47 @@
+# .cursorrules for SpeechToInfomation
+
+## 1. Code Style & Quality
+- Use `black` for code formatting and `isort` for import sorting; code must pass `flake8` and `mypy` checks before merging.
+- Type annotations are required for all new Python functions and methods.
+- Follow PEP8 and PEP257 (docstrings) for all Python code.
+
+## 2. Dependency Management
+- All Python dependencies must be added to `requirements.txt` and installed in the virtual environment.
+- Use only the specified versions in `requirements.txt` to ensure reproducibility.
+- For new packages, update `requirements.txt` and document the reason in the PR or commit message.
+
+## 3. Architecture & Patterns
+- Follow modular, service-oriented architecture as described in `systemPatterns.md`.
+- Use the repository pattern for database access and the adapter pattern for integrating external models/services.
+- All new services or modules must include a clear API contract (OpenAPI/Swagger for FastAPI endpoints).
+
+## 4. Testing
+- All new features and bug fixes must include tests using `pytest` and, where appropriate, `pytest-asyncio`.
+- Code coverage must not decrease; use `pytest-cov` to measure.
+- Tests should mock external services (e.g., speech-to-text APIs, database) where possible.
+
+## 5. Task & Queue Management
+- Use `Celery` for background and asynchronous tasks; all long-running or resource-intensive jobs must be offloaded to Celery workers.
+- Use `redis` as the default broker and backend for Celery.
+
+## 6. Audio & Speech Processing
+- Use `librosa`, `soundfile`, and `pydub` for audio manipulation.
+- Use `openai-whisper`, `faster-whisper`, and `vosk` for speech-to-text; select model based on language and performance needs.
+
+## 7. NLP & Summarization
+- Use `transformers`, `sentencepiece`, and `torchaudio` for NLP tasks.
+- Prefer pre-trained models (e.g., BART, T5) for summarization and entity extraction.
+
+## 8. Security & Auth
+- Use `python-jose` for JWT handling and `passlib` for password hashing.
+- Validate all user input and sanitize data before processing.
+
+## 9. Monitoring & Logging
+- Integrate `prometheus-client` for metrics and `python-logging-loki` for centralized logging.
+- All services must emit health and status metrics.
+
+## 10. Documentation
+- All public APIs must be documented using FastAPI's OpenAPI schema.
+- Update Memory Bank documentation (especially `progress.md` and `activeContext.md`) after significant changes or releases.
+
+# Nếu phát hiện lỗi hoặc bug rõ ràng (API URL, endpoint, config, v.v.), AI phải tự động sửa mà không cần hỏi lại, ưu tiên sửa triệt để và cập nhật Memory Bank nếu cần. 

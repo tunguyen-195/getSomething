@@ -1,0 +1,59 @@
+# Core dependencies
+fastapi==0.104.1
+uvicorn==0.24.0
+python-multipart==0.0.6
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+pydantic==2.5.2
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+
+# Database
+sqlalchemy==2.0.23
+alembic==1.12.1
+psycopg2-binary==2.9.9
+asyncpg==0.29.0
+
+# Task Queue
+celery==5.3.4
+redis==5.0.1
+flower==2.0.1
+
+# Audio Processing
+librosa==0.10.1
+soundfile==0.12.1
+pydub==0.25.1
+ffmpeg-python==0.2.0
+
+# Speech-to-Text
+openai-whisper==20231117
+vosk==0.3.45
+
+# Text Processing
+transformers==4.35.2
+torchaudio==2.1.1
+sentencepiece==0.1.99
+protobuf==4.25.1
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+httpx==0.25.1
+
+# Development
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
+mypy==1.7.1
+
+# Monitoring
+prometheus-client==0.18.0
+python-logging-loki==0.3.1
+
+# New dependencies
+faster-whisper==0.9.0
+numpy==1.26.2
+torch==2.1.1
+bcrypt==4.0.1
+email-validator==2.1.0.post1 
