@@ -34,6 +34,9 @@ interface AudioUploaderProps {
   onNewTask: (task: any) => void;
 }
 
+// Helper lấy API base URL
+const API_BASE_URL = typeof window !== 'undefined' && (window as any).API_BASE_URL ? (window as any).API_BASE_URL : '';
+
 const AudioUploader = ({ onNewTask }: AudioUploaderProps) => {
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -49,19 +52,19 @@ const AudioUploader = ({ onNewTask }: AudioUploaderProps) => {
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   useEffect(() => {
-    fetch('http://localhost:8000/api/v1/cases/').then(res => res.json()).then(setCases).catch(e => console.error('Error fetching cases:', e));
+    fetch(`${API_BASE_URL}/api/v1/cases/`).then(res => res.json()).then(setCases).catch(e => console.error('Error fetching cases:', e));
   }, []);
 
   const handleCreateCase = async () => {
     if (!newCaseName) return;
     try {
-      const res = await fetch('http://localhost:8000/api/v1/cases/', {
+      const res = await fetch(`${API_BASE_URL}/api/v1/cases/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: newCaseName, description: newCaseDesc })
       });
       const data = await res.json();
-      fetch('http://localhost:8000/api/v1/cases/').then(res => res.json()).then(setCases);
+      fetch(`${API_BASE_URL}/api/v1/cases/`).then(res => res.json()).then(setCases);
       setSelectedCase(data.id);
       setOpenDialog(false);
       setNewCaseName('');
@@ -142,7 +145,7 @@ const AudioUploader = ({ onNewTask }: AudioUploaderProps) => {
         uploadedSize += file.size;
         setUploadProgress(Math.round((uploadedSize / totalSize) * 100));
 
-        const response = await fetch('http://localhost:8000/api/v1/audio/upload', {
+        const response = await fetch(`${API_BASE_URL}/api/v1/audio/upload`, {
           method: 'POST',
           body: formData,
         });
@@ -152,7 +155,7 @@ const AudioUploader = ({ onNewTask }: AudioUploaderProps) => {
         }
         const data = await response.json();
         // Gọi xử lý file sau khi upload thành công
-        const processRes = await fetch(`http://localhost:8000/api/v1/audio/process-task/${data.task_id}`, {
+        const processRes = await fetch(`${API_BASE_URL}/api/v1/audio/process-task/${data.task_id}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model_name: 'gemma2:9b' })

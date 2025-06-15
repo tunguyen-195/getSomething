@@ -12,6 +12,9 @@ import hashlib
 import json
 import time
 import shutil
+import subprocess
+from huggingface_hub import snapshot_download
+import glob
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent
@@ -27,6 +30,22 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+REQUIRED_PACKAGES = [
+    'faster-whisper', 'ctranslate2', 'transformers', 'huggingface_hub', 'tqdm', 'requests', 'torch',
+    'pyannote.audio', 'speechbrain'
+]
+
+def ensure_packages():
+    import importlib
+    for pkg in REQUIRED_PACKAGES:
+        try:
+            importlib.import_module(pkg.split('.')[0])
+        except ImportError:
+            logger.info(f"Installing missing package: {pkg}")
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', pkg])
+
+ensure_packages()
 
 class ModelManager:
     def __init__(self):
@@ -224,25 +243,129 @@ class ModelManager:
             logger.error(f"Error downloading Vosk model: {str(e)}")
             return False
 
+def download_faster_whisper_model(model_size, dest_dir):
+    repo_map = {
+        'large-v2': 'guillaumekln/faster-whisper-large-v2',
+        'large-v3': 'guillaumekln/faster-whisper-large-v3',
+        'medium-v2': 'guillaumekln/faster-whisper-medium-v2',
+        'small-v2': 'guillaumekln/faster-whisper-small-v2',
+        'tiny-v2': 'guillaumekln/faster-whisper-tiny-v2',
+    }
+    repo = repo_map[model_size]
+    # Kiểm tra nếu đã có đủ file model trong snapshot hash thì bỏ qua
+    try:
+        # Tìm thư mục hash trong dest_dir
+        hash_dirs = [d for d in Path(dest_dir).iterdir() if d.is_dir() and len(d.name) == 40]
+        if hash_dirs:
+            hash_dir = hash_dirs[0]
+            required_files = [
+                hash_dir / 'model.bin',
+                hash_dir / 'tokenizer.json',
+                hash_dir / 'config.json',
+                hash_dir / 'vocabulary.txt',
+            ]
+            if all(f.exists() for f in required_files):
+                logger.info(f"Model {repo} already exists at {hash_dir}, skip download.")
+                return True
+    except Exception as e:
+        logger.warning(f"Error checking existing model files for {repo}: {e}")
+    # Nếu chưa đủ file thì tải về
+    try:
+        logger.info(f"Downloading {repo} to {dest_dir}")
+        snapshot_path = snapshot_download(repo_id=repo, local_dir=dest_dir, local_dir_use_symlinks=False, resume_download=True)
+        logger.info(f"Downloaded snapshot to: {snapshot_path}")
+        files = glob.glob(str(Path(snapshot_path) / '**'), recursive=True)
+        logger.info(f"Files in snapshot: {files}")
+    except Exception as e:
+        logger.warning(f"Failed to download {repo}: {e}")
+        return False
+    return True
+
+def download_pyannote_models():
+    try:
+        from huggingface_hub import snapshot_download
+        pyannote_models = [
+            'pyannote/speaker-diarization',
+            'pyannote/embedding',
+            'pyannote/segmentation',
+        ]
+        for model in pyannote_models:
+            cache_dir = Path("models/pyannote_cache")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            # Kiểm tra nếu đã có đủ file model trong hash thì skip
+            hash_dirs = [d for d in cache_dir.iterdir() if d.is_dir() and len(d.name) == 40]
+            found = False
+            for hash_dir in hash_dirs:
+                if any((hash_dir / f).exists() for f in ["pytorch_model.bin", "config.json", "preprocessor_config.json"]):
+                    logger.info(f"pyannote model {model} already exists at {hash_dir}, skip download.")
+                    found = True
+                    break
+            if found:
+                continue
+            logger.info(f"Downloading pyannote model: {model}")
+            try:
+                snapshot_download(model, cache_dir=str(cache_dir), local_dir_use_symlinks=False, resume_download=True)
+            except Exception as e:
+                logger.warning(f"pyannote.audio model download failed: {e}")
+        logger.info("All pyannote.audio models checked.")
+    except Exception as e:
+        logger.warning(f"pyannote.audio model download failed: {e}")
+
+def download_speechbrain_models():
+    try:
+        from huggingface_hub import snapshot_download
+        sb_models = [
+            'speechbrain/emotion-recognition-wav2vec2',
+            'speechbrain/sentiment-analysis-wav2vec2',
+            'speechbrain/stress-detection-wav2vec2',
+        ]
+        for model in sb_models:
+            cache_dir = Path("models/speechbrain_cache")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            # Kiểm tra nếu đã có đủ file model trong hash thì skip
+            hash_dirs = [d for d in cache_dir.iterdir() if d.is_dir() and len(d.name) == 40]
+            found = False
+            for hash_dir in hash_dirs:
+                if any((hash_dir / f).exists() for f in ["model.ckpt", "hyperparams.yaml", "config.json"]):
+                    logger.info(f"SpeechBrain model {model} already exists at {hash_dir}, skip download.")
+                    found = True
+                    break
+            if found:
+                continue
+            logger.info(f"Downloading SpeechBrain model: {model}")
+            try:
+                snapshot_download(model, cache_dir=str(cache_dir), local_dir_use_symlinks=False, resume_download=True)
+            except Exception as e:
+                logger.warning(f"SpeechBrain model download failed: {e}")
+        logger.info("All SpeechBrain models checked.")
+    except Exception as e:
+        logger.warning(f"SpeechBrain model download failed: {e}")
+
 def main():
+    ensure_packages()
     model_manager = ModelManager()
-    
-    # Download models
-    print("Checking and downloading models...")
-    
-    # Download Whisper model
-    print("Checking Whisper model (large)...")
-    model_manager.download_whisper_model("large")
-    
-    # Download Vosk model
-    print("Checking Vosk model for Vietnamese...")
-    model_manager.download_vosk_model()
-    
-    # Download T5 model (comment lại nếu chỉ cần Whisper)
-    # print("Checking T5 model for summarization...")
-    # model_manager.download_t5_model()
-    
-    print("All models checked and downloaded successfully!")
+    whisper_sizes = ['large-v2', 'large-v3', 'medium-v2', 'small-v2', 'tiny-v2']
+    for size in whisper_sizes:
+        dest = model_manager.models_dir / f"models--guillaumekln--faster-whisper-{size}" / "snapshots"
+        dest.mkdir(parents=True, exist_ok=True)
+        ok = download_faster_whisper_model(size, str(dest))
+        ct2_dir = dest / "ct2"
+        if ok and not ct2_dir.exists():
+            logger.info(f"Converting {size} to CTranslate2 format...")
+            try:
+                subprocess.run([
+                    sys.executable, '-m', 'ctranslate2.converters.transformers',
+                    '--model', str(dest),
+                    '--output_dir', str(ct2_dir),
+                    '--copy_files', 'tokenizer.json', 'preprocessor_config.json',
+                    '--quantization', 'int8'
+                ], check=True)
+            except Exception as e:
+                logger.warning(f"CTranslate2 conversion failed for {size}: {e}")
+    # Luôn tải các model pipeline cho pyannote.audio và SpeechBrain
+    download_pyannote_models()
+    download_speechbrain_models()
+    logger.info("All models checked, downloaded, and converted successfully!")
 
 if __name__ == "__main__":
     main() 

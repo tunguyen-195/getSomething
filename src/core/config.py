@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     PROMETHEUS_MULTIPROC_DIR: str = "/tmp/prometheus_multiproc"
     METRICS_PORT: int = 9090
 
+    # Whisper optimization
+    WHISPER_DEVICE: str = "cuda"  # "cuda" hoặc "cpu"
+    WHISPER_COMPUTE_TYPE: str = "float16"  # "float16", "int8_float16", "int8"
+    WHISPER_BATCH_SIZE: int = 8
+    WHISPER_BEAM_SIZE: int = 5
+
     @validator("CORS_ORIGINS", pre=True)
     def assemble_cors_origins(cls, v: str | List[str]) -> List[str]:
         if isinstance(v, str) and not v.startswith("["):
@@ -74,5 +80,6 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = 'utf-8'
         extra = "allow"
+        model_config = {'protected_namespaces': ()}
 
 settings = Settings() 

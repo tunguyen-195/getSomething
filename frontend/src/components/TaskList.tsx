@@ -65,6 +65,9 @@ interface Case {
   tasks: Task[];
 }
 
+// Helper lấy API base URL
+const API_BASE_URL = typeof window !== 'undefined' && (window as any).API_BASE_URL ? (window as any).API_BASE_URL : '';
+
 const TaskList = () => {
   const [cases, setCases] = useState<Case[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -85,10 +88,11 @@ const TaskList = () => {
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: AlertColor }>({ open: false, message: '', severity: 'success' });
   const [expandedSummaryId, setExpandedSummaryId] = useState<string | null>(null);
   const [savedSummaries, setSavedSummaries] = useState<any[]>([]);
+  const [processSuccess, setProcessSuccess] = useState(false);
 
   const fetchCases = async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/v1/cases');
+      const res = await fetch(`${API_BASE_URL}/api/v1/cases`);
       const data = await res.json();
       setCases(data);
       if (data.length > 0) {
@@ -101,7 +105,7 @@ const TaskList = () => {
 
   const fetchTasks = async (filterDate?: string, filterCaseId?: string) => {
     setLoading(true);
-    let url = 'http://localhost:8000/api/v1/audio/tasks';
+    let url = `${API_BASE_URL}/api/v1/audio/tasks`;
     const queryParams = new URLSearchParams();
     if (filterDate) {
       queryParams.append('date', filterDate);
@@ -140,10 +144,23 @@ const TaskList = () => {
     fetchTasks(date);
   }, [date]);
 
+  useEffect(() => {
+    if (processSuccess) {
+      fetchCases();
+      fetchTasks(date);
+    }
+    // eslint-disable-next-line
+  }, [processSuccess]);
+
   const casesWithTasks = cases.map(caseItem => ({
     ...caseItem,
     tasks: tasks.filter(task => String(task.case_id) === String(caseItem.id)).sort((a, b) => dayjs(b.created_at).valueOf() - dayjs(a.created_at).valueOf())
-  })).sort((a, b) => a.title.localeCompare(b.title));
+  })).sort((a, b) => {
+    // Sắp xếp theo task mới nhất trong case
+    const aLatest = a.tasks[0]?.created_at ? dayjs(a.tasks[0].created_at).valueOf() : 0;
+    const bLatest = b.tasks[0]?.created_at ? dayjs(b.tasks[0].created_at).valueOf() : 0;
+    return bLatest - aLatest;
+  });
 
   const handleToggleExpandCase = (caseId: string) => {
     if (expandedCaseId !== caseId) {
@@ -199,7 +216,7 @@ const TaskList = () => {
         : task
     ));
     try {
-      await fetch(`http://localhost:8000/api/v1/audio/tasks/${editingTaskId}/context`, {
+      await fetch(`${API_BASE_URL}/api/v1/audio/tasks/${editingTaskId}/context`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_context_prompt: userContextPrompt }),
@@ -217,7 +234,7 @@ const TaskList = () => {
     if (!editingTaskId) return;
     setResummarizing(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/audio/tasks/${editingTaskId}/resummarize`, { method: 'POST' });
+      const res = await fetch(`${API_BASE_URL}/api/v1/audio/tasks/${editingTaskId}/resummarize`, { method: 'POST' });
       const data = await res.json();
       setTasks(prevTasks => prevTasks.map(task =>
         task.id === editingTaskId
@@ -240,7 +257,7 @@ const TaskList = () => {
     try {
       const selectedTasksData = tasks.filter(t => selectedTasks.includes(t.id) && t.result && (t.result.transcription || t.result.text));
       const transcripts = selectedTasksData.map(t => t.result.transcription || t.result.text || '');
-      const res = await fetch('http://localhost:8000/api/v1/audio/summarize-multi', {
+      const res = await fetch(`${API_BASE_URL}/api/v1/audio/summarize-multi`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transcripts, model_name: 'gemma2:9b' }),
@@ -262,7 +279,7 @@ const TaskList = () => {
     setCaseSummarizing(true);
     setCaseSummary(null);
     try {
-      const res = await fetch('http://localhost:8000/api/v1/audio/summarize-case', {
+      const res = await fetch(`${API_BASE_URL}/api/v1/audio/summarize-case`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ case_id: selectedCaseForSummary, model_name: 'gemma2:9b' }),

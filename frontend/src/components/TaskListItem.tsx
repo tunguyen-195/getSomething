@@ -29,6 +29,10 @@ import SummarizeIcon from '@mui/icons-material/Summarize';
 import AudiotrackIcon from '@mui/icons-material/Audiotrack';
 import dayjs from 'dayjs';
 import InvestigationSummaryCard from './InvestigationSummaryCard';
+import AudioPlayer from 'react-h5-audio-player';
+import 'react-h5-audio-player/lib/styles.css';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import { useState } from 'react';
 
 interface Task {
   id: string;
@@ -106,6 +110,8 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
   const [tab, setTab] = React.useState(
     (task.result?.summary || task.result?.context_analysis) ? 0 : 1
   );
+  const [copiedTranscript, setCopiedTranscript] = useState(false);
+  const [copiedSummary, setCopiedSummary] = useState(false);
 
   return (
     <Paper
@@ -177,40 +183,38 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
             <Tab label="Details" />
           </Tabs>
           {tab === 0 && (
-            <InvestigationSummaryCard summary={task.result?.summary} contextAnalysis={task.result?.context_analysis} />
+            <InvestigationSummaryCard summary={task.result?.summary} contextAnalysis={task.result?.context_analysis} taskId={task.result?.task_id || task.id} />
           )}
           {tab === 1 && (
             <Grid container spacing={2}>
                {/* Phần tóm tắt chi tiết - Luôn hiển thị đầy đủ nội dung */} 
                <Grid item xs={12} md={6}>
                  <Card sx={{ bgcolor: '#f8f9fa', borderRadius: 4, boxShadow: 3, p: 3, minHeight: 100, mb: 1, position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
-                   <Typography variant="h6" color="primary" fontWeight={700} mb={1} sx={{ display: 'flex', alignItems: 'center', fontSize: 18 }}>
-                     <SummarizeIcon sx={{ mr: 1, color: '#1976d2' }} />Tóm tắt chi tiết
-                   </Typography>
+                   <Box display="flex" alignItems="center" mb={1}>
+                     <Typography variant="h6" color="primary" fontWeight={700} sx={{ display: 'flex', alignItems: 'center', fontSize: 18 }}>
+                       <SummarizeIcon sx={{ mr: 1, color: '#1976d2' }} />Tóm tắt chi tiết
+                     </Typography>
+                     <Tooltip title={copiedSummary ? 'Đã copy!' : 'Copy summary'}>
+                       <Button size="small" variant="outlined" color={copiedSummary ? 'success' : 'primary'} sx={{ ml: 2 }} startIcon={<ContentCopyIcon />} onClick={() => {navigator.clipboard.writeText(summary); setCopiedSummary(true); setTimeout(() => setCopiedSummary(false), 1500);}}>{copiedSummary ? 'Đã copy' : 'Copy'}</Button>
+                     </Tooltip>
+                   </Box>
                    <Typography
                      variant="body1"
                      color="text.primary"
                      sx={{ whiteSpace: 'pre-wrap', fontWeight: 500, fontSize: 16 }}
                    >
-                     {task.result?.summary || 'Không có tóm tắt'}
+                     {summary || 'Không có tóm tắt'}
                    </Typography>
                  </Card>
                </Grid>
               <Grid item xs={12} md={6}>
-                <Typography variant="subtitle2" fontWeight={700} fontSize={16} mb={1}>Thông tin file:</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  <b>Tên file:</b> {task.result?.filename || task.filename || 'Không rõ'}<br/>
-                  <b>Thời lượng:</b> {task.result?.duration ? `${Math.round(task.result.duration)} giây` : 'Không rõ'}<br/>
-                  <b>Ngôn ngữ:</b> {task.result?.language || 'Không rõ'}<br/>
-                  <b>Audio URL:</b> {task.result?.audio_url ? <a href={task.result.audio_url} target="_blank" rel="noopener noreferrer">Nghe</a> : 'Không có'}
-                </Typography>
-                {/* Audio player chỉ hiển thị nếu có audio_url */}
-                {task.result?.audio_url && (
-                  <Box mt={2}>
-                    <Typography variant="subtitle2" fontWeight={700} fontSize={15} mb={1}>Nghe lại file âm thanh:</Typography>
-                    <audio controls src={task.result.audio_url} style={{ width: '100%' }} />
-                  </Box>
-                )}
+                <Box display="flex" alignItems="center" mb={1}>
+                  <Typography variant="subtitle2" fontWeight={700} fontSize={16} mr={2}>Transcript</Typography>
+                  <Tooltip title={copiedTranscript ? 'Đã copy!' : 'Copy transcript'}>
+                    <Button size="small" variant="outlined" color={copiedTranscript ? 'success' : 'primary'} startIcon={<ContentCopyIcon />} onClick={() => {navigator.clipboard.writeText(transcript); setCopiedTranscript(true); setTimeout(() => setCopiedTranscript(false), 1500);}}>{copiedTranscript ? 'Đã copy' : 'Copy'}</Button>
+                  </Tooltip>
+                </Box>
+                <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto', fontSize: 15 }}>{transcript || 'Không có transcript'}</Typography>
               </Grid>
             </Grid>
           )}

@@ -9,6 +9,8 @@ import InvestigationSummaryCard from './InvestigationSummaryCard';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
+import AudioPlayer from 'react-h5-audio-player';
+import 'react-h5-audio-player/lib/styles.css';
 
 interface FileInfo {
   id: string;
@@ -23,6 +25,9 @@ interface FileTableProps {
   onSelectFile?: (fileId: string) => void;
   selectedFileId?: string | null;
 }
+
+// Helper lấy API base URL
+const API_BASE_URL = typeof window !== 'undefined' && (window as any).API_BASE_URL ? (window as any).API_BASE_URL : '';
 
 const FileTable: React.FC<FileTableProps> = ({ caseId, onSelectFile, selectedFileId }) => {
   const [files, setFiles] = useState<FileInfo[]>([]);
@@ -42,7 +47,7 @@ const FileTable: React.FC<FileTableProps> = ({ caseId, onSelectFile, selectedFil
   const reloadFiles = () => {
     setLoading(true);
     setError(null);
-    fetch(`/api/v1/cases/${caseId}/files`)
+    fetch(`${API_BASE_URL}/api/v1/cases/${caseId}/files`)
       .then(res => {
         if (!res.ok) throw new Error('Failed to load files');
         return res.json();
@@ -66,8 +71,8 @@ const FileTable: React.FC<FileTableProps> = ({ caseId, onSelectFile, selectedFil
     window.open(url, '_blank');
   };
 
-  const handlePlay = (url: string) => {
-    setAudio(url);
+  const handlePlay = (filename: string) => {
+    setAudio(`${API_BASE_URL}/api/v1/audio/public/${encodeURIComponent(filename)}`);
   };
 
   const handleProcess = (fileId: string) => {
@@ -80,7 +85,7 @@ const FileTable: React.FC<FileTableProps> = ({ caseId, onSelectFile, selectedFil
       setProcessingIds(ids => ids.filter(id => id !== fileId));
       return;
     }
-    fetch(`/api/v1/audio/process-task/${fileObj.task_id}`, {
+    fetch(`${API_BASE_URL}/api/v1/audio/process-task/${fileObj.task_id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model_name: 'gemma2:9b' })
@@ -111,7 +116,7 @@ const FileTable: React.FC<FileTableProps> = ({ caseId, onSelectFile, selectedFil
       const formData = new FormData();
       formData.append('file', file);
       formData.append('case_id', caseId);
-      return fetch(`/api/v1/audio/upload`, {
+      return fetch(`${API_BASE_URL}/api/v1/audio/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -119,7 +124,7 @@ const FileTable: React.FC<FileTableProps> = ({ caseId, onSelectFile, selectedFil
       .then(responses => {
         if (responses.some(res => !res.ok)) throw new Error('Upload failed');
         setUploadSuccess(true);
-        return fetch(`/api/v1/cases/${caseId}/files`).then(res2 => res2.json());
+        return fetch(`${API_BASE_URL}/api/v1/cases/${caseId}/files`).then(res2 => res2.json());
       })
       .then(data => setFiles(data))
       .catch(() => setUploadError('Upload failed'))
@@ -132,7 +137,7 @@ const FileTable: React.FC<FileTableProps> = ({ caseId, onSelectFile, selectedFil
     setTaskLoading(true);
     setTaskError(null);
     setTaskData(null);
-    fetch(`/api/v1/audio/tasks/${file.task_id}`)
+    fetch(`${API_BASE_URL}/api/v1/audio/tasks/${file.task_id}`)
       .then(res => {
         if (!res.ok) throw new Error('Failed to fetch task data');
         return res.json();
@@ -196,7 +201,9 @@ const FileTable: React.FC<FileTableProps> = ({ caseId, onSelectFile, selectedFil
                   <TableCell>{file.status}</TableCell>
                   <TableCell align="right">
                     <Tooltip title="Tải về"><IconButton onClick={e => { e.stopPropagation(); handleDownload(file.url); }}><CloudDownloadIcon /></IconButton></Tooltip>
-                    <Tooltip title="Nghe"><IconButton onClick={e => { e.stopPropagation(); handlePlay(file.url); }}><PlayArrowIcon /></IconButton></Tooltip>
+                    <Tooltip title="Nghe">
+                      <IconButton onClick={e => { e.stopPropagation(); handlePlay(file.filename); }}><PlayArrowIcon /></IconButton>
+                    </Tooltip>
                     <Tooltip title="Xử lý">
                       <span>
                         <IconButton onClick={e => { e.stopPropagation(); handleProcess(file.id); }} disabled={processingIds.includes(file.id) || !file.task_id}>
@@ -220,7 +227,15 @@ const FileTable: React.FC<FileTableProps> = ({ caseId, onSelectFile, selectedFil
       )}
       {audio && (
         <Box mt={2}>
-          <audio src={audio} controls autoPlay style={{ width: '100%' }} onEnded={() => setAudio(null)} />
+          <AudioPlayer
+            src={audio}
+            autoPlay
+            showJumpControls
+            customAdditionalControls={[]}
+            layout="horizontal"
+            style={{ width: '100%' }}
+            onEnded={() => setAudio(null)}
+          />
         </Box>
       )}
       <Snackbar open={!!uploadError} autoHideDuration={4000} onClose={() => setUploadError(null)}>
@@ -245,8 +260,8 @@ const FileTable: React.FC<FileTableProps> = ({ caseId, onSelectFile, selectedFil
               ) : taskError ? (
                 <Alert severity="error">{taskError}</Alert>
               ) : taskData ? (
-                (taskData.result?.summary || taskData.result?.context_analysis) ? (
-                  <InvestigationSummaryCard summary={taskData.result?.summary} contextAnalysis={taskData.result?.context_analysis} />
+                taskData.result?.summary || taskData.result?.context_analysis ? (
+                  <InvestigationSummaryCard summary={taskData.result?.summary} contextAnalysis={taskData.result?.context_analysis} taskId={taskData.result?.task_id || (files.find(f => f.id === openFileId)?.task_id) || taskData.id} />
                 ) : (
                   <Box minHeight={200} display="flex" alignItems="center" justifyContent="center"><Typography color="text.secondary">No data to visualize.</Typography></Box>
                 )

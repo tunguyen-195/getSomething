@@ -8,6 +8,9 @@ interface TranscriptPanelProps {
   fileId: string;
 }
 
+// Helper lấy API base URL
+const API_BASE_URL = typeof window !== 'undefined' && (window as any).API_BASE_URL ? (window as any).API_BASE_URL : '';
+
 const TranscriptPanel: React.FC<TranscriptPanelProps> = ({ fileId }) => {
   const [transcript, setTranscript] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -18,7 +21,7 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({ fileId }) => {
     setLoading(true);
     setError(null);
     setTranscript(null);
-    fetch(`http://localhost:8000/api/v1/files/${fileId}/transcript`)
+    fetch(`${API_BASE_URL}/api/v1/files/${fileId}/transcript`)
       .then(res => res.json())
       .then(data => {
         if (data.result && (data.result.transcription || data.result.text)) {
@@ -62,10 +65,18 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({ fileId }) => {
     <Box>
       <Box display="flex" alignItems="center" mb={2}>
         <Typography variant="h6" fontWeight={700} sx={{ flexGrow: 1 }}>Transcript</Typography>
-        <Tooltip title="Copy">
-          <span>
-            <IconButton onClick={handleCopy} disabled={!transcript}><ContentCopyIcon color={copied ? 'success' : 'inherit'} /></IconButton>
-          </span>
+        <Tooltip title={copied ? 'Đã copy!' : 'Copy transcript'}>
+          <Button
+            onClick={handleCopy}
+            disabled={!transcript}
+            variant="outlined"
+            color={copied ? 'success' : 'primary'}
+            size="small"
+            startIcon={<ContentCopyIcon />}
+            sx={{ ml: 2 }}
+          >
+            {copied ? 'Đã copy' : 'Copy'}
+          </Button>
         </Tooltip>
         <Tooltip title="Download">
           <span>

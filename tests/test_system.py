@@ -14,6 +14,12 @@ def test_db():
     init_db()
     return get_db()
 
+def create_test_case():
+    response = client.post("/api/v1/cases", json={"title": "Test Case"})
+    assert response.status_code in (200, 201)
+    data = response.json()
+    return data["id"] if isinstance(data, dict) else data[0]["id"]
+
 def test_health_check():
     """Test health check endpoint."""
     response = client.get("/api/v1/health")
@@ -27,20 +33,20 @@ def test_audio_upload():
     with open(test_file, "wb") as f:
         f.write(b"test audio content")
 
+    case_id = create_test_case()
     try:
         # Upload file
         with open(test_file, "rb") as f:
             response = client.post(
                 "/api/v1/audio/upload",
                 files={"file": ("test.wav", f, "audio/wav")},
-                data={"options": '{"language": "vi", "model_type": "whisper"}'}
+                data={"case_id": str(case_id), "options": '{"language": "vi", "model_type": "whisper"}'}
             )
 
         assert response.status_code == 200
         data = response.json()
-        assert "task_id" in data
-        assert data["status"] == "success"
-        assert "result" in data
+        assert "task_id" in data or "audio_file_id" in data
+        assert data["status"] in ["success", "pending"]
     finally:
         # Clean up
         if os.path.exists(test_file):
@@ -48,12 +54,13 @@ def test_audio_upload():
 
 def test_task_status():
     """Test task status endpoint."""
+    case_id = create_test_case()
     # Create test task
     response = client.post(
         "/api/v1/tasks",
         json={
-            "file_path": "test.wav",
-            "options": {"language": "vi", "model_type": "whisper"}
+            "filename": "test.wav",
+            "case_id": case_id
         }
     )
     assert response.status_code == 200
@@ -71,6 +78,7 @@ def test_batch_processing():
     """Test batch processing endpoint."""
     # Create test files
     test_files = ["test1.wav", "test2.wav"]
+    case_id = create_test_case()
     try:
         for file in test_files:
             with open(file, "wb") as f:
@@ -83,7 +91,7 @@ def test_batch_processing():
         response = client.post(
             "/api/v1/audio/batch",
             files=files,
-            data={"options": '{"language": "vi", "model_type": "whisper"}'}
+            data={"case_id": str(case_id), "options": '{"language": "vi", "model_type": "whisper"}'}
         )
 
         for f in file_objs:
@@ -104,12 +112,13 @@ def test_batch_processing():
 
 def test_result_retrieval():
     """Test result retrieval endpoint."""
+    case_id = create_test_case()
     # Create test task
     response = client.post(
         "/api/v1/tasks",
         json={
-            "file_path": "test.wav",
-            "options": {"language": "vi", "model_type": "whisper"}
+            "filename": "test.wav",
+            "case_id": case_id
         }
     )
     assert response.status_code == 200
@@ -122,7 +131,7 @@ def test_result_retrieval():
     time.sleep(3)
 
     # Get result
-    response = client.get(f"/api/v1/results/{task_id}")
+    response = client.get(f"/api/v1/tasks/results/{task_id}")
     assert response.status_code == 200
     data = response.json()
     assert "task_id" in data

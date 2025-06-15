@@ -242,4 +242,33 @@ Truy cập [http://localhost:8000/docs](http://localhost:8000/docs) để thử 
 - Kết quả hiện tại là mock, muốn xử lý thực tế hãy cập nhật các service trong `src/services/`.
 - Nếu dùng Docker, xem thêm file `docker-compose.yml`. 
 
+## Tối ưu hóa GPU cho Whisper (faster-whisper)
+
+- **device**: Ưu tiên "cuda" nếu có GPU, fallback "cpu" nếu không.
+- **compute_type**: 
+  - "float16" (tối ưu tốc độ, cần GPU hỗ trợ)
+  - "int8_float16" (tiết kiệm VRAM, tốc độ cao, độ chính xác gần như không đổi)
+  - "int8" (cho CPU)
+- **batch_size**: Càng lớn càng tận dụng GPU tốt (8, 16, 32 tuỳ VRAM, RAM hệ thống ≥ VRAM)
+- **beam_size**: 1 (tối đa tốc độ), 5 (mặc định, cân bằng chính xác/tốc độ)
+
+### Cách chỉnh tham số
+- Sửa trực tiếp trong `src/core/config.py`:
+  - `WHISPER_DEVICE`, `WHISPER_COMPUTE_TYPE`, `WHISPER_BATCH_SIZE`, `WHISPER_BEAM_SIZE`
+- Hoặc đặt biến môi trường khi chạy:
+  - `WHISPER_DEVICE=cuda WHISPER_COMPUTE_TYPE=float16 WHISPER_BATCH_SIZE=16 WHISPER_BEAM_SIZE=1 python ...`
+
+### Lưu ý production
+- Luôn kiểm tra log để biết model đang chạy trên thiết bị nào, compute_type gì, batch_size bao nhiêu.
+- Nếu GPU utilization thấp, thử tăng batch_size, giảm beam_size, hoặc chạy nhiều tiến trình song song.
+- Đảm bảo RAM hệ thống ≥ VRAM để tránh bottleneck khi batch lớn.
+- Nếu có nhiều GPU, có thể chỉnh device index (chưa hỗ trợ multi-GPU tự động, cần chỉnh thủ công).
+
+## Tối ưu cho Windows 11 + RTX 4070 SUPER
+- Worker pool song song, batch nhỏ, chỉ dùng GPU NVIDIA
+- Tích hợp speech enhancement (LLaSE-G1, SepALM, WavLM, SpecAugment)
+- Tích hợp LLM-based error correction (RobustGER, Whisper-LM, chain-of-correction)
+- Benchmark tự động WER/CER/noise, log chi tiết, alert khi hiệu năng thấp
+- Monitoring Prometheus/Grafana, alert khi RAM/VRAM cao
+
 uvicorn src.main:app --reload                   

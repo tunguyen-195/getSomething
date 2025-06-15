@@ -14,6 +14,8 @@ import subprocess
 from src.speech_to_text.transcriber import OllamaProcessor
 from fastapi.responses import FileResponse
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import unquote
 
 router = APIRouter()
 
@@ -144,9 +146,12 @@ def update_task_context(task_id: str, context_analysis: dict = Body(...)):
     # Nếu có user_context_prompt thì lưu vào result
     if "user_context_prompt" in context_analysis:
         result["user_context_prompt"] = context_analysis["user_context_prompt"]
-    # Nếu có context_analysis thì lưu như cũ
+    # Nếu có context_analysis thì lưu như cũ, nhưng luôn ép về dict
     if "context_analysis" in context_analysis:
-        result["context_analysis"] = context_analysis["context_analysis"]
+        ca = context_analysis["context_analysis"]
+        if not isinstance(ca, dict):
+            ca = {}
+        result["context_analysis"] = ca
     update_task(task_id, {"result": result})
     return {"detail": "Context updated"}
 
@@ -188,6 +193,8 @@ def resummarize_task(task_id: str):
     # Nếu user_context_prompt thay đổi, phân tích lại context
     if user_context_prompt:
         context = OllamaProcessor(model_name=model_name).analyze_context(transcript)
+    if context is None or not isinstance(context, dict):
+        context = {}
     # Tóm tắt với prompt mạnh hơn, tăng max_length
     summary = summarize_transcript(transcript, context=context, model_name=model_name, user_context_prompt=user_context_prompt, max_length=300, min_length=80)
     result["summary"] = summary
@@ -211,3 +218,62 @@ async def process_uploaded_task(
 ):
     """Xử lý file đã upload: transcribe, summarize, update task/audio_file"""
     return process_task(task_id, model_name, db) 
+
+@router.post("/process-tasks")
+async def process_multiple_tasks(
+    task_ids: List[str] = Body(..., embed=True),
+    model_name: str = Body("gemma2:9b", embed=True),
+    db: Session = Depends(get_db)
+):
+    """Xử lý nhiều task (nhiều file/audio) song song, trả về trạng thái từng task."""
+    results = []
+    with ThreadPoolExecutor(max_workers=min(8, len(task_ids))) as executor:
+        future_to_task = {executor.submit(process_task, tid, model_name, db): tid for tid in task_ids}
+        for future in as_completed(future_to_task):
+            tid = future_to_task[future]
+            try:
+                result = future.result()
+                results.append({"task_id": tid, "status": "success", "result": result})
+            except Exception as e:
+                results.append({"task_id": tid, "status": "error", "message": str(e)})
+    return {"results": results}
+
+@router.post("/batch")
+async def batch_upload_audio(
+    files: List[UploadFile] = File(...),
+    case_id: str = Form(...),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """Batch upload audio files, create AudioFile and Task for each."""
+    task_ids = []
+    results = []
+    status = "success"
+    for file in files:
+        try:
+            result = save_audio_and_create_task(file, db, case_id=int(case_id) if case_id else None)
+            task_ids.append(result.get("task_id"))
+            results.append(result)
+        except Exception as e:
+            status = "error"
+            results.append({"error": str(e), "filename": file.filename})
+    return {"task_ids": task_ids, "results": results, "status": status}
+
+@router.get("/public/{filename}")
+def get_audio_public(filename: str):
+    filename = unquote(filename)
+    file_path = os.path.join("storage/audio", filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    # Đoán Content-Type từ đuôi file
+    ext = filename.split('.')[-1].lower()
+    if ext == 'mp3':
+        media_type = 'audio/mpeg'
+    elif ext == 'wav':
+        media_type = 'audio/wav'
+    elif ext == 'ogg':
+        media_type = 'audio/ogg'
+    elif ext == 'm4a':
+        media_type = 'audio/mp4'
+    else:
+        media_type = 'application/octet-stream'
+    return FileResponse(file_path, media_type=media_type, filename=filename) 

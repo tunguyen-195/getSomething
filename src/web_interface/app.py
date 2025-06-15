@@ -129,6 +129,10 @@ class WebInterface:
             transcription = result["transcription"]
             analysis = result["analysis"]
             
+            # Đảm bảo analysis luôn là dict
+            if not isinstance(analysis, dict):
+                analysis = {}
+            
             # Format analysis for display
             try:
                 # Check if analysis is a string (JSON string)
@@ -149,6 +153,8 @@ class WebInterface:
                 
                 # Add context information if available
                 context = analysis.get('context', {})
+                if not isinstance(context, dict):
+                    context = {}
                 if context:
                     lines.extend([
                         f"- Chủ đề: {context.get('topic', 'N/A')}",

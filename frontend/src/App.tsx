@@ -7,6 +7,7 @@ import MenuIcon from '@mui/icons-material/Menu';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FileTable from './components/FileTable';
 import TranscriptPanel from './components/TranscriptPanel';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 
 interface Case {
   id: string;
@@ -22,6 +23,38 @@ interface Case {
 }
 
 const drawerWidth = 320;
+
+function SummaryAccordionItem({ summary, idx, highlightSummary }: { summary: string, idx: number, highlightSummary: (s: string) => React.ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(summary);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <Accordion defaultExpanded={idx === 0} sx={{ mb: 2 }}>
+      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+        <Typography fontWeight={600}>File {idx + 1}</Typography>
+      </AccordionSummary>
+      <AccordionDetails>
+        <Box display="flex" alignItems="center" mb={2}>
+          <Button
+            onClick={handleCopy}
+            variant="outlined"
+            color={copied ? 'success' : 'primary'}
+            size="small"
+            startIcon={<ContentCopyIcon />}
+            sx={{ mr: 2 }}
+          >
+            {copied ? 'Đã copy' : 'Copy'}
+          </Button>
+          <Typography variant="body2" color="text.secondary">{copied ? 'Đã copy vào clipboard!' : ''}</Typography>
+        </Box>
+        {highlightSummary(summary)}
+      </AccordionDetails>
+    </Accordion>
+  );
+}
 
 function App() {
   const [mode, setMode] = useState<'light' | 'dark'>('light');
@@ -205,14 +238,7 @@ function App() {
                 <Box>
                   <Typography variant="h6" fontWeight={700} mb={2}>Tóm tắt các file</Typography>
                   {selectedCase.summaries.map((s, idx) => (
-                    <Accordion key={idx} defaultExpanded={idx === 0} sx={{ mb: 2 }}>
-                      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                        <Typography fontWeight={600}>File {idx + 1}</Typography>
-                      </AccordionSummary>
-                      <AccordionDetails>
-                        {highlightSummary(s)}
-                      </AccordionDetails>
-                    </Accordion>
+                    <SummaryAccordionItem key={idx} summary={s} idx={idx} highlightSummary={highlightSummary} />
                   ))}
                 </Box>
               ) : (
