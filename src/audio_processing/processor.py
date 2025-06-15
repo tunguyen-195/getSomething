@@ -98,4 +98,25 @@ class AudioProcessor:
             if len(segment) == samples_per_segment:  # Only add complete segments
                 segments.append(segment)
         
-        return segments 
+        return segments
+
+    def enhance_speech_llase(self, audio: np.ndarray) -> np.ndarray:
+        """Speech enhancement bằng LLaSE-G1 (placeholder, cần tích hợp model thực tế)"""
+        # TODO: Tích hợp LLaSE-G1 model, chỉ chạy trên GPU NVIDIA
+        # Giả lập: trả về audio không đổi
+        return audio
+
+    def enhance_speech_sepalm(self, audio: np.ndarray) -> np.ndarray:
+        """Speech enhancement bằng SepALM (placeholder, cần tích hợp model thực tế)"""
+        # TODO: Tích hợp SepALM model, chỉ chạy trên GPU NVIDIA
+        return audio
+
+    def enhance_speech_wavlm(self, audio: np.ndarray) -> np.ndarray:
+        """Speech enhancement bằng WavLM (placeholder, cần tích hợp model thực tế)"""
+        # TODO: Tích hợp WavLM model, chỉ chạy trên GPU NVIDIA
+        return audio
+
+    def augment_specaugment(self, audio: np.ndarray, sr: int = 16000) -> np.ndarray:
+        """Augmentation bằng SpecAugment (placeholder, cần tích hợp thực tế)"""
+        # TODO: Tích hợp SpecAugment
+        return audio 

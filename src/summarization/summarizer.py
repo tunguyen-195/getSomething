@@ -130,6 +130,22 @@ class Summarizer:
                 
         return '. '.join(unique_sentences)
         
+    def error_correction_llm(self, text: str, nbest: list = None, noise_info: dict = None) -> str:
+        """Sử dụng LLM-based error correction (RobustGER, Whisper-LM, chain-of-correction)"""
+        # TODO: Tích hợp model thực tế, batch nhỏ, tối ưu prompt/context
+        # Placeholder: trả về text không đổi
+        # Nâng cấp: phát hiện và highlight thông tin nhạy cảm, cá nhân, insight
+        def highlight_sensitive(text):
+            # Highlight số điện thoại, email, CCCD, tên riêng (giả lập)
+            text = re.sub(r'(0\d{9,10})', r'<mark>\1</mark>', text)
+            text = re.sub(r'([\w\.-]+@[\w\.-]+)', r'<mark>\1</mark>', text)
+            text = re.sub(r'(\b\d{9,12}\b)', r'<mark>\1</mark>', text)
+            # Xóa mọi dấu *
+            text = text.replace('*', '')
+            return text
+        text = highlight_sensitive(text)
+        return text
+    
     def summarize(self, text: str, context: dict = None, max_length: int = 150, min_length: int = 50) -> str:
         """
         Summarize text using T5 model with post-processing and context
@@ -185,6 +201,17 @@ class Summarizer:
             summary = self.normalize_text(summary)
             summary = self.improve_structure(summary)
             summary = self.optimize_context(summary)
+            
+            # Gọi error correction sau khi sinh summary
+            summary = self.error_correction_llm(summary)
+            
+            # Nếu phát hiện tiếng lóng, mật ngữ, note rõ
+            slang_note = ""
+            if context and (context.get('slang_detected') or 'mật ngữ' in text or 'lóng' in text):
+                slang_note = "\n<i><b>Lưu ý:</b> Phát hiện hoặc nghi ngờ có sử dụng tiếng lóng, mật ngữ trong hội thoại.</i>"
+            # Đảm bảo không có dấu * trong summary
+            summary = summary.replace('*', '')
+            summary = f"<b>Nội dung chính:</b> {summary}{slang_note}"
             
             return summary
             
@@ -259,3 +286,12 @@ class Summarizer:
             device=device,
             **kwargs
         ) 
+
+    def get_copyable_summary(self, text: str, context: dict = None, max_length: int = 150, min_length: int = 50) -> str:
+        """Trả về summary dạng text thuần, không HTML, không dấu *, dễ copy."""
+        summary = self.summarize(text, context, max_length, min_length)
+        import re
+        # Loại bỏ thẻ HTML, giữ lại nội dung
+        summary = re.sub(r'<[^>]+>', '', summary)
+        summary = summary.replace('*', '')
+        return summary.strip() 

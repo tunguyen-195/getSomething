@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Body
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from src.database.config.database import get_db
@@ -7,6 +7,11 @@ from src.database.models.schemas import SummaryCreate, SummaryOut
 from src.services.summary_service import (
     create_summary, get_summary, list_summaries, update_summary, delete_summary
 )
+from src.services.task_service import update_task, get_task
+import requests
+import os
+from src.speech_to_text.transcriber import Transcriber, OllamaProcessor
+import logging
 
 router = APIRouter()
 
@@ -37,4 +42,43 @@ def delete_one_summary(summary_id: int, db: Session = Depends(get_db)):
     ok = delete_summary(db, summary_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Summary not found")
-    return {"detail": "Summary deleted"} 
+    return {"detail": "Summary deleted"}
+
+@router.post("/analyze")
+def analyze_summary(summary: str = Body(..., embed=True), task_id: str = Body(None), db: Session = Depends(get_db)):
+    """
+    Phân tích summary bằng rule/memory bank nội bộ (OllamaProcessor.analyze_context).
+    Nếu truyền task_id, sẽ tự động lưu context_analysis vào trường result của task tương ứng.
+    """
+    import logging
+    logger = logging.getLogger("summary_analyze")
+    try:
+        processor = OllamaProcessor()
+        context_analysis = processor.analyze_context(summary)
+        logger.info(f"OllamaProcessor.analyze_context result: {context_analysis}")
+        if context_analysis:
+            if task_id:
+                task = get_task(task_id)
+                if task:
+                    result_data = task.get("result") or {}
+                    result_data["context_analysis"] = context_analysis
+                    update_task(task_id, {"result": result_data})
+            return {"context_analysis": context_analysis}
+    except Exception as e:
+        logger.error(f"OllamaProcessor.analyze_context failed: {e}")
+    return {"error": "Phân tích thất bại với rule/memory bank nội bộ"}
+
+@router.post("/visualize")
+def visualize_summary(summary: str = Body(..., embed=True)):
+    """
+    Trực quan hóa hội thoại: trả về nodes, edges, timeline, entity_types, main_events cho frontend.
+    """
+    logger = logging.getLogger("summary_visualize")
+    try:
+        processor = OllamaProcessor()
+        result = processor.visualize_context(summary)
+        logger.info(f"OllamaProcessor.visualize_context result: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"visualize_context failed: {e}")
+        return {"error": str(e)} 
