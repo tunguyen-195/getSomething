@@ -23,17 +23,19 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "speech_to_info"
 
     # Redis
+    # Khi chạy local/offline, đảm bảo Redis chạy trên localhost:6379
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
     REDIS_PASSWORD: str = ""
 
     # Celery
+    # Khi chạy local/offline, broker/backend phải là redis://localhost:6379/0
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
 
     # Model
-    WHISPER_MODEL: str = "large-v3"
+    WHISPER_MODEL: str = "large-v2"
     VOSK_MODEL_PATH: str = "models/vosk-model-vn-0.4"
     T5_MODEL_PATH: str = "models/t5-base"
 
@@ -63,7 +65,7 @@ class Settings(BaseSettings):
 
     # Whisper optimization
     WHISPER_DEVICE: str = "cuda"  # "cuda" hoặc "cpu"
-    WHISPER_COMPUTE_TYPE: str = "float16"  # "float16", "int8_float16", "int8"
+    WHISPER_COMPUTE_TYPE: str = "float16"  # "float16" cho GPU, "int8" cho CPU
     WHISPER_BATCH_SIZE: int = 8
     WHISPER_BEAM_SIZE: int = 5
 

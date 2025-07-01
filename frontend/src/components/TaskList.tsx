@@ -44,6 +44,9 @@ import dayjs from 'dayjs';
 import CaseListItem from './CaseListItem';
 import TaskListItem from './TaskListItem';
 import { AlertColor } from '@mui/material/Alert';
+import SearchIcon from '@mui/icons-material/Search';
+import CloseIcon from '@mui/icons-material/Close';
+import AddIcon from '@mui/icons-material/Add';
 
 interface Task {
   id: string;
@@ -89,6 +92,13 @@ const TaskList = () => {
   const [expandedSummaryId, setExpandedSummaryId] = useState<string | null>(null);
   const [savedSummaries, setSavedSummaries] = useState<any[]>([]);
   const [processSuccess, setProcessSuccess] = useState(false);
+  const [searchValue, setSearchValue] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [openCreateCase, setOpenCreateCase] = useState(false);
+  const [newCaseName, setNewCaseName] = useState('');
+  const [newCaseDesc, setNewCaseDesc] = useState('');
+  const [creatingCase, setCreatingCase] = useState(false);
+  const [searchActive, setSearchActive] = useState(false);
 
   const fetchCases = async () => {
     try {
@@ -151,6 +161,18 @@ const TaskList = () => {
     }
     // eslint-disable-next-line
   }, [processSuccess]);
+
+  // Polling tự động cập nhật trạng thái task
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Lấy danh sách các task đang xử lý
+      const processingTasks = tasks.filter(t => t.status === 'pending' || t.status === 'processing');
+      if (processingTasks.length > 0) {
+        fetchTasks(date);
+      }
+    }, 3000); // 3 giây
+    return () => clearInterval(interval);
+  }, [tasks, date]);
 
   const casesWithTasks = cases.map(caseItem => ({
     ...caseItem,
@@ -313,30 +335,149 @@ const TaskList = () => {
     setSnackbar({ open: true, message: 'Đã lưu bản tóm tắt!', severity: 'success' });
   };
 
+  const handleCreateCase = async () => {
+    if (!newCaseName) return;
+    setCreatingCase(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/cases/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newCaseName, description: newCaseDesc })
+      });
+      const data = await res.json();
+      setOpenCreateCase(false);
+      setNewCaseName('');
+      setNewCaseDesc('');
+      fetchCases();
+      setSnackbar({ open: true, message: 'Tạo vụ việc mới thành công!', severity: 'success' });
+    } catch (e) {
+      setSnackbar({ open: true, message: 'Tạo vụ việc thất bại.', severity: 'error' });
+    }
+    setCreatingCase(false);
+  };
+
   return (
-    <Card sx={{ mb: 4, boxShadow: 6, borderRadius: 4, background: 'linear-gradient(135deg, #f8fafc 0%, #e0e7ef 100%)' }}>
+    <Card sx={{ mb: 4, boxShadow: '0 2px 8px #b388ff11', borderRadius: 2, background: 'linear-gradient(135deg, #fffde7 0%, #e3f2fd 60%, #b9f6ca 100%)', border: '1px solid #b388ff', transition: 'box-shadow 0.3s, background 0.3s', ':hover': { boxShadow: '0 8px 32px #7c4dff22', background: 'linear-gradient(90deg, #7c4dff 0%, #43e97b 100%)' } }}>
       <CardContent>
-        <Box display="flex" alignItems="center" mb={3} gap={2}>
-          <Typography variant="h5" fontWeight={700} color="primary.dark">Quản lý Vụ việc & Lịch sử xử lý</Typography>
-          <TextField
-            type="date"
-            size="small"
-            label="Lọc theo ngày"
-            value={date}
-            onChange={e => setDate(e.target.value)}
-            sx={{ width: 180 }}
-          />
+        {/* Sidebar Sticky Header */}
+        <Box sx={{ position: 'sticky', top: 0, zIndex: 10, background: 'linear-gradient(135deg, #fffde7 0%, #e3f2fd 60%, #b9f6ca 100%)', pb: 2, mb: 2 }}>
+          <Box display="flex" alignItems="center" gap={2} mb={2}>
+            <Button
+              variant="contained"
+              color="primary"
+              sx={{
+                minWidth: 0,
+                px: 1.5,
+                py: 1,
+                borderRadius: 1.5,
+                fontWeight: 700,
+                fontSize: 15,
+                boxShadow: '0 2px 8px #b388ff22',
+                textTransform: 'none',
+                transition: 'all 0.2s',
+                height: 40,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                ':hover': { background: 'linear-gradient(90deg,#43e97b 0%,#38f9d7 100%)', color: '#222' },
+              }}
+              onClick={() => setOpenCreateCase(true)}
+              startIcon={<AddIcon sx={{ fontSize: 22 }} />}
+            >
+              <span style={{ whiteSpace: 'nowrap' }}>Tạo Case</span>
+            </Button>
+            {/* Search Button/Input */}
+            <Box
+              sx={{
+                position: 'relative',
+                minWidth: searchActive ? 180 : 40,
+                maxWidth: searchActive ? 320 : 40,
+                height: 40,
+                border: '1.5px solid #b388ff',
+                borderRadius: 1.5,
+                background: '#fff',
+                boxShadow: searchActive ? '0 2px 8px #b388ff22' : 'none',
+                display: 'flex',
+                alignItems: 'center',
+                px: searchActive ? 1.5 : 0,
+                transition: 'all 0.3s cubic-bezier(.4,2,.6,1)',
+                overflow: 'hidden',
+                cursor: 'pointer',
+              }}
+              onClick={() => { if (!searchActive) { setSearchActive(true); setSearchFocused(true); } }}
+              onBlur={() => { setSearchFocused(false); setSearchActive(false); }}
+              tabIndex={0}
+            >
+              {!searchActive && (
+                <IconButton size="small" sx={{ ml: 0.5 }}>
+                  <SearchIcon />
+                </IconButton>
+              )}
+              {searchActive && (
+                <>
+                  <SearchIcon sx={{ mr: 1, color: '#b388ff' }} />
+                  <TextField
+                    value={searchValue}
+                    onChange={e => setSearchValue(e.target.value)}
+                    onFocus={() => setSearchFocused(true)}
+                    onBlur={() => setSearchFocused(false)}
+                    placeholder="Tìm kiếm vụ việc..."
+                    variant="standard"
+                    InputProps={{ disableUnderline: true, style: { fontSize: 16, fontWeight: 500, background: 'none' } }}
+                    sx={{ flex: 1, background: 'none', minWidth: 80 }}
+                    autoFocus
+                  />
+                  {searchValue && (
+                    <IconButton size="small" sx={{ ml: 0.5 }} onClick={e => { e.stopPropagation(); setSearchValue(''); }}>
+                      <CloseIcon />
+                    </IconButton>
+                  )}
+                </>
+              )}
+            </Box>
+          </Box>
         </Box>
+
+        {/* Dialog tạo case mới */}
+        <Dialog open={openCreateCase} onClose={() => setOpenCreateCase(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Tạo vụ việc mới</DialogTitle>
+          <DialogContent>
+            <TextField
+              label="Tên vụ việc"
+              value={newCaseName}
+              onChange={e => setNewCaseName(e.target.value)}
+              fullWidth
+              sx={{ mb: 2 }}
+              autoFocus
+              variant="outlined"
+              disabled={creatingCase}
+            />
+            <TextField
+              label="Mô tả vụ việc (tuỳ chọn)"
+              value={newCaseDesc}
+              onChange={e => setNewCaseDesc(e.target.value)}
+              fullWidth
+              multiline
+              minRows={3}
+              variant="outlined"
+              disabled={creatingCase}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setOpenCreateCase(false)} color="secondary" disabled={creatingCase}>Huỷ</Button>
+            <Button onClick={handleCreateCase} variant="contained" disabled={!newCaseName || creatingCase}>Tạo</Button>
+          </DialogActions>
+        </Dialog>
 
         {loading ? (
           <Box display="flex" justifyContent="center" alignItems="center" height={200}>
             <CircularProgress />
             <Typography variant="h6" color="text.secondary" sx={{ ml: 2 }}>Đang tải dữ liệu...</Typography>
           </Box>
-        ) : casesWithTasks.length === 0 ? (
-          <Typography variant="body2" color="text.secondary">Không có vụ việc nào hoặc không có task nào trong ngày này.</Typography>
+        ) : casesWithTasks.filter(c => c.title.toLowerCase().includes(searchValue.toLowerCase())).length === 0 ? (
+          <Typography variant="body2" color="text.secondary">Không có vụ việc nào phù hợp.</Typography>
         ) : (
-          casesWithTasks.map(caseItem => (
+          casesWithTasks.filter(c => c.title.toLowerCase().includes(searchValue.toLowerCase())).map(caseItem => (
             <CaseListItem
               key={caseItem.id}
               caseItem={caseItem}

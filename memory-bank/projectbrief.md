@@ -10,6 +10,7 @@ Hệ thống "Speech to Information" là một giải pháp chuyển đổi âm 
 - Giao diện web hiện đại, realtime, dễ dùng
 - Hệ thống logging, monitoring, quản lý task
 - Vận hành độc lập, không phụ thuộc dịch vụ ngoài
+- Cải thiện UI/UX: điều chỉnh màu sắc giao diện, sidebar list case dùng tone trắng đơn sắc, tăng độ tương phản, dễ đọc hơn.
 
 ## Phạm vi
 - Xử lý audio: wav, mp3, m4a, ...

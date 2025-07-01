@@ -25,12 +25,21 @@ def read_audio():
 
 @router.post("/upload")
 async def upload_audio(
+    # Log bắt đầu upload
+    # logger.info(f"[UPLOAD] Bắt đầu upload file: {file.filename if file else 'None'}")
     file: UploadFile = File(...),
     case_id: str = Form(None),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """Upload file, chỉ lưu file và tạo AudioFile/Task, không xử lý ngay"""
-    return save_audio_and_create_task(file, db, case_id=int(case_id) if case_id else None)
+    try:
+        logger.info(f"[UPLOAD] Bắt đầu upload file: {file.filename if file else 'None'} | case_id={case_id}")
+        result = save_audio_and_create_task(file, db, case_id=int(case_id) if case_id else None)
+        logger.info(f"[UPLOAD] Hoàn thành upload file: {file.filename if file else 'None'} | result={result}")
+        return result
+    except Exception as e:
+        logger.error(f"[UPLOAD] Lỗi upload file: {e}", exc_info=True)
+        raise
 
 @router.get("/tasks")
 async def get_tasks(date: str = Query(None), case_id: str = Query(None)) -> List[Dict[str, Any]]:
@@ -55,11 +64,14 @@ async def get_tasks(date: str = Query(None), case_id: str = Query(None)) -> List
 
 @router.get("/tasks/{task_id}")
 async def get_task_by_id(task_id: str) -> Dict[str, Any]:
-    """Get task by ID"""
+    """Get task by ID (dùng cho polling trạng thái async)."""
     try:
         task = get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
+        # Nếu task đang xử lý, trả về status processing
+        if task.get("status") not in ["completed", "failed"]:
+            return {"task_id": task_id, "status": "processing"}
         return task
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -210,14 +222,19 @@ def download_audio(audio_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Audio file not found")
     return FileResponse(audio.file_path, filename=audio.filename, media_type="audio/mpeg")
 
+from src.worker.tasks import process_task_async
+
 @router.post("/process-task/{task_id}")
 async def process_uploaded_task(
     task_id: str,
     model_name: str = Body("gemma2:9b", embed=True),
     db: Session = Depends(get_db)
 ):
-    """Xử lý file đã upload: transcribe, summarize, update task/audio_file"""
-    return process_task(task_id, model_name, db) 
+    """Xử lý file đã upload: transcribe, summarize, update task/audio_file (bất đồng bộ). Gửi task cho Celery, trả về ngay, frontend polling trạng thái."""
+    logger.info(f"[PROCESS_TASK] [ASYNC] Nhận request xử lý task_id={task_id} với model={model_name}")
+    celery_result = process_task_async.delay(task_id, model_name)
+    logger.info(f"[PROCESS_TASK] [ASYNC] Đã gửi task cho Celery | celery_id={celery_result.id}")
+    return {"task_id": task_id, "celery_id": celery_result.id, "status": "processing"}
 
 @router.post("/process-tasks")
 async def process_multiple_tasks(
@@ -225,17 +242,30 @@ async def process_multiple_tasks(
     model_name: str = Body("gemma2:9b", embed=True),
     db: Session = Depends(get_db)
 ):
-    """Xử lý nhiều task (nhiều file/audio) song song, trả về trạng thái từng task."""
+    """Xử lý nhiều task (nhiều file/audio) theo batch, tận dụng batch_size và pipeline tối ưu."""
+    import time
+    from src.speech_to_text.transcriber import Transcriber
+    transcriber = Transcriber()
+    batch_size = transcriber.batch_size
     results = []
-    with ThreadPoolExecutor(max_workers=min(8, len(task_ids))) as executor:
-        future_to_task = {executor.submit(process_task, tid, model_name, db): tid for tid in task_ids}
-        for future in as_completed(future_to_task):
-            tid = future_to_task[future]
-            try:
-                result = future.result()
-                results.append({"task_id": tid, "status": "success", "result": result})
-            except Exception as e:
-                results.append({"task_id": tid, "status": "error", "message": str(e)})
+    total_start = time.time()
+    # Chia task_ids thành các batch nhỏ
+    for i in range(0, len(task_ids), batch_size):
+        batch = task_ids[i:i+batch_size]
+        batch_start = time.time()
+        with ThreadPoolExecutor(max_workers=min(batch_size, 8)) as executor:
+            future_to_task = {executor.submit(process_task, tid, model_name, db): tid for tid in batch}
+            for future in as_completed(future_to_task):
+                tid = future_to_task[future]
+                try:
+                    result = future.result()
+                    results.append({"task_id": tid, "status": "success", "result": result})
+                except Exception as e:
+                    results.append({"task_id": tid, "status": "error", "message": str(e)})
+        batch_end = time.time()
+        logger.info(f"[BATCH] Xử lý batch {i//batch_size+1}: {len(batch)} task, thời gian: {batch_end-batch_start:.2f}s")
+    total_end = time.time()
+    logger.info(f"[BATCH] Tổng thời gian xử lý {len(task_ids)} task: {total_end-total_start:.2f}s")
     return {"results": results}
 
 @router.post("/batch")

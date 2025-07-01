@@ -27,7 +27,7 @@ class Summarizer:
             model_path = Path("models") / "t5-base"
         else:
             model_path = None
-        # Ưu tiên load local nếu có, nếu không thì tải về
+        # Ưu tiên load local, không được phép tải về online
         if model_path and model_path.exists():
             logger.info(f"Loading model from {model_path}")
             if "bart" in model_name:
@@ -38,20 +38,7 @@ class Summarizer:
                 self.model = T5ForConditionalGeneration.from_pretrained(str(model_path))
                 self.tokenizer = T5Tokenizer.from_pretrained(str(model_path))
         else:
-            logger.info(f"Downloading model: {model_name}")
-            if "bart" in model_name:
-                from transformers import BartForConditionalGeneration, BartTokenizer
-                self.model = BartForConditionalGeneration.from_pretrained(model_name)
-                self.tokenizer = BartTokenizer.from_pretrained(model_name)
-            else:
-                self.model = T5ForConditionalGeneration.from_pretrained(model_name)
-                self.tokenizer = T5Tokenizer.from_pretrained(model_name)
-            # Save model locally nếu là model phổ biến
-            if model_path:
-                model_path.mkdir(parents=True, exist_ok=True)
-                self.model.save_pretrained(str(model_path))
-                self.tokenizer.save_pretrained(str(model_path))
-                logger.info(f"Saved model to {model_path}")
+            raise RuntimeError(f"Model path {model_path} does not exist. Please download the model manually for offline use.")
         self.model.to(self.device)
         
     def normalize_text(self, text: str) -> str:
@@ -147,6 +134,7 @@ class Summarizer:
         return text
     
     def summarize(self, text: str, context: dict = None, max_length: int = 150, min_length: int = 50) -> str:
+        logger.info(f"[SUMMARIZER] Bắt đầu summarize | text_len={len(text) if text else 0} | context_keys={list(context.keys()) if context else []}")
         """
         Summarize text using T5 model with post-processing and context
         Args:
@@ -160,6 +148,7 @@ class Summarizer:
         try:
             # Build context-rich prompt if context is provided
             if context:
+                logger.info(f"[SUMMARIZER] Context summary: {context.get('summary', '')}")
                 prompt = f"Tóm tắt nội dung hội thoại dưới đây, tập trung vào các thông tin quan trọng, các thực thể, mối quan hệ, mức độ nhạy cảm và ngữ cảnh.\n"
                 if 'summary' in context:
                     prompt += f"\nTóm tắt ngữ cảnh: {context['summary']}"
@@ -193,6 +182,7 @@ class Summarizer:
             
             # Decode summary
             summary = self.tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+            logger.info(f"[SUMMARIZER] Đã sinh summary | summary_len={len(summary)}")
             
             # Remove <extra_id_*> tokens if present
             summary = re.sub(r'<extra_id_\d+>', '', summary)
@@ -212,11 +202,12 @@ class Summarizer:
             # Đảm bảo không có dấu * trong summary
             summary = summary.replace('*', '')
             summary = f"<b>Nội dung chính:</b> {summary}{slang_note}"
+            logger.info(f"[SUMMARIZER] Kết quả summary | summary_len={len(summary)}")
             
             return summary
             
         except Exception as e:
-            logger.error(f"Error generating summary: {str(e)}")
+            logger.error(f"Error generating summary: {str(e)}", exc_info=True)
             return text  # Return original text if summarization fails
     
     def summarize_segments(self,

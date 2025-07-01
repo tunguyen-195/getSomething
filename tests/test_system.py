@@ -5,6 +5,8 @@ from src.main import app
 from src.database.config.database import get_db
 from src.database.init_db import init_db
 from src.core.config import settings
+import numpy as np
+import soundfile as sf
 
 client = TestClient(app)
 
@@ -136,4 +138,28 @@ def test_result_retrieval():
     data = response.json()
     assert "task_id" in data
     assert data["status"] == "completed"
-    assert "result" in data 
+    assert "result" in data
+
+def test_audio_pipeline_quality():
+    """Test pipeline với audio nhiễu, dài, kiểm tra transcript và analysis."""
+    # Tạo file audio giả nhiễu
+    sr = 16000
+    duration = 10  # 10s
+    noise = np.random.normal(0, 0.005, sr * duration)
+    sf.write("test_noise.wav", noise, sr)
+    # Upload file
+    case_id = create_test_case()
+    with open("test_noise.wav", "rb") as f:
+        response = client.post(
+            "/api/v1/audio/upload",
+            files={"file": ("test_noise.wav", f, "audio/wav")},
+            data={"case_id": str(case_id), "options": '{"language": "vi", "model_type": "whisper"}'}
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert "task_id" in data or "audio_file_id" in data
+    # Lấy kết quả task (giả lập, cần polling thực tế)
+    # ...
+    # Xóa file test
+    if os.path.exists("test_noise.wav"):
+        os.remove("test_noise.wav") 

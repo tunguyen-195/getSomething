@@ -118,12 +118,12 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
       elevation={isExpanded ? 8 : 2}
       sx={{
         mb: 2,
-        borderRadius: 3,
-        transition: 'box-shadow 0.3s',
-        ':hover': { boxShadow: 6 },
-        background: isExpanded
-          ? '#e3f0ff' // Nhẹ hơn màu của TaskList
-          : '#f8fafc',
+        borderRadius: 1.5,
+        boxShadow: '0 2px 8px #b388ff11',
+        background: isExpanded ? 'linear-gradient(135deg, #e3f2fd 0%, #fffde7 60%, #b9f6ca 100%)' : '#fff',
+        border: '1px solid #e0e7ef',
+        transition: 'box-shadow 0.3s, background 0.3s',
+        ':hover': { boxShadow: 4, background: 'linear-gradient(90deg, #7c4dff 0%, #43e97b 100%)' },
       }}
     >
       <ListItem alignItems="flex-start" divider sx={{ p: 2 }}>
