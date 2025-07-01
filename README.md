@@ -9,6 +9,7 @@ Hệ thống xử lý âm thanh thành văn bản và tóm tắt nội dung, ch�
 - Tóm tắt nội dung tự động
 - Chạy hoàn toàn offline, không cần kết nối internet
 - Xử lý nhiều file âm thanh cùng lúc
+- **Phân biệt người nói (Speaker Diarization) với hai giải pháp tùy chọn: NeMo hoặc WhisperX, cho phép bật/tắt và chọn giải pháp ngay trên giao diện**
 - Giao diện web hiện đại với React
 - Hỗ trợ theo dõi tiến trình real-time
 - Quản lý và lưu trữ kết quả
@@ -19,12 +20,14 @@ Hệ thống xử lý âm thanh thành văn bản và tóm tắt nội dung, ch�
 [Frontend Layer]
 ├── React + TypeScript
 ├── Material-UI
-└── WebSocket Client
+├── WebSocket Client
+├── Speaker Diarization Option (UI)
     ↓
 [API Layer]
 ├── FastAPI
 ├── WebSocket Server
-└── REST Endpoints
+├── REST Endpoints
+├── Nhận options: bật/tắt diarization, chọn giải pháp (NeMo/WhisperX)
     ↓
 [Task Queue Layer]
 ├── Celery
@@ -34,7 +37,8 @@ Hệ thống xử lý âm thanh thành văn bản và tóm tắt nội dung, ch�
 [Processing Layer]
 ├── Audio Processing Workers
 ├── Speech-to-Text Workers
-└── Summarization Workers
+├── Speaker Diarization Pipeline (modular: NeMo/WhisperX/None)
+├── Summarization Workers
     ↓
 [Storage Layer]
 ├── PostgreSQL
@@ -143,17 +147,23 @@ Truy cập http://localhost:3000 để sử dụng hệ thống.
    - Kéo thả hoặc chọn nhiều file âm thanh
    - Hỗ trợ các định dạng: wav, mp3, m4a, ...
 
-2. **Xử lý**:
+2. **Tùy chọn Speaker Diarization (Phân biệt người nói)**:
+   - Trên giao diện upload, có thể bật/tắt tính năng phân biệt người nói
+   - Nếu bật, chọn giải pháp: **NeMo** (độ chính xác cao, cần GPU mạnh) hoặc **WhisperX** (dễ tích hợp, hoạt động tốt offline)
+
+3. **Xử lý**:
    - Chọn ngôn ngữ cho từng file
-   - Thiết lập các tùy chọn xử lý
+   - Thiết lập các tùy chọn xử lý khác
    - Bắt đầu xử lý
 
-3. **Theo dõi**:
+4. **Theo dõi**:
    - Xem tiến trình real-time
    - Nhận thông báo khi hoàn thành
    - Xem log chi tiết
 
-4. **Kết quả**:
+5. **Kết quả**:
+   - Nếu bật diarization: transcript sẽ được phân đoạn theo từng người nói (Speaker 1, 2...)
+   - Nếu không: transcript thông thường
    - Xem và tải kết quả
    - Xuất ra nhiều định dạng
    - Tìm kiếm và lọc kết quả
@@ -201,7 +211,7 @@ REDIS_DB=0
 REDIS_PASSWORD=
 CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/0
-WHISPER_MODEL=large-v3
+WHISPER_MODEL=large-v2
 VOSK_MODEL_PATH=models/vosk-model-vn-0.4
 T5_MODEL_PATH=models/t5-base
 UPLOAD_DIR=uploads
@@ -242,6 +252,32 @@ Truy cập [http://localhost:8000/docs](http://localhost:8000/docs) để thử 
 - Kết quả hiện tại là mock, muốn xử lý thực tế hãy cập nhật các service trong `src/services/`.
 - Nếu dùng Docker, xem thêm file `docker-compose.yml`. 
 
+## Speaker Diarization (Phân biệt người nói)
+
+### Tổng quan
+- Hệ thống hỗ trợ hai giải pháp phân biệt người nói: **NeMo** (NVIDIA) và **WhisperX** (kết hợp Whisper + pyannote).
+- Cho phép bật/tắt và chọn giải pháp ngay trên giao diện người dùng.
+- Pipeline backend được xây dựng dạng module, dễ mở rộng, có thể thêm giải pháp mới trong tương lai.
+
+### So sánh nhanh
+| Giải pháp   | Độ chính xác | Yêu cầu phần cứng | Dễ tích hợp | Offline |
+|-------------|--------------|-------------------|-------------|---------|
+| NeMo        | Rất cao      | GPU mạnh (NVIDIA) | Trung bình  | Có      |
+| WhisperX    | Tốt          | CPU/GPU           | Rất dễ      | Có      |
+
+### Cài đặt & cấu hình
+- Đảm bảo đã cài đặt các dependency cho NeMo, WhisperX, pyannote.audio (xem hướng dẫn trong docs hoặc README chi tiết).
+- Tải các model về local để đảm bảo chạy offline.
+- Cấu hình pipeline trong backend: chọn default, cho phép override qua API/UI.
+
+### Sử dụng trên UI
+- Khi upload audio, chọn "Phân biệt người nói" và chọn giải pháp mong muốn.
+- Kết quả transcript sẽ được phân đoạn theo từng người nói (Speaker 1, 2...).
+
+### Tích hợp backend
+- Pipeline xử lý audio sẽ tự động gọi module tương ứng (NeMo/WhisperX/None) dựa trên lựa chọn của người dùng.
+- Kết quả trả về frontend sẽ bao gồm thông tin speaker cho từng đoạn transcript nếu bật diarization.
+
 ## Tối ưu hóa GPU cho Whisper (faster-whisper)
 
 - **device**: Ưu tiên "cuda" nếu có GPU, fallback "cpu" nếu không.
@@ -271,4 +307,8 @@ Truy cập [http://localhost:8000/docs](http://localhost:8000/docs) để thử 
 - Benchmark tự động WER/CER/noise, log chi tiết, alert khi hiệu năng thấp
 - Monitoring Prometheus/Grafana, alert khi RAM/VRAM cao
 
+celery -A src.worker.worker worker --loglevel=info
+celery -A src.worker.worker worker --loglevel=info --pool=solo
 uvicorn src.main:app --reload                   
+celery -A src.worker.worker worker --loglevel=info --pool=threads
+npm run dev

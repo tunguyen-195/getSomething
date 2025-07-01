@@ -14,3 +14,4 @@
 - Nhận kết quả transcript và tóm tắt nhanh chóng
 - Giao diện web hiện đại, dễ sử dụng
 - Có thể tích hợp vào quy trình doanh nghiệp
+- **Cần cải thiện màu sắc giao diện, sidebar list case nên dùng tone trắng đơn sắc, tăng độ tương phản, dễ đọc hơn.**

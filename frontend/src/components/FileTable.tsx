@@ -11,6 +11,9 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import AudioPlayer from 'react-h5-audio-player';
 import 'react-h5-audio-player/lib/styles.css';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ErrorIcon from '@mui/icons-material/Error';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
 
 interface FileInfo {
   id: string;
@@ -67,6 +70,23 @@ const FileTable: React.FC<FileTableProps> = ({ caseId, onSelectFile, selectedFil
     // eslint-disable-next-line
   }, [caseId]);
 
+  // Polling trạng thái task cho từng file có task_id
+  useEffect(() => {
+    const interval = setInterval(() => {
+      files.forEach(file => {
+        if (file.task_id && (!file.status || file.status === 'pending' || file.status === 'processing')) {
+          fetch(`${API_BASE_URL}/api/v1/audio/tasks/${file.task_id}`)
+            .then(res => res.json())
+            .then(data => {
+              setFiles(prevFiles => prevFiles.map(f => f.id === file.id ? { ...f, status: data.status } : f));
+            })
+            .catch(() => {});
+        }
+      });
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [files]);
+
   const handleDownload = (url: string) => {
     window.open(url, '_blank');
   };
@@ -75,35 +95,31 @@ const FileTable: React.FC<FileTableProps> = ({ caseId, onSelectFile, selectedFil
     setAudio(`${API_BASE_URL}/api/v1/audio/public/${encodeURIComponent(filename)}`);
   };
 
-  const handleProcess = (fileId: string) => {
-    setProcessingIds(ids => [...ids, fileId]);
-    setProcessError(null);
-    setProcessSuccess(null);
-    const fileObj = files.find(f => f.id === fileId);
-    if (!fileObj || !('task_id' in fileObj) || !fileObj.task_id) {
-      setProcessError('Không tìm thấy task_id để xử lý file');
-      setProcessingIds(ids => ids.filter(id => id !== fileId));
+  const handleProcess = async (taskId: string) => {
+    if (!taskId) {
+      setError('Không tìm thấy task_id cho file này!');
       return;
     }
-    fetch(`${API_BASE_URL}/api/v1/audio/process-task/${fileObj.task_id}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model_name: 'gemma2:9b' })
-    })
-      .then(res => {
-        if (!res.ok) throw new Error('Xử lý thất bại');
-        setProcessSuccess('Xử lý thành công!');
-        // Polling reload files trong 10 giây để đảm bảo dữ liệu mới nhất
-        let count = 0;
-        const poll = () => {
-          reloadFiles();
-          count++;
-          if (count < 10) setTimeout(poll, 1000);
-        };
-        poll();
-      })
-      .catch(() => setProcessError('Xử lý thất bại'))
-      .finally(() => setProcessingIds(ids => ids.filter(id => id !== fileId)));
+    setFiles(prev => prev.map(f => (f.task_id === taskId || f.id === taskId ? { ...f, status: 'processing' } : f)));
+    setProcessingIds(prev => [...prev, taskId]);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/audio/process-task/${taskId}`, { method: 'POST' });
+      if (!res.ok) throw new Error('Xử lý thất bại');
+      const updated = await res.json();
+      setFiles(prev => prev.map(f => (f.task_id === taskId || f.id === taskId ? { ...f, status: updated.status } : f)));
+      setProcessSuccess('Xử lý thành công!');
+      let count = 0;
+      const poll = () => {
+        reloadFiles();
+        count++;
+        if (count < 10) setTimeout(poll, 1000);
+      };
+      poll();
+    } catch (e) {
+      setError('Xử lý thất bại');
+    } finally {
+      setProcessingIds(prev => prev.filter(id => id !== taskId));
+    }
   };
 
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -179,45 +195,164 @@ const FileTable: React.FC<FileTableProps> = ({ caseId, onSelectFile, selectedFil
           <Typography variant="body2" mt={1}>Nhấn <b>Upload</b> để tải file audio lên.</Typography>
         </Box>
       ) : (
-        <TableContainer>
+        <TableContainer sx={(theme) => ({
+          borderRadius: 1.5,
+          boxShadow: theme.palette.mode === 'dark' ? '0 4px 24px #7c4dff18' : '0 2px 8px #b388ff11',
+          background: theme.palette.mode === 'dark'
+            ? 'linear-gradient(135deg, #23272f 0%, #2e2e3a 100%)'
+            : 'linear-gradient(135deg, #fffde7 0%, #e3f2fd 60%, #b9f6ca 100%)',
+          border: theme.palette.mode === 'dark' ? '1px solid #7c4dff' : '1px solid #e0e7ef',
+          transition: 'box-shadow 0.3s',
+          width: '100%',
+          maxWidth: 900,
+          margin: '0 auto',
+          p: 2,
+          '&:hover': { boxShadow: theme.palette.mode === 'dark' ? '0 8px 32px #7c4dff33' : '0 4px 16px #7c4dff33' },
+        })}>
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>File Name</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                <TableCell sx={(theme) => ({
+                  color: theme.palette.mode === 'dark' ? theme.palette.text.primary : undefined,
+                  background: 'transparent',
+                  borderBottom: theme.palette.mode === 'dark' ? '1px solid #3a2e4f' : undefined,
+                })}>Tên file</TableCell>
+                <TableCell sx={(theme) => ({
+                  minWidth: 120,
+                  textAlign: 'center',
+                  verticalAlign: 'middle',
+                  color: theme.palette.mode === 'dark' ? theme.palette.text.primary : undefined,
+                  background: 'transparent',
+                  borderBottom: theme.palette.mode === 'dark' ? '1px solid #3a2e4f' : undefined,
+                })}>Trạng thái</TableCell>
+                <TableCell sx={(theme) => ({
+                  minWidth: 220,
+                  textAlign: 'center',
+                  verticalAlign: 'middle',
+                  color: theme.palette.mode === 'dark' ? theme.palette.text.primary : undefined,
+                  background: 'transparent',
+                  borderBottom: theme.palette.mode === 'dark' ? '1px solid #3a2e4f' : undefined,
+                })}>Hành động</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {files.map(file => (
+              {files.map((file, idx) => (
                 <TableRow
-                  key={file.id}
+                  key={file.filename}
                   hover
-                  selected={selectedFileId === file.id}
-                  onClick={() => onSelectFile && onSelectFile(file.id)}
-                  sx={{ cursor: onSelectFile ? 'pointer' : 'default' }}
+                  sx={(theme) => ({
+                    background: theme.palette.mode === 'dark' ? 'transparent' : undefined,
+                    '&:hover': {
+                      background: theme.palette.mode === 'dark' ? 'rgba(124,77,255,0.08)' : undefined,
+                    },
+                  })}
                 >
                   <TableCell>{file.filename}</TableCell>
-                  <TableCell>{file.status}</TableCell>
-                  <TableCell align="right">
-                    <Tooltip title="Tải về"><IconButton onClick={e => { e.stopPropagation(); handleDownload(file.url); }}><CloudDownloadIcon /></IconButton></Tooltip>
-                    <Tooltip title="Nghe">
-                      <IconButton onClick={e => { e.stopPropagation(); handlePlay(file.filename); }}><PlayArrowIcon /></IconButton>
-                    </Tooltip>
-                    <Tooltip title="Xử lý">
-                      <span>
-                        <IconButton onClick={e => { e.stopPropagation(); handleProcess(file.id); }} disabled={processingIds.includes(file.id) || !file.task_id}>
-                          {processingIds.includes(file.id) ? <CircularProgress size={20} /> : <AutoFixHighIcon />}
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                    <Tooltip title="Visualize">
-                      <span>
-                        <IconButton onClick={e => { e.stopPropagation(); handleOpenVisualize(file); }} disabled={!file.task_id}>
-                          <InsightsIcon color="primary" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
+                  <TableCell sx={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                    {processingIds.includes(file.id) ? (
+                      <Tooltip title="Đang xử lý"><CircularProgress size={20} color="primary" /></Tooltip>
+                    ) : file.status === 'completed' ? (
+                      <Tooltip title="Hoàn thành"><CheckCircleIcon color="success" /></Tooltip>
+                    ) : file.status === 'processing' ? (
+                      <Tooltip title="Đang xử lý"><CircularProgress size={20} color="primary" /></Tooltip>
+                    ) : file.status === 'failed' ? (
+                      <Tooltip title="Lỗi"><ErrorIcon color="error" /></Tooltip>
+                    ) : (
+                      <Tooltip title="Chờ xử lý"><AccessTimeIcon color="disabled" /></Tooltip>
+                    )}
+                  </TableCell>
+                  <TableCell sx={{ minWidth: 220, textAlign: 'center', verticalAlign: 'middle', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                    <IconButton
+                      key="download"
+                      onClick={() => handleDownload(file.url)}
+                      sx={{
+                        borderRadius: '50%',
+                        width: 40,
+                        height: 40,
+                        background: 'rgba(255,255,255,0.35)',
+                        backdropFilter: 'blur(6px)',
+                        boxShadow: '0 2px 8px #7c4dff22',
+                        color: '#7c4dff',
+                        transition: 'background 0.25s, color 0.25s',
+                        '&:hover': {
+                          background: 'linear-gradient(90deg, #7c4dff 0%, #43e97b 100%)',
+                          color: '#fff',
+                          boxShadow: '0 4px 16px #7c4dff33',
+                        },
+                        mr: 1.2,
+                      }}
+                    >
+                      <CloudDownloadIcon fontSize="medium" />
+                    </IconButton>
+                    <IconButton
+                      key="play"
+                      onClick={() => handlePlay(file.filename)}
+                      sx={{
+                        borderRadius: '50%',
+                        width: 40,
+                        height: 40,
+                        background: 'rgba(255,255,255,0.35)',
+                        backdropFilter: 'blur(6px)',
+                        boxShadow: '0 2px 8px #43e97b22',
+                        color: '#43e97b',
+                        transition: 'background 0.25s, color 0.25s',
+                        '&:hover': {
+                          background: 'linear-gradient(90deg, #43e97b 0%, #7c4dff 100%)',
+                          color: '#fff',
+                          boxShadow: '0 4px 16px #43e97b33',
+                        },
+                        mr: 1.2,
+                      }}
+                    >
+                      <PlayArrowIcon fontSize="medium" />
+                    </IconButton>
+                    <IconButton
+                      key="visualize"
+                      onClick={() => handleOpenVisualize(file)}
+                      sx={{
+                        borderRadius: '50%',
+                        width: 40,
+                        height: 40,
+                        background: 'rgba(255,255,255,0.35)',
+                        backdropFilter: 'blur(6px)',
+                        boxShadow: '0 2px 8px #ffd60022',
+                        color: '#ffd600',
+                        transition: 'background 0.25s, color 0.25s',
+                        '&:hover': {
+                          background: 'linear-gradient(90deg, #ffd600 0%, #7c4dff 100%)',
+                          color: '#fff',
+                          boxShadow: '0 4px 16px #ffd60033',
+                        },
+                      }}
+                    >
+                      <InsightsIcon fontSize="medium" />
+                    </IconButton>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      size="small"
+                      startIcon={<AutoFixHighIcon />}
+                      sx={(theme) => ({
+                        boxShadow: '0 2px 8px #7c4dff22',
+                        borderRadius: 0.75,
+                        fontWeight: 700,
+                        textTransform: 'none',
+                        minWidth: 110,
+                        px: 2,
+                        py: 1,
+                        color: '#fff',
+                        background: theme.palette.primary.main,
+                        transition: 'background 0.2s',
+                        ml: 1.2,
+                        '&:hover': {
+                          background: theme.palette.primary.dark,
+                          color: '#fff',
+                        },
+                      })}
+                      onClick={() => handleProcess(file.task_id || file.id)}
+                    >
+                      Xử lý
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}

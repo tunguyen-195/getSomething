@@ -77,19 +77,26 @@ const CaseListItem: React.FC<CaseListItemProps> = ({
       elevation={isExpanded ? 8 : 4}
       sx={{
         mb: 3,
-        borderRadius: 5,
-        boxShadow: isExpanded ? 8 : 4,
-        background: isExpanded
-          ? 'linear-gradient(135deg, #e3f0ff 0%, #f8fafc 100%)'
-          : 'linear-gradient(135deg, #f8fafc 0%, #e0e7ef 100%)',
+        borderRadius: 2,
+        boxShadow: isExpanded ? 4 : 2,
+        background: isExpanded ? 'linear-gradient(135deg, #e3f2fd 0%, #fffde7 60%, #b9f6ca 100%)' : '#fff',
+        border: '1px solid #e0e7ef',
         transition: 'box-shadow 0.3s, background 0.3s',
-        ':hover': { boxShadow: 10, background: 'linear-gradient(135deg, #e3f0ff 0%, #f8fafc 100%)' },
+        ':hover': { boxShadow: 6, background: 'linear-gradient(90deg, #7c4dff 0%, #43e97b 100%)' },
       }}
     >
       <ListItem alignItems="flex-start" divider sx={{ p: 3 }} onClick={() => onToggleExpand(caseItem.id)} style={{ cursor: 'pointer' }}>
         <Grid container alignItems="center" spacing={3}>
           <Grid item>
-            <FolderIcon sx={{ color: '#fbc02d', fontSize: 48 }} />
+            <FolderIcon 
+              sx={{ 
+                color: isExpanded ? '#ffd600' : '#fbc02d', 
+                fontSize: 48, 
+                transition: 'color 0.2s',
+                cursor: 'pointer',
+                '&:hover': { color: '#ffd600' }
+              }} 
+            />
           </Grid>
           <Grid item xs={12} sm={8} md={9}>
             <Typography fontWeight={700} fontSize={18}>{caseItem.title}</Typography>

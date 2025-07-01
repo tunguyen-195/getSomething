@@ -11,6 +11,7 @@ from src.audio_processing.processor import AudioProcessor
 
 def save_audio_and_create_task(file: UploadFile, db, case_id: int = None) -> dict:
     """Lưu file audio vào storage/audio, tạo AudioFile và Task (status: pending). Trả về task_id, audio_file_id."""
+    logger.info(f"[AUDIO_SERVICE] Bắt đầu lưu file: {file.filename if file else 'None'} | case_id={case_id}")
     try:
         if not file.filename or not file.filename.lower().endswith((".mp3", ".wav", ".m4a", ".ogg")):
             raise HTTPException(status_code=400, detail="Invalid or missing file format")
@@ -50,13 +51,15 @@ def save_audio_and_create_task(file: UploadFile, db, case_id: int = None) -> dic
         db.add(audio_file)
         db.commit()
         db.refresh(audio_file)
+        logger.info(f"[AUDIO_SERVICE] Đã lưu file: {file.filename if file else 'None'} | task_id={task['id']} | audio_file_id={audio_file.id}")
         return {"task_id": task["id"], "audio_file_id": audio_file.id, "status": "pending"}
     except Exception as e:
-        logger.error(f"Error saving audio and creating task: {str(e)}")
+        logger.error(f"Error saving audio and creating task: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 def process_task(task_id: str, model_name: str, db) -> dict:
     """Xử lý task: transcribe, summarize, update DB. Trả về kết quả gọn."""
+    logger.info(f"[AUDIO_SERVICE] Bắt đầu process_task | task_id={task_id} | model_name={model_name}")
     try:
         task = get_task(task_id)
         if not task:
@@ -67,38 +70,41 @@ def process_task(task_id: str, model_name: str, db) -> dict:
         audio_processor = AudioProcessor()
         audio, sr = audio_processor.load_audio(audio_file.file_path)
         # Tự động enhance nếu phát hiện nhiễu (placeholder)
-        if audio_processor.normalize_audio(audio).std() < 0.01:  # Giả lập phát hiện nhiễu
-            audio = audio_processor.enhance_speech_llase(audio)
-            # Có thể thêm các bước robust khác ở đây
-        # Sửa: truyền batch_size và các segment params an toàn
-        transcriber = Transcriber(
-            batch_size=int(os.environ.get('WHISPER_BATCH_SIZE', 4)),
-            min_segment_length=10,
-            max_segment_length=30,
-            context_window=5,
-            overlap=0.5
-        )
-        result = transcriber.transcribe(audio_file.file_path, batch_size=transcriber.batch_size)
+        # if audio_processor.normalize_audio(audio).std() < 0.01:  # Giả lập phát hiện nhiễu
+        audio = audio_processor.enhance_speech_llase(audio)
+        # Có thể thêm các bước robust khác ở đây
+        # Sửa: chỉ khởi tạo Transcriber không truyền tham số
+        transcriber = Transcriber()
+        result = transcriber.transcribe(audio_file.file_path)
+        logger.info(f"[AUDIO_SERVICE] Kết quả transcribe | task_id={task_id} | result={result}")
         # Benchmark tự động (placeholder)
         wer, cer, noise_score = benchmark_asr(result.get("transcription"), audio_file.file_path)
+        logger.info(f"[AUDIO_SERVICE] Benchmark | WER={wer}, CER={cer}, noise_score={noise_score}")
         if wer > 0.3 or noise_score > 0.5:
             logger.warning(f"[BENCHMARK] WER cao ({wer}), noise ({noise_score}), cần cải tiến pipeline!")
         transcript = result.get("transcription")
+        caption = result.get("caption")
         if not transcript or not transcript.strip():
+            logger.warning(f"[AUDIO_SERVICE] Không nhận diện được nội dung từ file âm thanh | task_id={task_id}")
             update_task(task_id, {"status": "failed", "error": "Không nhận diện được nội dung từ file âm thanh."})
             audio_file.status = "failed"
             db.commit()
             return {"status": "failed", "error": "Không nhận diện được nội dung từ file âm thanh."}
-        context_analysis = result.get("context_analysis")
+        context_analysis = result.get("context_analysis") or result.get("analysis")
         if not isinstance(context_analysis, dict):
             context_analysis = {}
+        # Nếu có caption, truyền vào context để tóm tắt sâu hơn
+        if caption:
+            context_analysis["caption"] = caption
         summary = summarize_transcript(transcript, context=context_analysis, model_name=model_name)
+        logger.info(f"[AUDIO_SERVICE] Kết quả summarize | task_id={task_id} | summary={summary}")
         update_task(task_id, {
             "status": "completed",
             "result": {
                 "filename": audio_file.filename,
                 "duration": result.get("duration"),
                 "transcription": transcript,
+                "caption": caption,
                 "summary": summary,
                 "language": result.get("language"),
                 "confidence": result.get("confidence"),
@@ -109,9 +115,36 @@ def process_task(task_id: str, model_name: str, db) -> dict:
         })
         audio_file.status = "completed"
         db.commit()
-        return {"status": "completed"}
+        # Chuẩn hóa schema trả về cho API
+        def safe_str(val):
+            try:
+                return str(val)
+            except Exception:
+                return ""
+        def safe_float(val):
+            try:
+                return float(val)
+            except Exception:
+                return 0.0
+        def safe_dict(val):
+            return val if isinstance(val, dict) else {}
+        safe_result = {
+            "status": "completed",
+            "filename": safe_str(audio_file.filename),
+            "duration": safe_float(result.get("duration", 0)),
+            "transcription": safe_str(transcript) if transcript else "",
+            "caption": safe_str(caption) if caption else "",
+            "summary": safe_str(summary) if summary else "",
+            "language": safe_str(result.get("language", "vi")),
+            "confidence": safe_float(result.get("confidence", 0)),
+            "processing_time": safe_float(result.get("processing_time", 0)),
+            "context_analysis": safe_dict(context_analysis),
+            "audio_url": f"/storage/audio/{audio_file.filename}"
+        }
+        logger.info(f"[AUDIO_SERVICE] Kết quả trả về process_task: {safe_result}")
+        return safe_result
     except Exception as e:
-        logger.error(f"Error processing task {task_id}: {str(e)}")
+        logger.error(f"Error processing task {task_id}: {str(e)}", exc_info=True)
         # Log chi tiết lỗi
         with open('logs/error_benchmark.log', 'a', encoding='utf-8') as f:
             f.write(f"Task {task_id} error: {str(e)}\n")

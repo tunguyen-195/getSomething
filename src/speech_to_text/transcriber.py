@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 import os
 import numpy as np
 from pathlib import Path
-from faster_whisper import WhisperModel, BatchedInferencePipeline
+from faster_whisper import WhisperModel
 import torch
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
@@ -25,12 +25,7 @@ import gc
 import requests
 import librosa
 from src.audio_processing.processor import AudioProcessor
-
-# Thêm import đúng cho pipeline diarization
-try:
-    from pyannote.audio import Pipeline
-except ImportError:
-    Pipeline = None
+from src.core.config import settings
 
 @dataclass
 class AudioSegment:
@@ -372,96 +367,59 @@ Hội thoại:
             return {}
 
 class Transcriber:
-    def __init__(self, model_name: str = "large", device: str = None, compute_type: str = None, batch_size: int = None, beam_size: int = None,
-                 min_segment_length: int = None, max_segment_length: int = None, context_window: int = None, overlap: float = None, silence_thresh: float = None, min_silence_len: int = None):
-        # Lấy config từ biến môi trường hoặc config file nếu không truyền vào
-        if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        if compute_type is None:
-            if device == "cuda":
-                compute_type = "float16"
-            else:
-                compute_type = "int8"
-        if device == "cpu" and torch.cuda.is_available():
-            import logging
-            logging.warning("Có GPU nhưng pipeline vẫn chạy trên CPU! Kiểm tra lại config hoặc biến môi trường.")
-        if batch_size is None:
-            batch_size = int(os.environ.get("WHISPER_BATCH_SIZE", "8" if device=="cuda" else "4"))
-        if beam_size is None:
-            beam_size = int(os.environ.get("WHISPER_BEAM_SIZE", "5"))
+    def __init__(self):
+        device = settings.WHISPER_DEVICE
+        compute_type = settings.WHISPER_COMPUTE_TYPE
+        model_name = settings.WHISPER_MODEL
+        # --- Tự động điều chỉnh batch_size theo VRAM GPU ---
+        batch_size = settings.WHISPER_BATCH_SIZE
+        if device == "cuda":
+            try:
+                import torch
+                vram = torch.cuda.get_device_properties(0).total_memory // (1024 ** 3)  # GB
+                if vram >= 12:
+                    auto_bs = 16
+                elif vram >= 8:
+                    auto_bs = 8
+                elif vram >= 4:
+                    auto_bs = 4
+                else:
+                    auto_bs = 2
+                if batch_size < auto_bs:
+                    logger.info(f"[AUTO-BATCH] batch_size giữ nguyên theo settings: {batch_size}")
+                else:
+                    batch_size = auto_bs
+                    logger.info(f"[AUTO-BATCH] batch_size tự động điều chỉnh theo VRAM: {batch_size}")
+            except Exception as e:
+                logger.warning(f"[AUTO-BATCH] Không thể kiểm tra VRAM, dùng batch_size mặc định: {batch_size}. Lỗi: {e}")
+        # Chỉ cho phép load model từ local path
+        model_dir = None
+        if os.path.isdir(model_name):
+            model_dir = model_name
+        else:
+            # Map tên model sang thư mục local
+            model_dir = os.path.join("models", f"faster-whisper-{model_name}")
+        if not os.path.exists(model_dir):
+            raise RuntimeError(f"Model path {model_dir} does not exist. Please download the model manually for offline use.")
+        self.model = WhisperModel(model_dir, device=device, compute_type=compute_type)
         self.device = device
         self.compute_type = compute_type
+        self.model_name = model_name
         self.batch_size = batch_size
-        self.beam_size = beam_size
-        logger.info(f"Init WhisperModel with device={device}, compute_type={compute_type}, batch_size={batch_size}, beam_size={beam_size}")
-        self.asr_priority = [
-            ("large-v2", "models/models--guillaumekln--faster-whisper-large-v2/snapshots/"),
-            ("large-v3", "models/models--guillaumekln--faster-whisper-large-v3/snapshots/"),
-            ("medium", "models/models--guillaumekln--faster-whisper-medium-v2/snapshots/"),
-            ("small", "models/models--guillaumekln--faster-whisper-small-v2/snapshots/"),
-            ("tiny", "models/models--guillaumekln--faster-whisper-tiny-v2/snapshots/")
-        ]
-        self.model = None
-        self.model_name = None
-        for name, path_prefix in self.asr_priority:
-            model_dir = Path(path_prefix)
-            if model_dir.exists() and any(model_dir.iterdir()):
-                hash_dirs = [d for d in model_dir.iterdir() if d.is_dir() and len(d.name) == 40]
-                model_path = None
-                for d in hash_dirs:
-                    if (d / "model.bin").exists():
-                        model_path = d
-                        break
-                if model_path:
-                    try:
-                        from faster_whisper import WhisperModel
-                        self.model = WhisperModel(str(model_path), device=device, compute_type=compute_type)
-                        self.model_name = name
-                        logger.info(f"ASR: Sử dụng model offline {name} tại {model_path}")
-                        break
-                    except Exception as e:
-                        logger.warning(f"Không load được model offline {name} tại {model_path}: {e}")
-                        continue
-        if self.model is None:
-            logger.error("Không tìm thấy bất kỳ model ASR offline nào! Vui lòng tải model về thư mục models trước khi chạy.")
-            raise RuntimeError("Không tìm thấy model ASR offline.")
-        
-        # Gán mặc định cho các biến segment instance nếu None, ép kiểu an toàn
-        self.min_segment_length = int(min_segment_length) if min_segment_length is not None else 10
-        self.max_segment_length = int(max_segment_length) if max_segment_length is not None else 30
-        self.context_window = int(context_window) if context_window is not None else 5
-        self.overlap = float(overlap) if overlap is not None else 0.5
-        # Sau đó mới gọi _set_segmentation_params để đồng bộ lại
+        self.beam_size = settings.WHISPER_BEAM_SIZE
+        self.min_segment_length = getattr(settings, 'WHISPER_MIN_SEGMENT_LENGTH', None) or 10
+        self.max_segment_length = getattr(settings, 'WHISPER_MAX_SEGMENT_LENGTH', None) or 30
+        self.context_window = getattr(settings, 'WHISPER_CONTEXT_WINDOW', None) or 5
+        self.overlap = getattr(settings, 'WHISPER_OVERLAP', None) or 0.5
         self._set_segmentation_params(self.min_segment_length, self.max_segment_length, self.context_window, self.overlap)
-        
-        # Audio processing parameters
-        self.min_silence_len = min_silence_len if min_silence_len is not None else 1000  # ms
-        self.silence_thresh = silence_thresh if silence_thresh is not None else -40.0
+        self.min_silence_len = getattr(settings, 'WHISPER_MIN_SILENCE_LEN', None) or 1000  # ms
+        self.silence_thresh = getattr(settings, 'WHISPER_SILENCE_THRESH', None) or -40.0
         self.keep_silence = 100  # ms
-        
-        # Initialize LLM processor
         self.llm_processor = OllamaProcessor()
-        
         self.speaker_pipeline = None
-        if Pipeline is not None:
-            try:
-                hf_token = os.getenv('HUGGINGFACE_TOKEN', '')
-                if not hf_token:
-                    logger.warning('Chưa cấu hình biến môi trường HUGGINGFACE_TOKEN. Pyannote sẽ không thể tải pipeline từ HuggingFace. Vui lòng tạo token tại https://huggingface.co/settings/tokens và export HUGGINGFACE_TOKEN trước khi chạy.')
-                self.speaker_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization@2.1", use_auth_token=hf_token)
-            except Exception as e:
-                logger.warning(f'Không thể khởi tạo pyannote speaker pipeline: {e}. Nếu gặp lỗi 401 Unauthorized, hãy kiểm tra lại biến môi trường HUGGINGFACE_TOKEN. Xem hướng dẫn tại https://huggingface.co/pyannote/speaker-diarization.')
-                self.speaker_pipeline = None
-        
-        if self.batch_size > 1:
-            self.pipeline = BatchedInferencePipeline(model=self.model)
-            logger.info(f"Dùng BatchedInferencePipeline với batch_size={self.batch_size}")
-        else:
-            self.pipeline = self.model
-        
+        self.pipeline = self.model
         self.audio_processor = AudioProcessor()
-        
-        logger.info(f"Model loaded successfully on device={self.device}, compute_type={self.compute_type}, batch_size={self.batch_size}, beam_size={self.beam_size}")
+        logger.info(f"Loaded WhisperModel {model_dir} on {device} with {compute_type}")
         
     def _set_segmentation_params(self, min_segment_length, max_segment_length, context_window, overlap):
         # Ưu tiên giá trị truyền vào, nếu None thì lấy từ instance, nếu vẫn None thì lấy mặc định, ép kiểu an toàn
@@ -483,11 +441,7 @@ class Transcriber:
             self.context_window,
             self.overlap
         )
-        if self.batch_size > 1:
-            self.pipeline = BatchedInferencePipeline(model=self.model)
-            logger.info(f"Dùng BatchedInferencePipeline với batch_size={self.batch_size}")
-        else:
-            self.pipeline = self.model
+        self.pipeline = self.model
         logger.info(f"Reloaded model successfully on device={self.device}, compute_type={self.compute_type}, batch_size={self.batch_size}, beam_size={self.beam_size}")
 
     def _load_audio(self, audio_path: str) -> Tuple[np.ndarray, int]:
@@ -565,13 +519,18 @@ class Transcriber:
                     ))
                     logger.info(f"[SEGMENT-LOG] start={i/sr:.2f}s, end={end/sr:.2f}s (split 30min)")
                     i += samples_per_segment
+            # Loại bỏ các segment quá ngắn (<0.5s)
+            min_len = int(0.5 * sr)
+            segments = [seg for seg in segments if len(seg.data) >= min_len]
+            if len(segments) == 0:
+                logger.warning("[SEGMENT-LOG] Không có segment nào đủ dài để nhận diện!")
             return segments
         except Exception as e:
             logger.error(f"Error segmenting audio: {str(e)}")
             return []
     
     def _process_segment(self, segment: AudioSegment) -> str:
-        """Process a single audio segment"""
+        """Process a single audio segment."""
         try:
             if segment.data is None:
                 logger.error(f"Lỗi segment: segment.data=None, segment={segment}")
@@ -582,7 +541,7 @@ class Transcriber:
                 audio = np.concatenate([segment.context, segment.data])
             else:
                 audio = segment.data
-            # Dùng pipeline.transcribe (có thể là batch hoặc single)
+            # Dùng pipeline.transcribe (WhisperModel) với batch_size nếu cần
             segments, info = self.pipeline.transcribe(
                 audio,
                 language="vi",
@@ -596,6 +555,7 @@ class Transcriber:
             if segments is None or info is None:
                 logger.error(f"pipeline.transcribe trả về None: segments={segments}, info={info}")
                 raise Exception(f"pipeline.transcribe trả về None: segments={segments}, info={info}")
+            # Không còn KenLM, chỉ lấy transcript tốt nhất
             text = " ".join([s.text for s in segments if hasattr(s, 'text') and s.text])
             return text
         except Exception as e:
@@ -603,16 +563,25 @@ class Transcriber:
             return ""
     
     def _post_process_text(self, text: str) -> str:
-        """Post-process transcribed text"""
+        """Post-process transcribed text: loại filler, chuẩn hóa dấu câu, kiểm tra ngôn ngữ."""
         try:
             # Remove extra whitespace
             text = " ".join(text.split())
-            
             # Remove multiple spaces
             text = " ".join(text.split())
-            
+            # Loại bỏ filler
+            fillers = ['ừ', 'à', 'ờ', 'ơ', 'ừm', 'à ừm']
+            for filler in fillers:
+                text = text.replace(filler, '')
+            # Chuẩn hóa dấu câu
+            import re
+            text = re.sub(r'([.,!?])\s*', r'\1 ', text)
+            text = re.sub(r'\s+([.,!?])', r'\1', text)
+            # Viết hoa đầu câu
+            text = re.sub(r'(^|[.!?]\s+)([a-zà-ỹ])', lambda m: m.group(1) + m.group(2).upper(), text)
+            # Remove leading/trailing whitespace
+            text = text.strip()
             return text
-            
         except Exception as e:
             logger.error(f"Error post-processing text: {str(e)}")
             return text
@@ -622,67 +591,121 @@ class Transcriber:
         # TODO: Tích hợp model phát hiện nhiễu
         return False
     
-    def transcribe(self, audio_path: str, batch_size: int = None) -> dict:
-        """Transcribe audio file to text with parallel processing and context analysis"""
+    def _generate_caption(self, audio: np.ndarray, sr: int = 16000) -> str:
+        """Sinh caption mô tả toàn bộ nội dung audio bằng Whisper (nếu hỗ trợ)."""
+        try:
+            # Nếu model hỗ trợ captioning (Whisper >= large-v3), dùng transcribe với task='translate' để sinh mô tả
+            if hasattr(self.model, 'transcribe'):
+                segments, info = self.model.transcribe(
+                    audio,
+                    language="vi",
+                    beam_size=self.beam_size,
+                    vad_filter=True,
+                    vad_parameters=dict(
+                        min_silence_duration_ms=500,
+                        speech_pad_ms=100
+                    ),
+                    task="translate"  # Whisper hỗ trợ mô tả audio qua task này
+                )
+                caption = " ".join([s.text for s in segments if hasattr(s, 'text') and s.text])
+                return caption
+            else:
+                return ""
+        except Exception as e:
+            logger.error(f"Error generating caption: {str(e)}")
+            return ""
+    
+    def transcribe(self, audio_path: str) -> dict:
+        """Transcribe audio file to text with parallel processing và context analysis"""
+        logger.info(f"[TRANSCRIBER] Bắt đầu transcribe | audio_path={audio_path}")
         try:
             start_time = time.time()
-            
-            asr_tried = []
-            text = ""
-            for name, path_prefix in self.asr_priority:
+            # Load audio và nhận diện
+            audio, sr = self._load_audio(audio_path)
+            logger.info(f"[TRANSCRIBER] Đã load audio | path={audio_path} | shape={audio.shape if hasattr(audio, 'shape') else 'N/A'} | sr={sr}")
+            # --- Bổ sung bước làm sạch ---
+            # audio = self.audio_processor.normalize_audio(audio)
+            # audio = self.audio_processor.remove_silence(audio, top_db=20)
+            # --- Phát hiện và enhance nếu nhiễu ---
+            if audio.std() < 0.01 or self._is_noisy(audio):
+                logger.info("[AUDIO] Phát hiện audio nhiễu, thực hiện enhance_speech_llase...")
+                audio = self.audio_processor.enhance_speech_llase(audio)
+            # Log VRAM trước khi transcribe
+            if self.device == "cuda":
                 try:
-                    if self.model_name != name:
-                        # Nếu chưa load model này, thử load
-                        model_path = None
-                        for p in Path(path_prefix).parent.glob(f"{path_prefix.split('/')[-2]}*"):
-                            if p.is_dir():
-                                model_path = p / "snapshots" / next(p.glob("snapshots/*"), None).name if any(p.glob("snapshots/*")) else None
-                                break
-                        if model_path and model_path.exists():
-                            self._reload_model(
-                                model_path,
-                                device=self.device,
-                                compute_type=self.compute_type
-                            )
-                            self.model_name = name
-                            logger.info(f"ASR fallback: Sử dụng model {name} tại {model_path}")
-                    # Load audio và nhận diện
-                    audio, sr = self._load_audio(audio_path)
-                    # Tự động enhance nếu phát hiện nhiễu hoặc tiếng lóng (placeholder)
-                    if self._is_noisy(audio):
-                        audio = self.audio_processor.enhance_speech_llase(audio)
-                    # Segment audio
-                    segments = self._segment_audio(audio, sr)
-                    with ThreadPoolExecutor(max_workers=min(batch_size, 8)) as executor:
-                        futures = []
-                        for segment in segments:
-                            future = executor.submit(self._process_segment, segment)
-                            futures.append(future)
-                    results = []
-                    for future in futures:
-                        result = future.result()
-                        if result:
-                            results.append(result)
-                    text = " ".join(results)
-                    text = self._post_process_text(text)
-                    logger.info(f"ASR thành công với model {name}")
-                    break
-                except (ImportError, FileNotFoundError, RuntimeError) as e:
-                    logger.warning(f"ASR lỗi khi load model {name}: {e}")
-                    asr_tried.append(name)
-                    continue
+                    import torch
+                    logger.info(f"[GPU] VRAM used before: {torch.cuda.memory_allocated() // (1024**2)} MB")
                 except Exception as e:
-                    logger.error(f"ASR lỗi nghiêm trọng với model {name}: {e}")
-                    raise  # Không fallback nữa, raise luôn lỗi
-            if not text:
-                logger.error(f"Tất cả model ASR đều lỗi: {asr_tried}")
-                return {"error": f"Không nhận diện được âm thanh. Đã thử các model: {asr_tried}"}
-            
+                    pass
+            # Segment audio
+            segments = self._segment_audio(audio, sr)
+            logger.info(f"[TRANSCRIBER] Đã segment audio | num_segments={len(segments)}")
+            # --- Tối ưu ThreadPoolExecutor cho batch lớn ---
+            max_workers = min(self.batch_size, 8)
+            try:
+                import torch
+                vram = torch.cuda.get_device_properties(0).total_memory // (1024 ** 3)
+                if self.device == "cuda" and self.batch_size > 8 and vram >= 8:
+                    max_workers = min(self.batch_size, 16)
+                if self.device == "cuda" and self.batch_size > 12 and vram >= 12:
+                    max_workers = min(self.batch_size, 32)
+            except Exception as e:
+                pass
+            segment_times = []
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = []
+                for segment in segments:
+                    t0 = time.time()
+                    future = executor.submit(self._process_segment, segment)
+                    futures.append((future, t0))
+            results = []
+            for idx, (future, t0) in enumerate(futures):
+                result = future.result()
+                t1 = time.time()
+                segment_times.append(t1 - t0)
+                logger.info(f"[TRANSCRIBER] Segment {idx+1}/{len(futures)} processed in {t1-t0:.2f}s | result_len={len(result) if result else 0}")
+                if result:
+                    results.append(result)
+            if len(segment_times) > 0:
+                logger.info(f"[TRANSCRIBE] Thời gian xử lý từng segment: {segment_times}")
+            # Log VRAM sau khi transcribe
+            if self.device == "cuda":
+                try:
+                    import torch
+                    logger.info(f"[GPU] VRAM used after: {torch.cuda.memory_allocated() // (1024**2)} MB")
+                except Exception as e:
+                    pass
+            text = " ".join(results)
+            # --- Hậu xử lý transcript nâng cao ---
+            text = self._post_process_text(text)
+            # Kiểm tra chất lượng transcript
+            import re
+            min_length = 20  # ký tự
+            max_invalid_ratio = 0.2
+            valid_chars = re.sub(r'[^\w\s.,!?à-ỹÀ-Ỹ]', '', text)
+            char_ratio = len(valid_chars) / max(1, len(text))
+            if len(text) < min_length or char_ratio < (1 - max_invalid_ratio):
+                logger.warning(f"[TRANSCRIBE] Transcript không đạt chuẩn: length={len(text)}, char_ratio={char_ratio:.2f}")
+                text = "[CẢNH BÁO] Transcript không đạt chuẩn chất lượng, vui lòng kiểm tra lại file audio."
+            # --- Sinh caption mô tả audio ---
+            caption = self._generate_caption(audio, sr)
             # Phân tích ngữ cảnh bằng Ollama
             context_analysis = self.llm_processor.analyze_context(text)
+            # --- Chuẩn hóa context_analysis ---
+            import json as _json
+            if isinstance(context_analysis, str):
+                try:
+                    context_analysis = _json.loads(context_analysis)
+                except Exception as e:
+                    logger.warning(f"[CONTEXT_ANALYSIS] Lỗi parse JSON: {e}. context_analysis={context_analysis}")
+                    context_analysis = {}
             if not isinstance(context_analysis, dict):
-                context_analysis = {}  # Luôn đảm bảo là dict
-            
+                logger.warning(f"[CONTEXT_ANALYSIS] context_analysis không phải dict: {type(context_analysis)}. Reset về dict rỗng.")
+                context_analysis = {}
+            # Đảm bảo schema chuẩn
+            for k in ["summary", "key_points", "entities", "actions", "decisions", "sentiment", "privacy_summary"]:
+                if k not in context_analysis:
+                    context_analysis[k] = [] if k in ["key_points", "entities", "actions", "decisions"] else ""
             # Tóm tắt nội dung (nếu có summarizer)
             summary = ""
             if hasattr(self, "summarizer") and self.summarizer:
@@ -691,32 +714,37 @@ class Transcriber:
                 except Exception as e:
                     logger.error(f"Error summarizing: {e}")
                     summary = ""
-            
             # Calculate confidence (simple heuristic)
-            audio, sr = self._load_audio(audio_path)
             duration = len(audio) / sr
             confidence = min(1.0, len(text) / (duration * 10))  # Assume 10 chars per second is good
-            
-            # Clean up
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            
-            # Sau khi có transcript
-            # emotion_result = self.analyze_emotion_sentiment_stress(text)
-            
-            # Trả về đúng schema chuẩn
+            # Tính quality_score: trung bình giữa confidence và tỉ lệ ký tự hợp lệ
+            import re
+            valid_chars = re.sub(r'[^\w\s.,!?à-ỹÀ-Ỹ]', '', text)
+            char_ratio = len(valid_chars) / max(1, len(text))
+            quality_score = round((confidence + char_ratio) / 2, 3)
+            if confidence < 0.5:
+                logger.warning(f"[TRANSCRIBE] Confidence thấp: {confidence:.2f}")
+            if char_ratio < 0.8:
+                logger.warning(f"[TRANSCRIBE] Transcript có nhiều ký tự không hợp lệ: {char_ratio:.2f}")
+            # Log chi tiết độ dài transcript, duration, số segment
+            logger.info(f"[TRANSCRIBE] Transcript length: {len(text)} chars, Audio duration: {duration:.2f}s, Num segments: {len(segments) if 'segments' in locals() else 'N/A'}")
+            if len(text) < 0.5 * duration * 10:
+                logger.warning(f"[TRANSCRIBE] Transcript ngắn bất thường so với duration: {len(text)} chars / {duration:.2f}s. Có thể nhận diện thiếu!")
+            # Trả về đúng schema chuẩn, bổ sung caption
             result = {
                 "transcription": text,
+                "transcript": text,
+                "caption": caption,
                 "analysis": context_analysis,
                 "summary": summary,
                 "confidence": confidence,
                 "duration": duration,
                 "language": "vi",
+                "quality_score": quality_score,
                 "processing_time": time.time() - start_time
             }
+            logger.info(f"[TRANSCRIBER] Kết quả transcribe | audio_path={audio_path} | result_keys={list(result.keys())}")
             return result
-            
         except Exception as e:
-            logger.error(f"Error transcribing audio: {str(e)}")
+            logger.error(f"Error transcribing audio: {str(e)}", exc_info=True)
             raise 

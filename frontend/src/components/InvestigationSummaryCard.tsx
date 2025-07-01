@@ -184,7 +184,7 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
   };
 
   return (
-    <Card sx={{ mb: 3, borderRadius: 4, boxShadow: 6, background: '#f5faff' }}>
+    <Card sx={{ mb: 3, borderRadius: 2, boxShadow: '0 2px 8px #b388ff11', background: '#fff', border: '1px solid #e0e7ef' }}>
       <CardContent>
         <Tabs value={typeof tab === 'number' && tab >= 0 && tab <= 5 ? tab : 0} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
           <Tab label="Tổng quan" />

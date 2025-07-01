@@ -52,10 +52,11 @@ def analyze_summary(summary: str = Body(..., embed=True), task_id: str = Body(No
     """
     import logging
     logger = logging.getLogger("summary_analyze")
+    logger.info(f"[SUMMARY_ANALYZE] Bắt đầu analyze_summary | summary_len={len(summary) if summary else 0} | task_id={task_id}")
     try:
         processor = OllamaProcessor()
         context_analysis = processor.analyze_context(summary)
-        logger.info(f"OllamaProcessor.analyze_context result: {context_analysis}")
+        logger.info(f"[SUMMARY_ANALYZE] OllamaProcessor.analyze_context result: {context_analysis}")
         if context_analysis:
             if task_id:
                 task = get_task(task_id)
@@ -65,7 +66,7 @@ def analyze_summary(summary: str = Body(..., embed=True), task_id: str = Body(No
                     update_task(task_id, {"result": result_data})
             return {"context_analysis": context_analysis}
     except Exception as e:
-        logger.error(f"OllamaProcessor.analyze_context failed: {e}")
+        logger.error(f"[SUMMARY_ANALYZE] OllamaProcessor.analyze_context failed: {e}", exc_info=True)
     return {"error": "Phân tích thất bại với rule/memory bank nội bộ"}
 
 @router.post("/visualize")
@@ -74,11 +75,12 @@ def visualize_summary(summary: str = Body(..., embed=True)):
     Trực quan hóa hội thoại: trả về nodes, edges, timeline, entity_types, main_events cho frontend.
     """
     logger = logging.getLogger("summary_visualize")
+    logger.info(f"[SUMMARY_VISUALIZE] Bắt đầu visualize_summary | summary_len={len(summary) if summary else 0}")
     try:
         processor = OllamaProcessor()
         result = processor.visualize_context(summary)
-        logger.info(f"OllamaProcessor.visualize_context result: {result}")
+        logger.info(f"[SUMMARY_VISUALIZE] OllamaProcessor.visualize_context result: {result}")
         return result
     except Exception as e:
-        logger.error(f"visualize_context failed: {e}")
+        logger.error(f"[SUMMARY_VISUALIZE] visualize_context failed: {e}", exc_info=True)
         return {"error": str(e)} 

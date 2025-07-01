@@ -1,17 +1,19 @@
 # activeContext.md
 
 ## Trọng tâm hiện tại
-- Đã chuẩn hóa toàn bộ codebase, loại bỏ src/db, chỉ còn src/database
-- Đã sửa toàn bộ import, đảm bảo không còn lỗi ModuleNotFoundError
-- Đã hướng dẫn dọn cache, xóa pycache, khởi động lại môi trường
-- Đã kiểm tra hoạt động hệ thống, ghi nhận các lỗi mới (middleware, 422)
+- Đã nghiên cứu toàn bộ logic backend (FastAPI, Celery, service, worker) và frontend (React, UI quản lý file, transcript, summary).
+- Đã xác định các vấn đề UI/UX cần cải thiện: màu sắc giao diện (color scheme), sidebar list case nên dùng tone trắng đơn sắc, màu xanh pastel hiện tại chưa phù hợp.
+- Đã hoàn thành nghiên cứu, lựa chọn và lên kế hoạch tích hợp module Speaker Diarization (NeMo, WhisperX) vào pipeline backend, cho phép UI lựa chọn giải pháp hoặc tắt/bật tính năng này.
+- Tiếp tục rà soát, đề xuất phương án tối ưu UI/UX, chuẩn bị cập nhật các thay đổi về màu sắc, trải nghiệm người dùng.
 
 ## Thay đổi gần đây
-- Sửa lỗi import schema, model, service, endpoint liên quan src.db → src.database
-- Đã xóa hoàn toàn src/db và các file liên quan
-- Đã hướng dẫn dọn sạch pycache, khởi động lại môi trường
+- Đã đọc toàn bộ codebase, xác định rõ pipeline backend (audio → transcript → summary → lưu DB → trả về frontend), các component chính frontend (App, FileTable, TranscriptPanel, InvestigationSummaryCard).
+- Đã ghi nhận các vấn đề còn tồn tại về logging, pipeline, validate schema, CORS, lỗi 422, cần bổ sung log chi tiết toàn bộ pipeline.
+- Đã bổ sung tài liệu, hướng dẫn sử dụng, so sánh, tích hợp module Speaker Diarization (NeMo, WhisperX) vào README.md và memory-bank.
 
 ## Bước tiếp theo
-- Nghiên cứu lại logic middleware để sửa lỗi cấu hình CORS
-- Nghiên cứu lại logic xử lý dữ liệu đầu vào để sửa lỗi 422 Unprocessable Entity
-- Kiểm tra lại toàn bộ pipeline API, validate schema, request/response
+- Đề xuất, thử nghiệm các phương án phối màu UI phù hợp hơn (ưu tiên trắng, xám, xanh navy, tím nhạt, tránh xanh pastel quá sáng).
+- Cập nhật lại component sidebar list case theo tone trắng đơn sắc, tăng độ tương phản, dễ đọc.
+- Tiếp tục rà soát logic backend, đảm bảo mọi Exception đều được log rõ ràng, bổ sung log resource usage, input/output, trạng thái pipeline.
+- Kiểm tra lại validate schema, pipeline xử lý dữ liệu đầu vào, toàn bộ API request/response.
+- Triển khai, kiểm thử thực tế pipeline Speaker Diarization (NeMo, WhisperX), tối ưu hiệu năng, log lỗi rõ ràng, cho phép frontend lựa chọn giải pháp.
