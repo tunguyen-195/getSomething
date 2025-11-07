@@ -21,6 +21,7 @@ import {
   Settings as SettingsIcon,
   Refresh as RefreshIcon,
   CheckCircle as CheckIcon,
+  ContentCopy as ContentCopyIcon,
 } from '@mui/icons-material';
 
 interface FileCardProps {
@@ -52,6 +53,27 @@ const FileCard: React.FC<FileCardProps> = ({
   onViewTranscript,
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const [transcriptExpanded, setTranscriptExpanded] = useState(false);
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
+  
+  const [copiedTranscript, setCopiedTranscript] = useState(false);
+  const [copiedSummary, setCopiedSummary] = useState(false);
+
+  const handleCopyTranscript = () => {
+    if (file.transcript) {
+      navigator.clipboard.writeText(file.transcript);
+      setCopiedTranscript(true);
+      setTimeout(() => setCopiedTranscript(false), 2000);
+    }
+  };
+
+  const handleCopySummary = () => {
+    if (file.summary) {
+      navigator.clipboard.writeText(file.summary);
+      setCopiedSummary(true);
+      setTimeout(() => setCopiedSummary(false), 2000);
+    }
+  };
 
   // Status colors (Cherry2 theme)
   const getStatusColor = (status: string) => {
@@ -312,6 +334,170 @@ const FileCard: React.FC<FileCardProps> = ({
             <DeleteIcon />
           </IconButton>
         </Box>
+
+        {/* Transcript Section - Inline Display */}
+        {file.transcript && (
+          <Box mt={3}>
+            <Box display="flex" alignItems="center" justifyContent="space-between" mb={1} px={1}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <TranscribeIcon sx={{ color: '#43a047', fontSize: 24 }} />
+                <Typography variant="h6" fontWeight={700} color="#43a047">
+                  📝 Transcript Result
+                </Typography>
+              </Box>
+              <Box display="flex" gap={1}>
+                <Button
+                  size="small"
+                  variant={copiedTranscript ? "contained" : "outlined"}
+                  onClick={handleCopyTranscript}
+                  sx={{ 
+                    borderRadius: '8px',
+                    bgcolor: copiedTranscript ? '#43a047' : undefined,
+                    color: copiedTranscript ? '#fff' : '#43a047',
+                    borderColor: '#43a047'
+                  }}
+                >
+                  {copiedTranscript ? '✓ Copied!' : '📋 Copy'}
+                </Button>
+                <IconButton 
+                  size="small"
+                  onClick={() => setTranscriptExpanded(!transcriptExpanded)}
+                  sx={{
+                    transform: transcriptExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.3s',
+                    color: '#43a047'
+                  }}
+                >
+                  <ExpandMoreIcon />
+                </IconButton>
+              </Box>
+            </Box>
+            <Collapse in={transcriptExpanded}>
+              <Box
+                sx={{
+                  bgcolor: 'rgba(67, 160, 71, 0.05)',
+                  p: 2.5,
+                  borderRadius: '12px',
+                  border: '2px solid rgba(67, 160, 71, 0.3)',
+                  maxHeight: '500px',
+                  overflow: 'auto',
+                  boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.05)',
+                }}
+              >
+                <Typography
+                  variant="body1"
+                  sx={{
+                    whiteSpace: 'pre-wrap',
+                    lineHeight: 1.9,
+                    color: '#23272f',
+                    fontSize: '0.95rem',
+                  }}
+                >
+                  {file.transcript}
+                </Typography>
+              </Box>
+            </Collapse>
+            {!transcriptExpanded && (
+              <Typography 
+                variant="body2" 
+                color="text.secondary"
+                sx={{ 
+                  mt: 1,
+                  px: 1,
+                  fontStyle: 'italic',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  '&:hover': { color: '#43a047', textDecoration: 'underline' }
+                }}
+                onClick={() => setTranscriptExpanded(true)}
+              >
+                👆 Click to expand transcript... ({file.transcript.length} chars)
+              </Typography>
+            )}
+          </Box>
+        )}
+
+        {/* Summary Section - Inline Display */}
+        {file.summary && (
+          <Box mt={3}>
+            <Box display="flex" alignItems="center" justifyContent="space-between" mb={1} px={1}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <SummaryIcon sx={{ color: '#ff9800', fontSize: 24 }} />
+                <Typography variant="h6" fontWeight={700} color="#ff9800">
+                  📊 Summary Result
+                </Typography>
+              </Box>
+              <Box display="flex" gap={1}>
+                <Button
+                  size="small"
+                  variant={copiedSummary ? "contained" : "outlined"}
+                  onClick={handleCopySummary}
+                  sx={{ 
+                    borderRadius: '8px',
+                    bgcolor: copiedSummary ? '#ff9800' : undefined,
+                    color: copiedSummary ? '#fff' : '#ff9800',
+                    borderColor: '#ff9800'
+                  }}
+                >
+                  {copiedSummary ? '✓ Copied!' : '📋 Copy'}
+                </Button>
+                <IconButton 
+                  size="small"
+                  onClick={() => setSummaryExpanded(!summaryExpanded)}
+                  sx={{
+                    transform: summaryExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.3s',
+                    color: '#ff9800'
+                  }}
+                >
+                  <ExpandMoreIcon />
+                </IconButton>
+              </Box>
+            </Box>
+            <Collapse in={summaryExpanded}>
+              <Box
+                sx={{
+                  bgcolor: 'rgba(255, 152, 0, 0.05)',
+                  p: 2.5,
+                  borderRadius: '12px',
+                  border: '2px solid rgba(255, 152, 0, 0.3)',
+                  maxHeight: '500px',
+                  overflow: 'auto',
+                  boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.05)',
+                }}
+              >
+                <Typography
+                  variant="body1"
+                  sx={{
+                    whiteSpace: 'pre-wrap',
+                    lineHeight: 1.9,
+                    color: '#23272f',
+                    fontSize: '0.95rem',
+                  }}
+                >
+                  {file.summary}
+                </Typography>
+              </Box>
+            </Collapse>
+            {!summaryExpanded && (
+              <Typography 
+                variant="body2" 
+                color="text.secondary"
+                sx={{ 
+                  mt: 1,
+                  px: 1,
+                  fontStyle: 'italic',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  '&:hover': { color: '#ff9800', textDecoration: 'underline' }
+                }}
+                onClick={() => setSummaryExpanded(true)}
+              >
+                👆 Click to expand summary... ({file.summary.length} chars)
+              </Typography>
+            )}
+          </Box>
+        )}
       </CardContent>
     </Card>
   );
