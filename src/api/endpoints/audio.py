@@ -4,6 +4,8 @@ import json
 import os
 from src.services.audio_service import summarize_multi_transcripts, summarize_transcript, save_audio_and_create_task, process_task, process_task_with_diarization
 from src.services.task_service import create_task, get_task, list_tasks, update_task
+from src.services.transcribe_service import transcribe_audio
+from src.services.visualization_service import generate_visualization
 from src.core.logging import logger
 from src.core.config import settings
 import uuid
@@ -332,4 +334,152 @@ def get_audio_public(filename: str):
         media_type = 'audio/mp4'
     else:
         media_type = 'application/octet-stream'
-    return FileResponse(file_path, media_type=media_type, filename=filename) 
+    return FileResponse(file_path, media_type=media_type, filename=filename)
+
+
+# ============================================================================
+# NEW ENDPOINTS - Separate Workflow Steps
+# ============================================================================
+
+@router.post("/transcribe/{task_id}")
+async def transcribe_task(
+    task_id: str,
+    enable_diarization: bool = Body(True, embed=True),
+    diarization_method: str = Body("pyannote", embed=True),
+    fast_mode: bool = Body(True, embed=True),
+    db: Session = Depends(get_db)
+):
+    """
+    Transcribe audio file (SEPARATE from summarization).
+    
+    Args:
+        task_id: Task ID (file must be uploaded first)
+        enable_diarization: Enable speaker diarization
+        diarization_method: Method (pyannote, simple_vad, none)
+        fast_mode: Skip heavy post-processing
+        
+    Returns:
+        Transcription result with segments, speakers, etc.
+    """
+    logger.info(
+        f"[API] POST /transcribe/{task_id} | "
+        f"diarization={enable_diarization} | method={diarization_method} | fast={fast_mode}"
+    )
+    
+    try:
+        result = transcribe_audio(
+            task_id=task_id,
+            db=db,
+            enable_diarization=enable_diarization,
+            diarization_method=diarization_method if enable_diarization else "none",
+            fast_mode=fast_mode
+        )
+        return result
+    except Exception as e:
+        logger.error(f"[API] Error transcribing task {task_id}: {e}", exc_info=True)
+        raise
+
+
+@router.post("/summarize-task/{task_id}")
+async def summarize_task(
+    task_id: str,
+    model_name: str = Body("gemma2:9b", embed=True),
+    summary_type: str = Body("detailed", embed=True),
+    include_context_analysis: bool = Body(True, embed=True),
+    db: Session = Depends(get_db)
+):
+    """
+    Summarize transcript (SEPARATE from transcription).
+    Task must be transcribed first.
+    
+    Args:
+        task_id: Task ID (must have transcript)
+        model_name: AI model to use (gemma2:9b, deepseek-r1:7b, etc.)
+        summary_type: Type of summary (brief, detailed, investigation)
+        include_context_analysis: Include entity/action analysis
+        
+    Returns:
+        Summary with context analysis
+    """
+    logger.info(
+        f"[API] POST /summarize-task/{task_id} | "
+        f"model={model_name} | type={summary_type} | context={include_context_analysis}"
+    )
+    
+    try:
+        # Get task
+        task = get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        # Check if transcript exists
+        transcript = task.get('transcript')
+        if not transcript:
+            raise HTTPException(
+                status_code=400,
+                detail="Task must be transcribed first. Please run transcription before summarization."
+            )
+        
+        # Get context analysis if needed
+        context = task.get('context_analysis') if include_context_analysis else None
+        
+        # Summarize
+        summary = summarize_transcript(
+            transcript=transcript,
+            context=context,
+            model_name=model_name
+        )
+        
+        # Update task with summary
+        update_task(task_id, {
+            "status": "summarized",
+            "summary": summary
+        })
+        
+        response = {
+            "task_id": task_id,
+            "status": "summarized",
+            "summary": summary,
+            "model_name": model_name,
+            "summary_type": summary_type
+        }
+        
+        logger.info(f"[API] Summary completed for task {task_id}")
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[API] Error summarizing task {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/visualize/{task_id}")
+async def visualize_task(
+    task_id: str,
+    visualization_type: str = Body("all", embed=True)
+):
+    """
+    Generate visualization data from transcript.
+    Task must be transcribed first.
+    
+    Args:
+        task_id: Task ID (must have transcript)
+        visualization_type: Type (timeline, entity_graph, relationship_map, all)
+        
+    Returns:
+        Visualization data (nodes, edges, timeline, events)
+    """
+    logger.info(
+        f"[API] POST /visualize/{task_id} | type={visualization_type}"
+    )
+    
+    try:
+        result = generate_visualization(
+            task_id=task_id,
+            visualization_type=visualization_type
+        )
+        return result
+    except Exception as e:
+        logger.error(f"[API] Error generating visualization for task {task_id}: {e}", exc_info=True)
+        raise 
