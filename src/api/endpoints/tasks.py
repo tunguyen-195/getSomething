@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Body, Depends
 from typing import List, Dict, Any
 import uuid
 from sqlalchemy.orm import Session
-from src.services.task_service import create_task, get_task
+from src.services.task_service import create_task, get_task, list_tasks
 from src.core.logging import logger
 from src.database.config.database import get_db
 

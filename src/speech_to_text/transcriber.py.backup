@@ -392,21 +392,16 @@ class Transcriber:
                     logger.info(f"[AUTO-BATCH] batch_size tự động điều chỉnh theo VRAM: {batch_size}")
             except Exception as e:
                 logger.warning(f"[AUTO-BATCH] Không thể kiểm tra VRAM, dùng batch_size mặc định: {batch_size}. Lỗi: {e}")
-        # Support both local path và automatic download/cache
-        use_local = getattr(settings, 'WHISPER_USE_LOCAL', True)
-        download_root = getattr(settings, 'WHISPER_MODEL_PATH', 'models/whisper') if use_local else None
-        
-        if use_local:
-            logger.info(f"[OFFLINE MODE] Using local model cache: {download_root}")
-        
-        # Load model - will use cache if available, download if needed
-        self.model = WhisperModel(
-            model_name, 
-            device=device, 
-            compute_type=compute_type,
-            download_root=download_root
-        )
-        logger.info(f"[MODEL] Loaded {model_name} successfully")
+        # Chỉ cho phép load model từ local path
+        model_dir = None
+        if os.path.isdir(model_name):
+            model_dir = model_name
+        else:
+            # Map tên model sang thư mục local
+            model_dir = os.path.join("models", f"faster-whisper-{model_name}")
+        if not os.path.exists(model_dir):
+            raise RuntimeError(f"Model path {model_dir} does not exist. Please download the model manually for offline use.")
+        self.model = WhisperModel(model_dir, device=device, compute_type=compute_type)
         self.device = device
         self.compute_type = compute_type
         self.model_name = model_name
@@ -424,7 +419,7 @@ class Transcriber:
         self.speaker_pipeline = None
         self.pipeline = self.model
         self.audio_processor = AudioProcessor()
-        logger.info(f"Transcriber initialized: model={model_name}, device={device}, compute_type={compute_type}")
+        logger.info(f"Loaded WhisperModel {model_dir} on {device} with {compute_type}")
         
     def _set_segmentation_params(self, min_segment_length, max_segment_length, context_window, overlap):
         # Ưu tiên giá trị truyền vào, nếu None thì lấy từ instance, nếu vẫn None thì lấy mặc định, ép kiểu an toàn
@@ -620,15 +615,9 @@ class Transcriber:
             logger.error(f"Error generating caption: {str(e)}")
             return ""
     
-    def transcribe(self, audio_path: str, fast_mode: bool = False) -> dict:
-        """Transcribe audio file to text with parallel processing và context analysis
-        
-        Args:
-            audio_path: Path to audio file
-            fast_mode: If True, skip heavy post-processing (LLM analysis, summarization)
-                      to achieve maximum speed (~30x real-time)
-        """
-        logger.info(f"[TRANSCRIBER] Bắt đầu transcribe | audio_path={audio_path} | fast_mode={fast_mode}")
+    def transcribe(self, audio_path: str) -> dict:
+        """Transcribe audio file to text with parallel processing và context analysis"""
+        logger.info(f"[TRANSCRIBER] Bắt đầu transcribe | audio_path={audio_path}")
         try:
             start_time = time.time()
             # Load audio và nhận diện
@@ -698,40 +687,33 @@ class Transcriber:
             if len(text) < min_length or char_ratio < (1 - max_invalid_ratio):
                 logger.warning(f"[TRANSCRIBE] Transcript không đạt chuẩn: length={len(text)}, char_ratio={char_ratio:.2f}")
                 text = "[CẢNH BÁO] Transcript không đạt chuẩn chất lượng, vui lòng kiểm tra lại file audio."
-            # --- Sinh caption và phân tích ngữ cảnh (chỉ khi không dùng fast_mode) ---
-            caption = ""
-            context_analysis = {}
-            summary = ""
-            
-            if not fast_mode:
-                # Sinh caption mô tả audio
-                caption = self._generate_caption(audio, sr)
-                # Phân tích ngữ cảnh bằng Ollama
-                context_analysis = self.llm_processor.analyze_context(text)
-                # --- Chuẩn hóa context_analysis ---
-                import json as _json
-                if isinstance(context_analysis, str):
-                    try:
-                        context_analysis = _json.loads(context_analysis)
-                    except Exception as e:
-                        logger.warning(f"[CONTEXT_ANALYSIS] Lỗi parse JSON: {e}. context_analysis={context_analysis}")
-                        context_analysis = {}
-                if not isinstance(context_analysis, dict):
-                    logger.warning(f"[CONTEXT_ANALYSIS] context_analysis không phải dict: {type(context_analysis)}. Reset về dict rỗng.")
+            # --- Sinh caption mô tả audio ---
+            caption = self._generate_caption(audio, sr)
+            # Phân tích ngữ cảnh bằng Ollama
+            context_analysis = self.llm_processor.analyze_context(text)
+            # --- Chuẩn hóa context_analysis ---
+            import json as _json
+            if isinstance(context_analysis, str):
+                try:
+                    context_analysis = _json.loads(context_analysis)
+                except Exception as e:
+                    logger.warning(f"[CONTEXT_ANALYSIS] Lỗi parse JSON: {e}. context_analysis={context_analysis}")
                     context_analysis = {}
-                # Đảm bảo schema chuẩn
-                for k in ["summary", "key_points", "entities", "actions", "decisions", "sentiment", "privacy_summary"]:
-                    if k not in context_analysis:
-                        context_analysis[k] = [] if k in ["key_points", "entities", "actions", "decisions"] else ""
-                # Tóm tắt nội dung (nếu có summarizer)
-                if hasattr(self, "summarizer") and self.summarizer:
-                    try:
-                        summary = self.summarizer.summarize(text, context=context_analysis)
-                    except Exception as e:
-                        logger.error(f"Error summarizing: {e}")
-                        summary = ""
-            else:
-                logger.info("[FAST_MODE] Skipping caption, LLM analysis, and summarization for maximum speed")
+            if not isinstance(context_analysis, dict):
+                logger.warning(f"[CONTEXT_ANALYSIS] context_analysis không phải dict: {type(context_analysis)}. Reset về dict rỗng.")
+                context_analysis = {}
+            # Đảm bảo schema chuẩn
+            for k in ["summary", "key_points", "entities", "actions", "decisions", "sentiment", "privacy_summary"]:
+                if k not in context_analysis:
+                    context_analysis[k] = [] if k in ["key_points", "entities", "actions", "decisions"] else ""
+            # Tóm tắt nội dung (nếu có summarizer)
+            summary = ""
+            if hasattr(self, "summarizer") and self.summarizer:
+                try:
+                    summary = self.summarizer.summarize(text, context=context_analysis)
+                except Exception as e:
+                    logger.error(f"Error summarizing: {e}")
+                    summary = ""
             # Calculate confidence (simple heuristic)
             duration = len(audio) / sr
             confidence = min(1.0, len(text) / (duration * 10))  # Assume 10 chars per second is good

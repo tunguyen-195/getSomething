@@ -2,9 +2,10 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks,
 from typing import List, Dict, Any
 import json
 import os
-from src.services.audio_service import summarize_multi_transcripts, summarize_transcript, save_audio_and_create_task, process_task
+from src.services.audio_service import summarize_multi_transcripts, summarize_transcript, save_audio_and_create_task, process_task, process_task_with_diarization
 from src.services.task_service import create_task, get_task, list_tasks, update_task
 from src.core.logging import logger
+from src.core.config import settings
 import uuid
 from datetime import datetime, timedelta
 from src.database.models.models import Case, AudioFile, Task
@@ -80,10 +81,15 @@ async def get_task_by_id(task_id: str) -> Dict[str, Any]:
 async def summarize_multi(
     transcripts: Dict[str, List[str]] = Body(...),
     case_id: str = Body(None),
-    model_name: str = Body("google/mt5-base"),
+    model_name: str = Body(None),
     context_analysis: dict = Body(None)
 ):
     """Tóm tắt nhiều transcript thành một summary tổng hợp với model và context tuỳ chọn"""
+    
+    # Sử dụng model mặc định nếu không chỉ định
+    if model_name is None:
+        model_name = settings.DEFAULT_AI_MODEL
+    
     try:
         if case_id:
             all_transcripts = []
@@ -227,22 +233,42 @@ from src.worker.tasks import process_task_async
 @router.post("/process-task/{task_id}")
 async def process_uploaded_task(
     task_id: str,
-    model_name: str = Body("gemma2:9b", embed=True),
+    model_name: str = Body(None, embed=True),
+    diarization_method: str = Body("none", embed=True),
     db: Session = Depends(get_db)
 ):
-    """Xử lý file đã upload: transcribe, summarize, update task/audio_file (bất đồng bộ). Gửi task cho Celery, trả về ngay, frontend polling trạng thái."""
-    logger.info(f"[PROCESS_TASK] [ASYNC] Nhận request xử lý task_id={task_id} với model={model_name}")
-    celery_result = process_task_async.delay(task_id, model_name)
-    logger.info(f"[PROCESS_TASK] [ASYNC] Đã gửi task cho Celery | celery_id={celery_result.id}")
-    return {"task_id": task_id, "celery_id": celery_result.id, "status": "processing"}
+    """Xử lý file đã upload: transcribe, summarize, speaker diarization nếu có. Gửi task cho Celery, trả về ngay, frontend polling trạng thái."""
+    
+    # Sử dụng model mặc định nếu không chỉ định
+    if model_name is None:
+        model_name = settings.DEFAULT_AI_MODEL
+    
+    logger.info(f"[PROCESS_TASK] [ASYNC] Nhận request xử lý task_id={task_id} với model={model_name}, diarization_method={diarization_method}")
+    # Đẩy xử lý sang Celery để tránh giữ kết nối lâu gây ECONNRESET qua proxy dev
+    process_task_async.delay(task_id, model_name, diarization_method)
+    # Trả về ngay để frontend polling qua /tasks/{task_id}
+    try:
+        # Đánh dấu trạng thái task là processing nếu chưa có
+        task = get_task(task_id) or {}
+        if task.get("status") not in ["processing", "completed", "failed"]:
+            update_task(task_id, {"status": "processing"})
+    except Exception:
+        # Không chặn response nếu cập nhật trạng thái thất bại
+        pass
+    return {"task_id": task_id, "status": "processing"}
 
 @router.post("/process-tasks")
 async def process_multiple_tasks(
     task_ids: List[str] = Body(..., embed=True),
-    model_name: str = Body("gemma2:9b", embed=True),
+    model_name: str = Body(None, embed=True),
     db: Session = Depends(get_db)
 ):
     """Xử lý nhiều task (nhiều file/audio) theo batch, tận dụng batch_size và pipeline tối ưu."""
+    
+    # Sử dụng model mặc định nếu không chỉ định
+    if model_name is None:
+        model_name = settings.DEFAULT_AI_MODEL
+    
     import time
     from src.speech_to_text.transcriber import Transcriber
     transcriber = Transcriber()

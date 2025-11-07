@@ -35,9 +35,19 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
 
     # Model
-    WHISPER_MODEL: str = "large-v2"
+    WHISPER_MODEL: str = "large-v3-turbo"  # Upgraded from large-v2 (6-7x faster, better accuracy)
+    WHISPER_USE_LOCAL: bool = True  # Use local cached model for offline mode
+    WHISPER_MODEL_PATH: str = "models/whisper"  # Local model cache directory
+    WHISPER_FAST_MODE: bool = True  # Skip heavy LLM post-processing (31x speed vs 3x)
     VOSK_MODEL_PATH: str = "models/vosk-model-vn-0.4"
     T5_MODEL_PATH: str = "models/t5-base"
+    
+    # Language & AI Model Settings
+    DEFAULT_LANGUAGE: str = "vi"  # Tiếng Việt
+    DEFAULT_AI_MODEL: str = "gpt-oss"  # Model AI mặc định
+    FORCE_VIETNAMESE_OUTPUT: bool = True  # Ép buộc đầu ra tiếng Việt
+    PRESERVE_ORIGINAL_LANGUAGE: bool = True  # Giữ nguyên ngôn ngữ gốc trong hội thoại
+    TRANSLATE_SUMMARY_TO_VIETNAMESE: bool = True  # Chỉ dịch tóm tắt sang tiếng Việt
 
     # Storage
     UPLOAD_DIR: str = "uploads"

@@ -122,8 +122,10 @@ class WebInterface:
             logger.info(f"Processing audio file: {audio_file}")
             logger.info(f"Language: {language}")
             
-            # Transcribe and analyze audio
-            result = self.transcriber.transcribe(audio_file)
+            # Transcribe and analyze audio  
+            from src.core.config import settings
+            fast_mode = getattr(settings, 'WHISPER_FAST_MODE', True)
+            result = self.transcriber.transcribe(audio_file, fast_mode=fast_mode)
             
             # Extract transcription and analysis
             transcription = result["transcription"]

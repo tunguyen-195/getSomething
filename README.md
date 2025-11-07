@@ -311,4 +311,7 @@ celery -A src.worker.worker worker --loglevel=info
 celery -A src.worker.worker worker --loglevel=info --pool=solo
 uvicorn src.main:app --reload                   
 celery -A src.worker.worker worker --loglevel=info --pool=threads
+
+uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+celery -A src.worker.celery worker --loglevel=info
 npm run dev

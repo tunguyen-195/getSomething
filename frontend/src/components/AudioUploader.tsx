@@ -50,6 +50,7 @@ const AudioUploader = ({ onNewTask }: AudioUploaderProps) => {
   const [newCaseDesc, setNewCaseDesc] = useState('');
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [diarizationMethod, setDiarizationMethod] = useState<string>("none");
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/v1/cases/`).then(res => res.json()).then(setCases).catch(e => console.error('Error fetching cases:', e));
@@ -137,19 +138,15 @@ const AudioUploader = ({ onNewTask }: AudioUploaderProps) => {
         }));
         formData.append('case_id', selectedCase);
         formData.append('model_name', 'gemma2:9b');
-
         const totalSize = files.reduce((sum, f) => sum + f.size, 0);
         let uploadedSize = 0;
-
         await new Promise(resolve => setTimeout(resolve, 500));
         uploadedSize += file.size;
         setUploadProgress(Math.round((uploadedSize / totalSize) * 100));
-
         const response = await fetch(`${API_BASE_URL}/api/v1/audio/upload`, {
           method: 'POST',
           body: formData,
         });
-
         if (!response.ok) {
           throw new Error('Xử lý thất bại cho file: ' + file.name);
         }
@@ -158,7 +155,7 @@ const AudioUploader = ({ onNewTask }: AudioUploaderProps) => {
         const processRes = await fetch(`${API_BASE_URL}/api/v1/audio/process-task/${data.task_id}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model_name: 'gemma2:9b' })
+          body: JSON.stringify({ model_name: 'gemma2:9b', diarization_method: diarizationMethod })
         });
         if (!processRes.ok) {
           throw new Error('Xử lý file thất bại sau khi upload: ' + file.name);
@@ -237,7 +234,19 @@ const AudioUploader = ({ onNewTask }: AudioUploaderProps) => {
               </Typography>
             )}
           </FormControl>
-
+          <FormControl sx={{ minWidth: 220 }} disabled={uploading}>
+            <InputLabel id="diarization-method-label">Tách người nói</InputLabel>
+            <Select
+              labelId="diarization-method-label"
+              value={diarizationMethod}
+              label="Tách người nói"
+              onChange={e => setDiarizationMethod(e.target.value)}
+            >
+              <MenuItem value="none">Không tách</MenuItem>
+              <MenuItem value="whisperx">WhisperX</MenuItem>
+              <MenuItem value="nemo">NeMo</MenuItem>
+            </Select>
+          </FormControl>
           <Button variant="outlined" onClick={() => setOpenDialog(true)} disabled={uploading} sx={{ px: 3, py: 1.5, fontWeight: 600 }}>
             Tạo vụ việc mới
           </Button>
