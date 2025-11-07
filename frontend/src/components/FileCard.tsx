@@ -317,24 +317,134 @@ const FileCard: React.FC<FileCardProps> = ({
 
         <Divider sx={{ my: 2, borderColor: 'rgba(255, 214, 0, 0.3)' }} />
 
-        {/* Bottom Actions */}
-        <Box display="flex" justifyContent="space-between" alignItems="center">
-          <Button
-            size="small"
-            onClick={onViewTranscript}
-            disabled={!file.transcript}
-            sx={{
-              color: '#1976d2',
-              textTransform: 'none',
-              fontWeight: 600,
+        {/* VIEW RESULTS Section - Appears after completion */}
+        {(file.transcript || file.summary) && (
+          <Box mb={3}>
+            <Typography 
+              variant="subtitle2" 
+              fontWeight={700} 
+              color="#43a047" 
+              mb={1.5} 
+              sx={{ letterSpacing: 0.5 }}
+            >
+              👁️ VIEW RESULTS
+            </Typography>
+            <Box display="flex" gap={1.5} flexWrap="wrap">
+              {file.transcript && (
+                <Button
+                  variant="outlined"
+                  startIcon={<ViewIcon />}
+                  onClick={() => setTranscriptExpanded(!transcriptExpanded)}
+                  sx={{
+                    borderColor: '#43a047',
+                    color: '#43a047',
+                    fontWeight: 700,
+                    borderRadius: '12px',
+                    borderWidth: '2.5px',
+                    px: 2.5,
+                    py: 1,
+                    fontSize: '0.9rem',
+                    textTransform: 'none',
+                    '&:hover': {
+                      borderWidth: '2.5px',
+                      bgcolor: 'rgba(67, 160, 71, 0.1)',
+                      transform: 'scale(1.05)',
+                      boxShadow: '0 4px 16px rgba(67, 160, 71, 0.3)',
+                    },
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    animation: 'fadeInUp 0.5s ease-out',
+                    '@keyframes fadeInUp': {
+                      from: { opacity: 0, transform: 'translateY(10px)' },
+                      to: { opacity: 1, transform: 'translateY(0)' },
+                    },
+                  }}
+                >
+                  📝 View Transcript
+                </Button>
+              )}
+
+              {file.summary && (
+                <Button
+                  variant="outlined"
+                  startIcon={<ViewIcon />}
+                  onClick={() => setSummaryExpanded(!summaryExpanded)}
+                  sx={{
+                    borderColor: '#ff9800',
+                    color: '#ff9800',
+                    fontWeight: 700,
+                    borderRadius: '12px',
+                    borderWidth: '2.5px',
+                    px: 2.5,
+                    py: 1,
+                    fontSize: '0.9rem',
+                    textTransform: 'none',
+                    '&:hover': {
+                      borderWidth: '2.5px',
+                      bgcolor: 'rgba(255, 152, 0, 0.1)',
+                      transform: 'scale(1.05)',
+                      boxShadow: '0 4px 16px rgba(255, 152, 0, 0.3)',
+                    },
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    animation: 'fadeInUp 0.5s ease-out 0.1s',
+                    animationFillMode: 'both',
+                  }}
+                >
+                  📊 View Summary
+                </Button>
+              )}
+
+              {file.status === 'summarized' && (
+                <Button
+                  variant="outlined"
+                  startIcon={<ViewIcon />}
+                  onClick={onVisualize}
+                  sx={{
+                    borderColor: '#9c27b0',
+                    color: '#9c27b0',
+                    fontWeight: 700,
+                    borderRadius: '12px',
+                    borderWidth: '2.5px',
+                    px: 2.5,
+                    py: 1,
+                    fontSize: '0.9rem',
+                    textTransform: 'none',
+                    '&:hover': {
+                      borderWidth: '2.5px',
+                      bgcolor: 'rgba(156, 39, 176, 0.1)',
+                      transform: 'scale(1.05)',
+                      boxShadow: '0 4px 16px rgba(156, 39, 176, 0.3)',
+                    },
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    animation: 'fadeInUp 0.5s ease-out 0.2s',
+                    animationFillMode: 'both',
+                  }}
+                >
+                  📈 View Visualization
+                </Button>
+              )}
+            </Box>
+          </Box>
+        )}
+
+        {/* Delete Button */}
+        <Box display="flex" justifyContent="flex-end" mb={2}>
+          <IconButton 
+            size="small" 
+            onClick={onDelete} 
+            sx={{ 
+              color: '#d32f2f',
+              '&:hover': {
+                bgcolor: 'rgba(211, 47, 47, 0.1)',
+                transform: 'rotate(10deg)',
+              },
+              transition: 'all 0.3s',
             }}
           >
-            🔽 View Transcript
-          </Button>
-          <IconButton size="small" onClick={onDelete} sx={{ color: '#d32f2f' }}>
             <DeleteIcon />
           </IconButton>
         </Box>
+
+        <Divider sx={{ my: 2, borderColor: 'rgba(67, 160, 71, 0.3)' }} />
 
         {/* Transcript Section - Inline Display */}
         {file.transcript && (
