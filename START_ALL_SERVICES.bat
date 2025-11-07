@@ -29,7 +29,7 @@ timeout /t 5 /nobreak > nul
 echo.
 
 echo [3/5] Starting Celery Worker...
-start "Celery Worker" cmd /k "cd /d "%PROJECT_DIR%" && echo Starting Celery Worker && venv\Scripts\python.exe -m celery -A src.worker worker --pool=solo --loglevel=info"
+start "Celery Worker (Gevent)" cmd /k "cd /d "%PROJECT_DIR%" && venv\Scripts\pip install -q gevent && echo Starting Celery Worker (Gevent Pool) && venv\Scripts\python.exe -m celery -A src.worker worker --pool=gevent --concurrency=1 --loglevel=info"
 echo [OK] Celery Worker starting
 timeout /t 3 /nobreak > nul
 echo.

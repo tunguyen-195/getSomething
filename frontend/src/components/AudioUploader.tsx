@@ -155,19 +155,11 @@ const AudioUploader = ({ onNewTask }: AudioUploaderProps) => {
           throw new Error('Xử lý thất bại cho file: ' + file.name);
         }
         const data = await response.json();
-        // Gọi xử lý file sau khi upload thành công
-        const processRes = await fetch(`${API_BASE_URL}/api/v1/audio/process-task/${data.task_id}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model_name: 'gemma2:9b', diarization_method: diarizationMethod })
-        });
-        if (!processRes.ok) {
-          throw new Error('Xử lý file thất bại sau khi upload: ' + file.name);
-        }
-        const processData = await processRes.json();
+        // V2 API: Only upload, user manually triggers transcribe/summarize from UI
+        // No automatic processing - modular workflow
         onNewTask({
           id: data.task_id,
-          status: 'completed',
+          status: 'uploaded',  // Changed from 'completed' to 'uploaded'
           filename: file.name,
           case_id: selectedCase,
         });
