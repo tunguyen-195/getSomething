@@ -1,0 +1,120 @@
+﻿╔════════════════════════════════════════════════════════════════════════════╗
+║                        CACHE CLEANED + RESTARTED                           ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Status: ✅ All services restarted with clean cache
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                        WHAT WAS CLEANED                                    ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+✅ Removed 2,195 __pycache__ directories
+✅ Deleted all .pyc bytecode files
+✅ Deleted all .pyo optimized files
+✅ Cleared Celery beat schedule
+✅ Cleared app.log and celery_worker.log
+✅ Cleared Vite cache (.vite folder)
+✅ Cleared npm cache (node_modules/.cache)
+
+Result: 0 __pycache__ remaining ✅
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                        SERVICES STATUS                                     ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+✅ Redis:      Running (already was)
+✅ Backend:    Starting on http://localhost:8000
+✅ Celery:     Starting
+✅ Frontend:   Starting on http://localhost:3000
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                        PLEASE PROVIDE ERROR DETAILS                        ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+You mentioned: "lỗi liên quan đến cache/memory-bank, lấy nhầm file ở local"
+
+I need more details:
+
+1. ERROR MESSAGE:
+   → Paste exact error from Console (F12)
+   → Or paste from Backend/Celery logs
+
+2. WHAT HAPPENED:
+   → Upload file → Got wrong file?
+   → Process file → Got old results?
+   → UI showing wrong content?
+
+3. EXPECTED vs ACTUAL:
+   → Expected: [describe]
+   → Actual: [describe]
+
+4. STEPS TO REPRODUCE:
+   1. [Step 1]
+   2. [Step 2]
+   3. [Error happens here]
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                        COMMON CACHE ISSUES (FIXED?)                        ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Issue 1: Old Python imports cached
+   ✅ FIXED: Cleared all __pycache__
+   
+Issue 2: Vite serving old builds
+   ✅ FIXED: Cleared .vite cache
+   
+Issue 3: Celery using old task definitions
+   ✅ FIXED: Cleared celerybeat-schedule
+
+Issue 4: Memory-bank context confusion
+   ⚠️  NOT A BUG: memory-bank is just documentation
+   → Doesn't affect runtime
+   → Can be ignored or updated
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                        TESTING AFTER CLEAN                                 ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Test 1: Fresh browser session
+   1. Close all browser tabs
+   2. Open NEW incognito window
+   3. Go to http://localhost:3000
+   4. Hard refresh: Ctrl+Shift+R
+
+Test 2: Check Backend health
+   curl http://localhost:8000/api/health
+   → Should return OK
+
+Test 3: Upload new file
+   1. Select case
+   2. Upload DIFFERENT file (not used before)
+   3. Check if correct file processed
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                        FILES CREATED                                       ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+✅ CLEAN_CACHE.bat      - Clean all cache manually
+✅ CLEAN_START.bat      - Clean + restart in one command
+
+Usage:
+   CLEAN_CACHE.bat      → Then manually start
+   CLEAN_START.bat      → Auto clean + start
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                        NEXT ACTIONS                                        ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+IF ERROR PERSISTS:
+   1. Paste EXACT error message
+   2. Screenshot if possible
+   3. Describe what you did step-by-step
+   
+IF ERROR GONE:
+   ✅ Continue testing workflow
+   ✅ Try V2 API endpoints
+   ✅ Report if FileCard should be added
+
+═══════════════════════════════════════════════════════════════════════════════
+
+WAITING FOR YOUR ERROR DETAILS...
