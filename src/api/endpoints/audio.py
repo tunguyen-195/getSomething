@@ -23,8 +23,30 @@ from urllib.parse import unquote
 router = APIRouter()
 
 @router.get("/")
-def read_audio():
-    return {"message": "Audio endpoint"}
+def read_audio(case_id: int = Query(None), db: Session = Depends(get_db)):
+    """Get all audio files, optionally filter by case_id"""
+    try:
+        query = db.query(AudioFile)
+        if case_id:
+            query = query.filter(AudioFile.case_id == case_id)
+        
+        audio_files = query.order_by(AudioFile.created_at.desc()).all()
+        
+        return [{
+            "id": af.id,
+            "task_id": af.task_id,
+            "filename": af.filename,
+            "case_id": af.case_id,
+            "status": af.status,
+            "duration": af.duration,
+            "num_speakers": af.num_speakers,
+            "has_diarization": af.has_diarization,
+            "file_path": af.file_path,
+            "created_at": af.created_at.isoformat() if af.created_at else None
+        } for af in audio_files]
+    except Exception as e:
+        logger.error(f"[GET_AUDIO] Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/upload")
 async def upload_audio(
