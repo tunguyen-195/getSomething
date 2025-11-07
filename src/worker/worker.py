@@ -18,8 +18,9 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     task_time_limit=3600,  # 1 hour
-    worker_max_tasks_per_child=100,
+    worker_max_tasks_per_child=0,  # 0 = unlimited (no restart after X tasks)
     worker_prefetch_multiplier=1,
+    worker_concurrency=1,  # Process 1 task at a time (sequential)
     broker_transport_options={
         "visibility_timeout": 3600,
         "max_retries": 20,
