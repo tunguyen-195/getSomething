@@ -1,0 +1,22 @@
+﻿# WHISPER MODEL ANALYSIS & RECOMMENDATIONS
+
+## CURRENT ISSUES
+1. Transcription sai nội dung (file audio chuẩn nhưng kết quả sai)
+2. Cần kiểm tra:
+   - Model size đúng chưa?
+   - Tham số beam_size, temperature
+   - VAD filter có cắt mất content không?
+   - Language detection
+   - Compute type (float16 vs int8)
+
+## NEED TO CHECK
+1. Xem model hiện tại đang dùng gì
+2. Xem tham số transcribe
+3. Test với các tham số khác nhau
+4. So sánh kết quả
+
+## FILES TO ANALYZE
+- .env → Model config
+- config.py → Default settings
+- whisper_manager.py → Model loading
+- transcribe_service_v2.py → Transcription logic

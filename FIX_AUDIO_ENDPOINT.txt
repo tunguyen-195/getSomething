@@ -1,0 +1,60 @@
+﻿╔════════════════════════════════════════════════════════════════════════════╗
+║                   FIX: GET /audio ENDPOINT ADDED                           ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Problem Found: Files (V2) tab empty
+
+Root Cause:
+   GET /api/v1/audio returned: {"message": "Audio endpoint"}
+   → Frontend tried to map this as array
+   → No files displayed!
+
+Fix Applied:
+   ✅ Changed GET /audio to return audio files array
+   ✅ Added case_id query parameter
+   ✅ Returns full file metadata
+   ✅ Added Query import
+
+Code Change:
+   @router.get("/")
+   def read_audio(case_id: int = Query(None), db: Session = Depends(get_db)):
+       # Returns array of audio files with metadata
+       return [file_data, ...]
+
+API Now Returns:
+   [{
+     "id": 1,
+     "task_id": "abc123",
+     "filename": "test.mp3",
+     "status": "uploaded",
+     "duration": 60,
+     "num_speakers": 2,
+     ...
+   }]
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                   NEXT STEPS TO SEE FILES                                  ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+1. Clean restart (cache might be issue):
+   .\CLEAN_CACHE.bat
+   Wait 5 seconds
+   .\START_ALL_SERVICES.bat
+
+2. Verify backend API:
+   curl http://localhost:8000/api/v1/audio?case_id=1
+   → Should return array of files
+
+3. Refresh frontend:
+   Ctrl+Shift+R in browser
+
+4. Check Files (V2) tab:
+   Select case → Click Files (V2) tab
+   → Files should appear!
+
+5. If still empty:
+   → Upload file in Files (V1) tab first
+   → Then check Files (V2) tab
+
+Commit: 2f9a83c5
+═══════════════════════════════════════════════════════════════════════════════

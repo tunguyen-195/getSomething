@@ -68,12 +68,20 @@ def transcribe_audio_v2(
         whisper_mgr = get_whisper_manager()
         logger.info("[TRANSCRIBE_V2] Whisper manager ready")
         
-        # Step 1: Transcribe with Whisper
+        # Step 1: Transcribe with Whisper (Optimized for Vietnamese accuracy)
         logger.info(f"[TRANSCRIBE_V2] Transcribing audio: {audio_path.name}")
         segments_iter, info = whisper_mgr.transcribe(
             str(audio_path),
             language=language,
-            vad_filter=False  # Don't cut content
+            beam_size=10,                     # Increased from 5 for better Vietnamese accuracy
+            temperature=0.0,                  # Deterministic output (repeatable)
+            best_of=5,                        # Generate 5 samples, pick best
+            compression_ratio_threshold=2.4,  # Detect repetitions
+            log_prob_threshold=-1.0,          # Filter low-confidence segments
+            no_speech_threshold=0.6,          # Detect silence/non-speech
+            initial_prompt="Đây là cuộc hội thoại bằng tiếng Việt.",  # Vietnamese context
+            vad_filter=False,                 # Don't cut content
+            word_timestamps=True              # Get word-level timing for better accuracy
         )
         
         # Collect segments

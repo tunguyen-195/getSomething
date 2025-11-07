@@ -1,0 +1,281 @@
+﻿╔════════════════════════════════════════════════════════════════════════════╗
+║                    HƯỚNG DẪN TEST FRONTEND HIỆN TẠI                        ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Date: 2025-11-07 17:20
+Status: Ready for Testing
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         SERVICES ĐANG CHẠY                                 ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+✅ Backend:     http://localhost:8000
+✅ Frontend:    http://localhost:3002 (ports 3000-3001 busy)
+✅ API Docs:    http://localhost:8000/docs
+✅ Celery:      Running
+✅ Redis:       Running
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         BƯỚC 1: MỞ BROWSER                                 ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+1. Mở trình duyệt (Chrome/Edge recommended)
+2. Truy cập: http://localhost:3002
+3. Nhấn F5 hoặc Ctrl+R để refresh (clear cache)
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         BƯỚC 2: MỞ DEVELOPER CONSOLE                       ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+1. Nhấn F12 (hoặc Ctrl+Shift+I)
+2. Chọn tab "Console"
+3. Check xem có error đỏ không:
+
+Expected (OK):
+   ✅ No red errors
+   ✅ Có thể có warnings (màu vàng) - OK
+   ✅ Logs về API calls - OK
+
+Red Errors (BÁO CHO TÔI):
+   ❌ "Cannot find module ..."
+   ❌ "Unexpected token ..."
+   ❌ "Failed to fetch ..."
+   → Copy error message và gửi cho tôi
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         BƯỚC 3: KIỂM TRA UI                                ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Checklist (Tick ✅ hoặc ❌):
+
+[ ] Logo Cherry2 hiển thị (góc trên trái)
+[ ] Dark mode toggle hoạt động
+[ ] Sidebar với danh sách Cases
+[ ] Search box hoạt động
+[ ] Nút "+" tạo case mới
+[ ] FileTable hiển thị files đã upload
+[ ] Tabs (Files / Transcript / Summary)
+[ ] Upload button hoạt động
+
+Nếu TẤT CẢ ✅ → UI cơ bản OK!
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         BƯỚC 4: TEST WORKFLOW V1 (CŨ)                      ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Test xem V1 API (monolithic) vẫn hoạt động không:
+
+1. Chọn 1 case trong sidebar
+2. Click "Upload" button
+3. Chọn file audio (.mp3, .m4a, .wav)
+4. Click "Process" hoặc tương tự
+5. Chờ kết quả
+
+Expected:
+   ✅ File upload thành công
+   ✅ Processing bắt đầu
+   ✅ Progress bar hoặc loading indicator
+   ✅ Transcript hiển thị sau 20-60s
+   ✅ Summary hiển thị sau transcript
+
+Nếu FAILED:
+   ❌ Check Console errors
+   ❌ Check Backend logs (cửa sổ Backend)
+   ❌ Check Celery logs (cửa sổ Celery Worker)
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         BƯỚC 5: TEST COMPONENTS MỚI                        ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Components mới đã integrate nhưng chưa visible:
+
+Test 1: Check if components loaded
+   1. Mở Console (F12)
+   2. Gõ: window.React
+   3. Should return: Object {...}
+   
+Test 2: Check imports
+   1. Console tab
+   2. Gõ: console.log('Test')
+   3. Should see: Test
+
+Test 3: Trigger Snackbar (Manual test)
+   1. Console tab
+   2. Paste và Enter:
+   
+   // Trigger test snackbar
+   const event = new CustomEvent('test');
+   window.dispatchEvent(event);
+
+   → Nếu không thấy snackbar → OK (chưa có trigger code)
+   → Nếu thấy error → BÁO TÔI
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         BƯỚC 6: TEST BACKEND V2 API                        ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Dùng Postman hoặc Thunder Client:
+
+Test 1: Check API Health
+   GET http://localhost:8000/api/health
+   Expected: 200 OK
+
+Test 2: Upload file (V2)
+   POST http://localhost:8000/api/v1/audio/v2/upload
+   Body (form-data):
+      file: [chọn file audio]
+      case_id: 1
+   Expected: 
+      {
+        "task_id": "abc123",
+        "status": "uploaded",
+        "filename": "test.mp3"
+      }
+   
+   → SAVE task_id để dùng bước sau
+
+Test 3: Transcribe
+   POST http://localhost:8000/api/v1/audio/v2/transcribe/{task_id}
+   Body (JSON):
+   {
+     "enable_diarization": true,
+     "diarization_method": "pyannote",
+     "language": "vi",
+     "fast_mode": true,
+     "async_mode": true
+   }
+   Expected:
+      {
+        "task_id": "abc123",
+        "status": "processing"
+      }
+
+Test 4: Check Status (Poll)
+   GET http://localhost:8000/api/v1/audio/v2/tasks/{task_id}/status
+   
+   Poll mỗi 2-3 giây cho đến khi:
+      {
+        "status": "transcribed",
+        "transcript": "..."
+      }
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         BƯỚC 7: REPORT RESULTS                             ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Sau khi test, cho tôi biết:
+
+1. UI Status:
+   [ ] Cherry2 design OK
+   [ ] No console errors
+   [ ] V1 workflow works
+   [ ] V1 upload/process OK
+
+2. Backend V2 API:
+   [ ] Upload endpoint works
+   [ ] Transcribe endpoint works
+   [ ] Status polling works
+   [ ] Results returned correctly
+
+3. Issues Found (nếu có):
+   - Console errors: [paste here]
+   - API errors: [paste here]
+   - UI bugs: [describe]
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         TROUBLESHOOTING                                    ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Problem 1: Frontend không load (blank page)
+   → Check Console errors
+   → Check port http://localhost:3002 đúng không
+   → Try Ctrl+Shift+R (hard refresh)
+
+Problem 2: 404 Not Found
+   → Backend chưa chạy
+   → Start: START_ALL_SERVICES.bat
+
+Problem 3: CORS errors
+   → Backend CORS config issue
+   → Check backend logs
+
+Problem 4: Components missing
+   → npm install missing
+   → Run: cd frontend && npm install
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         QUICK CHECKS                                       ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+✓ Backend alive:
+   curl http://localhost:8000/docs
+   → Should return HTML
+
+✓ Frontend alive:
+   curl http://localhost:3002
+   → Should return HTML
+
+✓ Redis alive:
+   redis-cli ping
+   → Should return: PONG
+
+✓ Celery alive:
+   Check window "Celery Worker"
+   → Should see [INFO] logs
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         EXPECTED RESULTS                                   ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+✅ GOOD (Everything working):
+   - UI loads without errors
+   - V1 workflow works
+   - V2 API responds correctly
+   - No red errors in console
+   - Upload/transcribe/summarize functional
+
+⚠️  PARTIAL (Some issues):
+   - UI loads but some errors
+   - V1 works but V2 doesn't
+   - Components not visible yet
+   → This is EXPECTED! We haven't added FileCard display yet
+
+❌ BROKEN (Major issues):
+   - Blank page
+   - Red errors everywhere
+   - Nothing works
+   → Need immediate fix
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         AFTER TESTING                                      ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Report format:
+
+"""
+Test Results:
+1. UI: [OK/PARTIAL/BROKEN]
+2. Console Errors: [YES/NO - paste if yes]
+3. V1 Workflow: [WORKS/FAILS]
+4. V2 API: [WORKS/FAILS]
+5. Ready for FileCard: [YES/NO]
+
+Comments:
+[Your observations]
+"""
+
+Then I will:
+- Fix any critical issues first
+- Complete FileCard integration
+- Final testing together
+
+═══════════════════════════════════════════════════════════════════════════════
+
+READY TO TEST!
+
+Open: http://localhost:3002
+Press: F12
+Test: V1 workflow
+Report: Results
+
+Good luck! 🚀

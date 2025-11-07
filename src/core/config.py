@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     WHISPER_DEVICE: str = "cuda"  # "cuda" hoặc "cpu"
     WHISPER_COMPUTE_TYPE: str = "float16"  # "float16" cho GPU, "int8" cho CPU
     WHISPER_BATCH_SIZE: int = 8
-    WHISPER_BEAM_SIZE: int = 5
+    WHISPER_BEAM_SIZE: int = 10  # Increased for better Vietnamese accuracy
 
     @validator("CORS_ORIGINS", pre=True)
     def assemble_cors_origins(cls, v: str | List[str]) -> List[str]:
