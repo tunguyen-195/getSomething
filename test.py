@@ -53,12 +53,18 @@ audio_file = r"storage\audio\Tiếp nhận yêu cầu đặt phòng của khách
 
 if os.path.exists(audio_file):
     try:
+        print("  Testing NEW METHOD: transcribe_with_diarization()")
+        print("  Fast mode + Speaker diarization enabled")
         start = time.time()
-        result = transcriber.transcribe(audio_file, fast_mode=True)  # Enable fast mode
+        result = transcriber.transcribe_with_diarization(
+            audio_file, 
+            fast_mode=True,
+            enable_diarization=True
+        )
         transcribe_time = time.time() - start
         
         print(f"✓ Transcription completed in {transcribe_time:.2f}s")
-        print(f"  Mode: FAST (no LLM post-processing)")
+        print(f"  Mode: FAST + DIARIZATION")
         
         # Display results
         duration = result.get('duration', 0)
@@ -67,7 +73,21 @@ if os.path.exists(audio_file):
             print(f"  Speed: {duration / transcribe_time:.1f}x real-time")
         
         print(f"  Language: {result.get('language', 'N/A')}")
-        print(f"  Segments: {len(result.get('segments', []))}")
+        print(f"  Num speakers: {result.get('num_speakers', 'N/A')}")
+        print(f"  Num segments: {len(result.get('segments', []))}")
+        
+        # Show first 3 segments with speakers
+        print("\n  First 3 segments with speaker labels:")
+        for i, seg in enumerate(result.get('segments', [])[:3]):
+            speaker = seg.get('speaker', 'Unknown')
+            text = seg.get('text', '')[:60]
+            print(f"    {i+1}. [{speaker}] {text}...")
+        
+        # Save formatted transcript
+        output_file = audio_file.replace('.mp3', '_NEW_FORMAT.txt')
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(result.get('formatted_transcript', ''))
+        print(f"\n  Saved formatted transcript: {output_file}")
         
         # Show first 300 chars of transcript
         transcript = result.get('transcription', '')

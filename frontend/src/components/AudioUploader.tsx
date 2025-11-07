@@ -50,7 +50,8 @@ const AudioUploader = ({ onNewTask }: AudioUploaderProps) => {
   const [newCaseDesc, setNewCaseDesc] = useState('');
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
-  const [diarizationMethod, setDiarizationMethod] = useState<string>("none");
+  const [diarizationMethod, setDiarizationMethod] = useState<string>("whisperx");
+  const [transcriptionMode, setTranscriptionMode] = useState<string>("fast");  // "fast" or "full"
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/v1/cases/`).then(res => res.json()).then(setCases).catch(e => console.error('Error fetching cases:', e));
@@ -134,10 +135,13 @@ const AudioUploader = ({ onNewTask }: AudioUploaderProps) => {
         formData.append('file', file);
         formData.append('options', JSON.stringify({
           language: 'vi',
-          model_type: 'whisper'
+          model_type: 'whisper',
+          fast_mode: transcriptionMode === 'fast',
+          enable_diarization: diarizationMethod !== 'none'
         }));
         formData.append('case_id', selectedCase);
         formData.append('model_name', 'gemma2:9b');
+        formData.append('diarization_method', diarizationMethod);
         const totalSize = files.reduce((sum, f) => sum + f.size, 0);
         let uploadedSize = 0;
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -243,8 +247,30 @@ const AudioUploader = ({ onNewTask }: AudioUploaderProps) => {
               onChange={e => setDiarizationMethod(e.target.value)}
             >
               <MenuItem value="none">Không tách</MenuItem>
-              <MenuItem value="whisperx">WhisperX</MenuItem>
+              <MenuItem value="whisperx">WhisperX (Pyannote)</MenuItem>
               <MenuItem value="nemo">NeMo</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl sx={{ minWidth: 200 }} disabled={uploading}>
+            <InputLabel id="transcription-mode-label">Chế độ xử lý</InputLabel>
+            <Select
+              labelId="transcription-mode-label"
+              value={transcriptionMode}
+              label="Chế độ xử lý"
+              onChange={e => setTranscriptionMode(e.target.value)}
+            >
+              <MenuItem value="fast">
+                <Box>
+                  <Typography fontWeight={600}>⚡ Fast Mode</Typography>
+                  <Typography variant="caption" color="text.secondary">Nhanh (31x real-time)</Typography>
+                </Box>
+              </MenuItem>
+              <MenuItem value="full">
+                <Box>
+                  <Typography fontWeight={600}>🧠 Full Mode</Typography>
+                  <Typography variant="caption" color="text.secondary">Đầy đủ (phân tích + tóm tắt)</Typography>
+                </Box>
+              </MenuItem>
             </Select>
           </FormControl>
           <Button variant="outlined" onClick={() => setOpenDialog(true)} disabled={uploading} sx={{ px: 3, py: 1.5, fontWeight: 600 }}>

@@ -620,6 +620,143 @@ class Transcriber:
             logger.error(f"Error generating caption: {str(e)}")
             return ""
     
+    def transcribe_with_diarization(self, audio_path: str, fast_mode: bool = False, enable_diarization: bool = True) -> dict:
+        """
+        Transcribe audio with speaker diarization
+        
+        Args:
+            audio_path: Path to audio file
+            fast_mode: Skip heavy LLM post-processing
+            enable_diarization: Enable speaker diarization (labels who spoke when)
+            
+        Returns:
+            dict with 'segments' containing [{'start', 'end', 'text', 'speaker'}]
+                 and 'formatted_transcript' in SRT-like format
+        """
+        logger.info(f"[TRANSCRIBER] Starting transcribe_with_diarization | audio={audio_path} | fast_mode={fast_mode} | diarization={enable_diarization}")
+        
+        try:
+            start_time = time.time()
+            
+            # Step 1: Run Whisper transcription to get segments with timestamps
+            segments_whisper, info = self.model.transcribe(
+                audio_path,
+                language="vi",
+                beam_size=self.beam_size,
+                vad_filter=True,
+                word_timestamps=True  # Important for diarization alignment
+            )
+            
+            # Convert generator to list
+            transcript_segments = []
+            for seg in segments_whisper:
+                transcript_segments.append({
+                    'start': seg.start,
+                    'end': seg.end,
+                    'text': seg.text.strip()
+                })
+            
+            logger.info(f"[TRANSCRIBER] Whisper produced {len(transcript_segments)} segments")
+            
+            # Step 2: Run speaker diarization if enabled
+            final_segments = transcript_segments
+            if enable_diarization and len(transcript_segments) > 0:
+                try:
+                    from src.audio_processing.diarization.whisperx import WhisperXPipeline
+                    diarizer = WhisperXPipeline()
+                    
+                    # Get speaker segments
+                    speaker_segments = diarizer.run(audio_path)
+                    logger.info(f"[DIARIZATION] Found {len(speaker_segments)} speaker segments")
+                    
+                    # Assign speakers to transcript segments
+                    if len(speaker_segments) > 0:
+                        final_segments = diarizer.assign_speakers_to_transcript(
+                            transcript_segments, 
+                            speaker_segments
+                        )
+                        logger.info(f"[DIARIZATION] Assigned speakers to {len(final_segments)} segments")
+                    else:
+                        # Fallback: assign default speaker
+                        final_segments = [
+                            {**seg, 'speaker': 'Speaker 0'} 
+                            for seg in transcript_segments
+                        ]
+                except Exception as e:
+                    logger.error(f"[DIARIZATION] Error: {e}. Using no speaker labels.")
+                    final_segments = [
+                        {**seg, 'speaker': 'Speaker 0'} 
+                        for seg in transcript_segments
+                    ]
+            else:
+                # No diarization: assign default speaker
+                final_segments = [
+                    {**seg, 'speaker': 'Speaker 0'} 
+                    for seg in transcript_segments
+                ]
+            
+            # Step 3: Format output like ElevenLabs Scribe / file mẫu
+            formatted_lines = []
+            for seg in final_segments:
+                start_time_str = self._format_timestamp(seg['start'])
+                end_time_str = self._format_timestamp(seg['end'])
+                speaker = seg.get('speaker', 'Speaker 0')
+                text = seg['text']
+                
+                # Format: HH:MM:SS,mmm --> HH:MM:SS,mmm [Speaker X]
+                formatted_lines.append(f"{start_time_str} --> {end_time_str} [{speaker}]")
+                formatted_lines.append(text)
+                formatted_lines.append("")  # Empty line
+            
+            formatted_transcript = "\n".join(formatted_lines)
+            
+            # Step 4: Optional full-mode processing
+            full_text = " ".join([seg['text'] for seg in final_segments])
+            context_analysis = {}
+            summary = ""
+            
+            if not fast_mode:
+                try:
+                    context_analysis = self.llm_processor.analyze_context(full_text)
+                    if isinstance(context_analysis, str):
+                        import json
+                        context_analysis = json.loads(context_analysis)
+                except Exception as e:
+                    logger.warning(f"[LLM] Context analysis failed: {e}")
+            
+            processing_time = time.time() - start_time
+            duration = info.duration if hasattr(info, 'duration') else final_segments[-1]['end'] if final_segments else 0
+            
+            result = {
+                'transcription': full_text,
+                'formatted_transcript': formatted_transcript,
+                'segments': final_segments,
+                'duration': duration,
+                'processing_time': processing_time,
+                'speed_factor': duration / processing_time if processing_time > 0 else 0,
+                'language': 'vi',
+                'analysis': context_analysis,
+                'summary': summary,
+                'num_speakers': len(set(seg['speaker'] for seg in final_segments)),
+                'fast_mode': fast_mode,
+                'diarization_enabled': enable_diarization
+            }
+            
+            logger.info(f"[TRANSCRIBER] Completed in {processing_time:.2f}s | Speed: {result['speed_factor']:.1f}x")
+            return result
+            
+        except Exception as e:
+            logger.error(f"[TRANSCRIBER] Error in transcribe_with_diarization: {e}", exc_info=True)
+            raise
+    
+    def _format_timestamp(self, seconds: float) -> str:
+        """Format seconds to HH:MM:SS,mmm"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        millis = int((seconds % 1) * 1000)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+    
     def transcribe(self, audio_path: str, fast_mode: bool = False) -> dict:
         """Transcribe audio file to text with parallel processing và context analysis
         

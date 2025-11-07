@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     WHISPER_USE_LOCAL: bool = True  # Use local cached model for offline mode
     WHISPER_MODEL_PATH: str = "models/whisper"  # Local model cache directory
     WHISPER_FAST_MODE: bool = True  # Skip heavy LLM post-processing (31x speed vs 3x)
+    HF_TOKEN: str = ""  # HuggingFace token for gated models (pyannote)
     VOSK_MODEL_PATH: str = "models/vosk-model-vn-0.4"
     T5_MODEL_PATH: str = "models/t5-base"
     

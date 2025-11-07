@@ -101,11 +101,36 @@ def process_task_with_diarization(task_id: str, model_name: str, db, diarization
             db.commit()
             return result
         else:
-            # Fallback về logic cũ
+            # Enhanced transcription với diarization support
             transcriber = Transcriber()
-            fast_mode = getattr(settings, 'WHISPER_FAST_MODE', True)
-            result = transcriber.transcribe(audio_file.file_path, fast_mode=fast_mode)
-            logger.info(f"[AUDIO_SERVICE] Kết quả transcribe | task_id={task_id} | fast_mode={fast_mode} | result={result}")
+            
+            # Get options from task or use defaults
+            options = {}
+            if hasattr(audio_file, 'options') and audio_file.options:
+                import json
+                options = json.loads(audio_file.options) if isinstance(audio_file.options, str) else audio_file.options
+            
+            fast_mode = options.get('fast_mode', getattr(settings, 'WHISPER_FAST_MODE', True))
+            enable_diarization = options.get('enable_diarization', diarization_method != "none")
+            
+            # Use new diarization method if enabled
+            if enable_diarization and diarization_method != "none":
+                logger.info(f"[AUDIO_SERVICE] Using transcribe_with_diarization | fast_mode={fast_mode} | diarization={diarization_method}")
+                result = transcriber.transcribe_with_diarization(
+                    audio_file.file_path, 
+                    fast_mode=fast_mode,
+                    enable_diarization=True
+                )
+                # Save formatted transcript to file
+                transcript_file = audio_file.file_path.replace('.mp3', '.txt').replace('.wav', '.txt')
+                with open(transcript_file, 'w', encoding='utf-8') as f:
+                    f.write(result.get('formatted_transcript', ''))
+                logger.info(f"[AUDIO_SERVICE] Saved formatted transcript to {transcript_file}")
+            else:
+                # Use old method without diarization
+                result = transcriber.transcribe(audio_file.file_path, fast_mode=fast_mode)
+            
+            logger.info(f"[AUDIO_SERVICE] Kết quả transcribe | task_id={task_id} | fast_mode={fast_mode} | diarization={enable_diarization} | result_keys={list(result.keys())}")
             wer, cer, noise_score = benchmark_asr(result.get("transcription"), audio_file.file_path)
             logger.info(f"[AUDIO_SERVICE] Benchmark | WER={wer}, CER={cer}, noise_score={noise_score}")
             transcript = result.get("transcription")

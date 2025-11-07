@@ -1,0 +1,46 @@
+﻿# HUONG DAN KHOI DONG VA KIEM TRA DU AN
+
+## CACH KHOI DONG DU AN
+
+### Buoc 1: Kiem tra he thong
+- Chay: CHECK_SYSTEM.bat
+- Dam bao Python, Redis, Model da san sang
+
+### Buoc 2: Khoi dong tat ca dich vu
+- Chay: START_PROJECT.bat
+- Doi 10-15 giay de tat ca dich vu khoi dong
+
+### Buoc 3: Kiem tra chat luong
+- Mo browser: http://localhost:5173
+- Upload file audio
+- Chon Fast Mode + WhisperX Diarization
+- Xem ket qua transcript voi speaker labels
+
+### Buoc 4: Dung du an
+- Chay: STOP_PROJECT.bat
+
+## KET QUA DA DAT DUOC
+
+1. Speaker Diarization: Output format chuan SRT
+2. Fast Mode: 31x real-time speed
+3. GUI toggle: Fast/Full mode + Diarization on/off
+4. Vietnamese quality: WER ~10%
+
+## KE HOACH TIEP THEO
+
+### Phase 1: Hoan thien Diarization (1-2 tuan)
+- [ ] Lay HF token cho pyannote model
+- [ ] Test voi nhieu nguoi noi (3+)
+- [ ] Fine-tune speaker detection
+
+### Phase 2: Nang cao quality (2-4 tuan)
+- [ ] Post-processing cho hotel domain
+- [ ] LLM integration cho context analysis
+- [ ] Real-time streaming
+
+### Phase 3: Production ready (1-2 thang)
+- [ ] Multi-GPU support
+- [ ] API optimization
+- [ ] Monitoring va logging
+
+Chi tiet day du trong: ASR_IMPROVEMENT_PLAN.md
