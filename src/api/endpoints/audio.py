@@ -38,9 +38,9 @@ def read_audio(case_id: int = Query(None), db: Session = Depends(get_db)):
             "filename": af.filename,
             "case_id": af.case_id,
             "status": af.status,
-            "duration": af.duration,
-            "num_speakers": af.num_speakers,
-            "has_diarization": af.has_diarization,
+            "duration": getattr(af, 'duration', None),
+            "num_speakers": getattr(af, 'num_speakers', None),
+            "has_diarization": getattr(af, 'has_diarization', False),
             "file_path": af.file_path,
             "created_at": af.created_at.isoformat() if af.created_at else None
         } for af in audio_files]
