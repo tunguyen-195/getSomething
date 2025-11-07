@@ -167,7 +167,7 @@ function App() {
       const result = await response.json();
       setFiles(prev => prev.map(f => f.task_id === selectedTaskId ? { ...f, status: 'transcribing' } : f));
       setTranscribeDialogOpen(false);
-      setSnackbar({open: true, message: 'Transcription started', severity: 'info'});
+      setSnackbar({open: true, message: '🎙️ Transcription started! Please wait...', severity: 'info'});
     } catch (error) {
       setSnackbar({open: true, message: 'Failed to start', severity: 'error'});
     }
@@ -189,7 +189,7 @@ function App() {
       if (!response.ok) throw new Error('Failed');
       setFiles(prev => prev.map(f => f.task_id === selectedTaskId ? { ...f, status: 'summarizing' } : f));
       setSummarizeDialogOpen(false);
-      setSnackbar({open: true, message: 'Summarization started', severity: 'info'});
+      setSnackbar({open: true, message: '📊 Summarization started! Please wait...', severity: 'info'});
     } catch (error) {
       setSnackbar({open: true, message: 'Failed to start', severity: 'error'});
     }
