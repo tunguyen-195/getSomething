@@ -1,0 +1,2 @@
+Hãy đọc lại kết quả ở D:\Workspace\SpeechToInfomation\storage\audio\Tiếp nhận yêu cầu đặt phòng của khách lẻ qua điện thoại.txt và D:\Workspace\SpeechToInfomation\storage\audio\Tiếp nhận yêu cầu đặt phòng của khách lẻ qua điện thoại_NEW_FORMAT.txt rõ ràng kết quả này khác nhau
+ở file mới câu nói đầu tiên có vẻ đã bị bỏ qua, và cũng thiết sót một số nội dung. Hãy kiểm tra lại code xử lý cũ, có vẻ họ đã xử lý chưa chuẩn trong quá trình transcript

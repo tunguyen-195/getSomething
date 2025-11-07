@@ -673,7 +673,8 @@ class Transcriber:
                     if len(speaker_segments) > 0:
                         final_segments = diarizer.assign_speakers_to_transcript(
                             transcript_segments, 
-                            speaker_segments
+                            speaker_segments,
+                            audio_path=audio_path  # Pass audio path for fallback
                         )
                         logger.info(f"[DIARIZATION] Assigned speakers to {len(final_segments)} segments")
                     else:
