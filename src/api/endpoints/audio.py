@@ -230,6 +230,8 @@ def download_audio(audio_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Audio file not found")
     return FileResponse(audio.file_path, filename=audio.filename, media_type="audio/mpeg")
 
+# Import from old tasks.py file (backward compatibility with v1 API)
+# The new modular tasks are in src.worker.tasks.* submodules
 from src.worker.tasks import process_task_async
 
 @router.post("/process-task/{task_id}")
