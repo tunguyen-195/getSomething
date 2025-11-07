@@ -24,7 +24,7 @@ router = APIRouter()
 
 @router.get("/")
 def read_audio(case_id: int = Query(None), db: Session = Depends(get_db)):
-    """Get all audio files, optionally filter by case_id"""
+    """Get all audio files with transcript/summary from Task.result JSON"""
     try:
         query = db.query(AudioFile)
         if case_id:
@@ -32,18 +32,51 @@ def read_audio(case_id: int = Query(None), db: Session = Depends(get_db)):
         
         audio_files = query.order_by(AudioFile.created_at.desc()).all()
         
-        return [{
-            "id": af.id,
-            "task_id": af.task_id,
-            "filename": af.filename,
-            "case_id": af.case_id,
-            "status": af.status,
-            "duration": getattr(af, 'duration', None),
-            "num_speakers": getattr(af, 'num_speakers', None),
-            "has_diarization": getattr(af, 'has_diarization', False),
-            "file_path": af.file_path,
-            "created_at": af.created_at.isoformat() if af.created_at else None
-        } for af in audio_files]
+        result = []
+        for af in audio_files:
+            # Get transcript/summary from Task.result JSON
+            transcript = None
+            summary = None
+            num_speakers = None
+            has_diarization = False
+            duration = getattr(af, 'duration', None)
+            
+            if af.task_id:
+                task = db.query(Task).filter(Task.id == af.task_id).first()
+                if task and task.result:
+                    try:
+                        if isinstance(task.result, str):
+                            import json
+                            result_data = json.loads(task.result)
+                        else:
+                            result_data = task.result
+                        
+                        # Extract data from result JSON
+                        transcript = result_data.get('transcript') or result_data.get('transcription')
+                        summary = result_data.get('summary')
+                        num_speakers = result_data.get('num_speakers')
+                        has_diarization = result_data.get('has_diarization', False)
+                        if not duration:
+                            duration = result_data.get('duration')
+                    except Exception as e:
+                        logger.warning(f"[GET_AUDIO] Failed to parse task result for {af.id}: {e}")
+            
+            result.append({
+                "id": af.id,
+                "task_id": af.task_id,
+                "filename": af.filename,
+                "case_id": af.case_id,
+                "status": af.status,
+                "duration": duration,
+                "num_speakers": num_speakers,
+                "has_diarization": has_diarization,
+                "file_path": af.file_path,
+                "created_at": af.created_at.isoformat() if af.created_at else None,
+                "transcript": transcript,
+                "summary": summary,
+            })
+        
+        return result
     except Exception as e:
         logger.error(f"[GET_AUDIO] Error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
