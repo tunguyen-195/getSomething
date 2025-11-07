@@ -1,0 +1,38 @@
+﻿# CRITICAL FIX SUMMARY
+
+## ROOT CAUSE IDENTIFIED
+
+FILE MP3 BỊ SAI!
+- File: Tiếp nhận yêu cầu đặt phòng của khách lẻ qua điện thoại.mp3
+- Nội dung THỰC TẾ: 'Subscribe kênh Ghiền Mì Gõ' (YouTube channel promo)
+- Nội dung MONG ĐỢI: Hotel booking conversation
+- File TXT gốc (.txt) là ĐÚNG (5731 chars)
+- File MP3 là SAI hoặc bị ghi đè
+
+## WHAT HAPPENED
+
+Có thể:
+1. File MP3 bị overwrite/replace bởi file khác
+2. Có 2 files trùng tên
+3. Original audio file bị mất
+
+## SOLUTION
+
+1. Check file WAV: 'Ghi am Thai Dung 27.8.2025.WAV' 
+   - Có thể đây mới là file đúng?
+   
+2. Restore original MP3 từ backup (nếu có)
+
+3. Models portability:
+   - Robocopy failed
+   - Need manual copy hoặc use different method
+   - Models vẫn ở .cache (not portable yet)
+
+## ACTION NEEDED
+
+User cần:
+1. Provide correct audio file cho hotel booking
+2. Hoặc confirm file WAV là file đúng
+3. Then we can re-test transcription và diarization
+
+Không thể fix transcript nếu audio file sai!

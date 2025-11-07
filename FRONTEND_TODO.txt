@@ -1,0 +1,15 @@
+﻿[Frontend Integration Plan]
+
+File: FRONTEND_INTEGRATION_PLAN.md created
+
+Contains:
+- Step-by-step guide
+- Code snippets ready to paste
+- State management setup
+- API call functions
+- Status polling logic
+- FileCard replacement
+- Dialog integration
+
+Estimated time: 1.5-2h
+Next: Implement in App.tsx following the plan

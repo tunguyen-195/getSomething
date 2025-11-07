@@ -1,0 +1,261 @@
+﻿# Frontend Upgrade Implementation Guide
+
+## Status: Ready to implement
+## Approach: Careful, preserve Cherry2 design
+
+## Step-by-Step Changes to App.tsx
+
+### 1. Add Imports (Line ~15)
+ADD after existing imports:
+`	ypescript
+import FileCard from './components/FileCard';
+import TranscribeDialog from './components/TranscribeDialog';
+import SummarizeDialog from './components/SummarizeDialog';
+`
+
+### 2. Add State Management (Line ~80, after existing state)
+ADD:
+`	ypescript
+// Dialog state
+const [transcribeDialogOpen, setTranscribeDialogOpen] = useState(false);
+const [summarizeDialogOpen, setSummarizeDialogOpen] = useState(false);
+const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+
+// Status polling
+const [pollingIntervals, setPollingIntervals] = useState<Map<string, NodeJS.Timeout>>(new Map());
+
+// Files state (enhanced)
+const [files, setFiles] = useState<any[]>([]);
+
+// Snackbar
+const [snackbar, setSnackbar] = useState({open: false, message: '', severity: 'info' as 'success'|'error'|'info'});
+`
+
+### 3. Add API Constants (Line ~85)
+`	ypescript
+const API_V2_BASE = '/api/v1/audio/v2';
+`
+
+### 4. Add API Functions (Line ~150, after handleCreateCase)
+`	ypescript
+const handleTranscribe = async (options: any) => {
+  if (!selectedTaskId) return;
+  
+  try {
+    const response = await fetch(\\/transcribe/\\, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        enable_diarization: options.enableDiarization,
+        diarization_method: options.diarizationMethod || 'pyannote',
+        language: options.language || 'vi',
+        fast_mode: true,
+        async_mode: true
+      })
+    });
+    
+    if (!response.ok) throw new Error('Failed');
+    const result = await response.json();
+    
+    // Update status
+    setFiles(prev => prev.map(f => 
+      f.task_id === selectedTaskId 
+        ? { ...f, status: 'processing', celery_task_id: result.celery_task_id }
+        : f
+    ));
+    
+    // Start polling
+    startStatusPolling(selectedTaskId);
+    
+    setTranscribeDialogOpen(false);
+    setSnackbar({open: true, message: 'Transcription started', severity: 'info'});
+  } catch (error) {
+    setSnackbar({open: true, message: 'Failed to start', severity: 'error'});
+  }
+};
+
+const handleSummarize = async (options: any) => {
+  if (!selectedTaskId) return;
+  
+  try {
+    const response = await fetch(\\/summarize/\\, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model_name: options.modelName,
+        summary_type: options.summaryType || 'detailed',
+        include_context: true,
+        async_mode: true
+      })
+    });
+    
+    if (!response.ok) throw new Error('Failed');
+    const result = await response.json();
+    
+    setFiles(prev => prev.map(f => 
+      f.task_id === selectedTaskId 
+        ? { ...f, status: 'summarizing' }
+        : f
+    ));
+    
+    startStatusPolling(selectedTaskId);
+    setSummarizeDialogOpen(false);
+    setSnackbar({open: true, message: 'Summarization started', severity: 'info'});
+  } catch (error) {
+    setSnackbar({open: true, message: 'Failed to start', severity: 'error'});
+  }
+};
+
+const startStatusPolling = (taskId: string) => {
+  // Clear existing
+  const existing = pollingIntervals.get(taskId);
+  if (existing) clearInterval(existing);
+  
+  // New interval
+  const intervalId = setInterval(async () => {
+    try {
+      const response = await fetch(\\/tasks/\/status\);
+      const status = await response.json();
+      
+      // Update state
+      setFiles(prev => prev.map(f => 
+        f.task_id === taskId ? { ...f, ...status } : f
+      ));
+      
+      // Stop if done
+      if (['transcribed', 'summarized', 'failed'].includes(status.status)) {
+        clearInterval(intervalId);
+        setPollingIntervals(prev => {
+          const m = new Map(prev);
+          m.delete(taskId);
+          return m;
+        });
+        
+        if (status.status === 'transcribed') {
+          setSnackbar({open: true, message: 'Transcription complete!', severity: 'success'});
+        } else if (status.status === 'summarized') {
+          setSnackbar({open: true, message: 'Summary complete!', severity: 'success'});
+        } else if (status.status === 'failed') {
+          setSnackbar({open: true, message: \Failed: \\, severity: 'error'});
+        }
+      }
+    } catch (error) {
+      console.error('Polling error:', error);
+    }
+  }, 2000); // Every 2s
+  
+  setPollingIntervals(prev => new Map(prev).set(taskId, intervalId));
+};
+`
+
+### 5. Add Cleanup Effect (Line ~100)
+`	ypescript
+useEffect(() => {
+  return () => {
+    pollingIntervals.forEach(interval => clearInterval(interval));
+  };
+}, []);
+`
+
+### 6. Replace FileTable with FileCard (Find FileTable usage ~line 400)
+REPLACE:
+`	ypescript
+<FileTable files={files} onFileSelect={handleFileSelect} />
+`
+
+WITH:
+`	ypescript
+<Box display="flex" flexDirection="column" gap={2}>
+  {files.length === 0 ? (
+    <Paper sx={{ p: 4, textAlign: 'center' }}>
+      <Typography color="text.secondary">
+        No files yet. Upload to get started.
+      </Typography>
+    </Paper>
+  ) : (
+    files.map(file => (
+      <FileCard
+        key={file.task_id}
+        file={{
+          id: file.task_id,
+          filename: file.filename,
+          status: file.status,
+          duration: file.duration,
+          num_speakers: file.num_speakers,
+          has_diarization: file.has_diarization,
+          transcript: file.transcript,
+          summary: file.summary,
+        }}
+        onTranscribe={() => {
+          setSelectedTaskId(file.task_id);
+          setTranscribeDialogOpen(true);
+        }}
+        onSummarize={() => {
+          setSelectedTaskId(file.task_id);
+          setSummarizeDialogOpen(true);
+        }}
+        onVisualize={() => console.log('Visualize:', file.task_id)}
+        onDelete={() => console.log('Delete:', file.task_id)}
+        onViewTranscript={() => console.log('View:', file.task_id)}
+      />
+    ))
+  )}
+</Box>
+`
+
+### 7. Add Dialogs (Before </ThemeProvider>, ~line 520)
+`	ypescript
+{/* Transcribe Dialog */}
+<TranscribeDialog
+  open={transcribeDialogOpen}
+  onClose={() => setTranscribeDialogOpen(false)}
+  onSubmit={handleTranscribe}
+/>
+
+{/* Summarize Dialog */}
+<SummarizeDialog
+  open={summarizeDialogOpen}
+  onClose={() => setSummarizeDialogOpen(false)}
+  onSubmit={handleSummarize}
+/>
+
+{/* Snackbar */}
+<Snackbar
+  open={snackbar.open}
+  autoHideDuration={6000}
+  onClose={() => setSnackbar(prev => ({...prev, open: false}))}
+  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+>
+  <Alert severity={snackbar.severity} variant="filled">
+    {snackbar.message}
+  </Alert>
+</Snackbar>
+`
+
+### 8. Add Import for Alert
+At top with other MUI imports:
+`	ypescript
+import { ... , Snackbar, Alert } from '@mui/material';
+`
+
+## Testing Steps
+
+1. Save changes
+2. Start backend: venv\Scripts\python.exe -m uvicorn src.main:app --reload
+3. Start Celery: venv\Scripts\python.exe -m celery -A src.worker worker --pool=solo
+4. Start frontend: cd frontend && npm run dev
+5. Test:
+   - Upload file
+   - Click Transcribe → Dialog opens
+   - Submit → Status updates automatically
+   - Wait for transcribed → Summarize button appears
+   - Click Summarize → Dialog opens
+   - Submit → Status updates
+
+## Notes
+
+- Preserve ALL existing Cherry2 styling
+- Keep logo, colors, animations
+- Only add functionality, don't change design
+- Test each step before moving to next
+

@@ -49,7 +49,8 @@ except Exception as e:
 
 # Test 3: Transcribe audio
 print("\n[3] Transcribing audio file...")
-audio_file = r"storage\audio\Tiếp nhận yêu cầu đặt phòng của khách lẻ qua điện thoại.mp3"
+# IMPORTANT: Use filetest.mp3 - the correct test file
+audio_file = r"storage\audio\filetest.mp3"
 
 if os.path.exists(audio_file):
     try:

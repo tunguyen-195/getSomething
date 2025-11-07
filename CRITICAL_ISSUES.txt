@@ -1,0 +1,95 @@
+﻿# VAI DE NGHIEM TRONG - CAN FIX NGAY
+
+## PROBLEM 1: Models trong .cache - KHONG PORTABLE
+
+Van de:
+- Pyannote models luu o: C:\Users\Admin\.cache\huggingface\hub\
+- Khong the copy du an sang may khac
+- Phu thuoc vao user profile
+
+Giai phap:
+- Da copy models vao: models/pyannote/
+- Da update code uu tien dung local models
+- Can test lai xem local models hoat dong
+
+## PROBLEM 2: Transcript THIEU NOI DUNG + SAI NOI DUNG
+
+### So sanh 2 files:
+
+FILE CU (Original - DUNG):
+- Bat dau: 00:00:00 (câu chào của nhan vien)
+- "Khach san Shilla Prius Hotel Ha Noi..."
+- Day du noi dung
+- 5731 chars
+
+FILE MOI (NEW_FORMAT - SAI):
+- Bat dau: 00:00:20 (thieu 20s dau)
+- Khong co cau chao
+- TRANSCRIPT SAI: "subscribe kenh Ghien Mi Go" (???)
+- 6699 chars nhung noi dung SAI
+
+### Nguyen nhan:
+
+1. VAD Filter cat mat noi dung dau/cuoi
+   - vad_filter=True → loai bo 20s dau (silent/noise)
+   - Da fix: vad_filter=False
+
+2. Model dang transcribe SAI FILE
+   - Test cho thay: "subscribe kenh Ghien Mi Go"
+   - Khong phai noi dung hotel booking
+   - Co the la cache issue hoac file path issue
+
+3. Pyannote khong load duoc
+   - Dang dung SimpleVAD fallback
+   - Chi detect 1 speaker thay vi 2
+   - Path to local models chua dung
+
+## ACTION ITEMS - CAN LAM NGAY
+
+### 1. Fix Pyannote Load Local Models
+
+File: src/audio_processing/diarization/whisperx.py
+
+Can import Path:
+```python
+from pathlib import Path
+
+# Then in __init__:
+local_model_path = Path("models/pyannote/models--pyannote--speaker-diarization-3.1")
+```
+
+### 2. Verify Audio File Path
+
+Test truc tiep:
+- File ton tai: storage\audio\Tiếp nhận yêu cầu đặt phòng của khách lẻ qua điện thoại.mp3
+- Size: 12MB
+- Can test xem Whisper transcribe dung file nay hay khong
+
+### 3. Clear Cache va Test Lai
+
+Steps:
+1. Clear any cached transcriptions
+2. Test voi file path ro rang
+3. Verify transcript content
+4. Check first segment starts at 0s (not 20s)
+
+### 4. Test Models Portability
+
+Tao script test:
+- Copy toan bo models/
+- Verify pyannote load tu models/pyannote/
+- Verify whisper load tu models/whisper/
+- Test khong can .cache folder
+
+## EXPECTED RESULTS
+
+Sau khi fix:
+- Transcript bat dau tu 00:00:00
+- Cau dau tien: "Khach san Shilla Prius Hotel..."
+- 2 speakers detected (SPEAKER_00 va SPEAKER_01)
+- Models load tu models/ folder (portable)
+- Khong phu thuoc .cache
+
+## PRIORITY
+
+HIGH - Transcript sai la van de nghiem trong nhat!

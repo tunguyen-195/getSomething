@@ -1,0 +1,53 @@
+﻿# CODE REVIEW - Phase 1 & 2
+
+## Structure Verification
+
+Services:
+
+FullName                                                                     
+--------                                                                     
+D:\Workspace\SpeechToInfomation\src\services\audio                           
+D:\Workspace\SpeechToInfomation\src\services\summarization                   
+D:\Workspace\SpeechToInfomation\src\services\transcription                   
+D:\Workspace\SpeechToInfomation\src\services\visualization                   
+D:\Workspace\SpeechToInfomation\src\services\__pycache__                     
+D:\Workspace\SpeechToInfomation\src\services\summarization\models            
+D:\Workspace\SpeechToInfomation\src\services\transcription\models            
+D:\Workspace\SpeechToInfomation\src\services\transcription\__pycache__       
+D:\Workspace\SpeechToInfomation\src\services\transcription\models\__pycache__
+
+
+
+
+Python Files:
+
+Name                     Length
+----                     ------
+audio_service.py          55380
+summary_service.py         1374
+task_service.py            9535
+transcribe_service.py      5839
+visualization_service.py   3750
+__init__.py                  27
+context_service.py         3202
+summary_service_v2.py      6532
+__init__.py                 229
+llm_manager.py             6520
+__init__.py                 139
+transcribe_service.py      5839
+transcribe_service_v2.py   8605
+__init__.py                 187
+pyannote_manager.py        5268
+whisper_manager.py         4845
+__init__.py                 216
+summarize_task.py          4736
+transcribe_task.py         2591
+visualize_task.py          2384
+__init__.py                 332
+
+
+
+
+Total LOC: ~2400 lines
+Status: Ready for testing
+

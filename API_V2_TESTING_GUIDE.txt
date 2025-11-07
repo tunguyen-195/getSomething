@@ -1,0 +1,92 @@
+﻿# API v2 Testing Guide
+
+## Prerequisites
+
+1. Start Backend:
+   venv\Scripts\python.exe -m uvicorn src.main:app --reload
+
+2. Start Celery Worker:
+   venv\Scripts\python.exe -m celery -A src.worker worker --pool=solo --loglevel=info
+
+3. Ensure Redis is running
+
+## Manual Testing (curl/Postman)
+
+### 1. Upload Audio
+POST http://localhost:8000/api/v1/audio/v2/upload
+Form-data:
+  file: [audio file]
+  case_id: 1
+
+Response:
+{
+  "task_id": "uuid",
+  "status": "uploaded"
+}
+
+### 2. Transcribe
+POST http://localhost:8000/api/v1/audio/v2/transcribe/{task_id}
+JSON Body:
+{
+  "enable_diarization": true,
+  "diarization_method": "pyannote",
+  "language": "vi",
+  "fast_mode": true,
+  "async_mode": true
+}
+
+Response:
+{
+  "task_id": "uuid",
+  "celery_task_id": "celery-uuid",
+  "status": "processing"
+}
+
+### 3. Poll Status
+GET http://localhost:8000/api/v1/audio/v2/tasks/{task_id}/status
+
+Response (processing):
+{
+  "task_id": "uuid",
+  "status": "processing",
+  "message": "Task is processing..."
+}
+
+Response (complete):
+{
+  "task_id": "uuid", 
+  "status": "transcribed",
+  "transcript": "...",
+  "num_speakers": 2,
+  "duration": 161.32
+}
+
+### 4. Summarize (after transcribed)
+POST http://localhost:8000/api/v1/audio/v2/summarize/{task_id}
+JSON Body:
+{
+  "model_name": null,
+  "summary_type": "detailed",
+  "include_context": true,
+  "async_mode": true
+}
+
+## Expected Flow
+
+1. Upload → status: uploaded
+2. Transcribe → status: processing → transcribing → transcribed
+3. Summarize → status: summarizing → summarized
+4. Visualize → status: visualizing → visualized
+
+## Status Check
+
+Backend health: http://localhost:8000/api/health
+Celery status: Check worker logs
+
+## Next Steps
+
+After manual testing passes:
+1. Update src/api/router.py to include audio_v2
+2. Integrate frontend (App.tsx)
+3. Test full UI flow
+
