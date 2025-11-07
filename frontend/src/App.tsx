@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ThemeProvider, CssBaseline, Box, AppBar, Toolbar, Typography, Paper, Drawer, List, ListItem, ListItemText, Divider, IconButton, InputBase, Button, CircularProgress, Tabs, Tab, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Accordion, AccordionSummary, AccordionDetails } from '@mui/material';
+import { ThemeProvider, CssBaseline, Box, AppBar, Toolbar, Typography, Paper, Drawer, List, ListItem, ListItemText, Divider, IconButton, InputBase, Button, CircularProgress, Tabs, Tab, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Accordion, AccordionSummary, AccordionDetails, Snackbar, Alert } from '@mui/material';
 import { lightTheme, darkTheme } from './theme';
 import DarkModeToggle from './components/DarkModeToggle';
 import SearchIcon from '@mui/icons-material/Search';
@@ -11,6 +11,9 @@ import FileTable from './components/FileTable';
 import TranscriptPanel from './components/TranscriptPanel';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import FolderIcon from '@mui/icons-material/Folder';
+import FileCard from './components/FileCard';
+import TranscribeDialog from './components/TranscribeDialog';
+import SummarizeDialog from './components/SummarizeDialog';
 
 interface Case {
   id: string;
@@ -75,6 +78,16 @@ function App() {
   const [newCaseDesc, setNewCaseDesc] = useState('');
   const [creatingCase, setCreatingCase] = useState(false);
 
+  // V2 API - Modular workflow state
+  const [transcribeDialogOpen, setTranscribeDialogOpen] = useState(false);
+  const [summarizeDialogOpen, setSummarizeDialogOpen] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [pollingIntervals, setPollingIntervals] = useState<Map<string, NodeJS.Timeout>>(new Map());
+  const [files, setFiles] = useState<any[]>([]);
+  const [snackbar, setSnackbar] = useState({open: false, message: '', severity: 'info' as 'success'|'error'|'info'|'warning'});
+  
+  const API_V2_BASE = '/api/v1/audio/v2';
+
   useEffect(() => {
     setLoadingCases(true);
     fetch('/api/v1/cases')
@@ -112,6 +125,57 @@ function App() {
       })
       .catch(() => setCreatingCase(false));
   };
+
+  // V2 API handlers
+  const handleTranscribe = async (options: any) => {
+    if (!selectedTaskId) return;
+    try {
+      const response = await fetch(`${API_V2_BASE}/transcribe/${selectedTaskId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enable_diarization: options.enable_diarization,
+          diarization_method: options.diarization_method || 'pyannote',
+          language: 'vi',
+          fast_mode: options.fast_mode,
+          async_mode: true
+        })
+      });
+      if (!response.ok) throw new Error('Failed');
+      const result = await response.json();
+      setFiles(prev => prev.map(f => f.task_id === selectedTaskId ? { ...f, status: 'transcribing' } : f));
+      setTranscribeDialogOpen(false);
+      setSnackbar({open: true, message: 'Transcription started', severity: 'info'});
+    } catch (error) {
+      setSnackbar({open: true, message: 'Failed to start', severity: 'error'});
+    }
+  };
+
+  const handleSummarize = async (options: any) => {
+    if (!selectedTaskId) return;
+    try {
+      const response = await fetch(`${API_V2_BASE}/summarize/${selectedTaskId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model_name: options.modelName,
+          summary_type: options.summaryType || 'detailed',
+          include_context: true,
+          async_mode: true
+        })
+      });
+      if (!response.ok) throw new Error('Failed');
+      setFiles(prev => prev.map(f => f.task_id === selectedTaskId ? { ...f, status: 'summarizing' } : f));
+      setSummarizeDialogOpen(false);
+      setSnackbar({open: true, message: 'Summarization started', severity: 'info'});
+    } catch (error) {
+      setSnackbar({open: true, message: 'Failed to start', severity: 'error'});
+    }
+  };
+
+  useEffect(() => {
+    return () => pollingIntervals.forEach(interval => clearInterval(interval));
+  }, [pollingIntervals]);
 
   function highlightSummary(summary: string) {
     if (!summary) return null;
@@ -524,6 +588,33 @@ function App() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* V2 API - Transcribe Dialog */}
+      <TranscribeDialog
+        open={transcribeDialogOpen}
+        onClose={() => setTranscribeDialogOpen(false)}
+        onConfirm={handleTranscribe}
+        filename={selectedTaskId || ''}
+      />
+
+      {/* V2 API - Summarize Dialog */}
+      <SummarizeDialog
+        open={summarizeDialogOpen}
+        onClose={() => setSummarizeDialogOpen(false)}
+        onConfirm={handleSummarize}
+      />
+
+      {/* Snackbar */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar(prev => ({...prev, open: false}))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert severity={snackbar.severity} variant="filled" onClose={() => setSnackbar(prev => ({...prev, open: false}))}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </ThemeProvider>
   );
 }
