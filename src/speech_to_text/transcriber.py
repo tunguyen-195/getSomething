@@ -547,15 +547,13 @@ class Transcriber:
             else:
                 audio = segment.data
             # Dùng pipeline.transcribe (WhisperModel) với batch_size nếu cần
+            # NOTE: VAD filter disabled to avoid cutting important speech at beginning/end
+            # This ensures complete transcription of all audio content
             segments, info = self.pipeline.transcribe(
                 audio,
                 language="vi",
                 beam_size=self.beam_size,
-                vad_filter=True,
-                vad_parameters=dict(
-                    min_silence_duration_ms=500,
-                    speech_pad_ms=100
-                )
+                vad_filter=False  # Disabled to preserve all content
             )
             if segments is None or info is None:
                 logger.error(f"pipeline.transcribe trả về None: segments={segments}, info={info}")
@@ -639,11 +637,13 @@ class Transcriber:
             start_time = time.time()
             
             # Step 1: Run Whisper transcription to get segments with timestamps
+            # NOTE: vad_filter can cut off beginning/end of audio, so we disable it
+            # for diarization to ensure we don't miss any content
             segments_whisper, info = self.model.transcribe(
                 audio_path,
                 language="vi",
                 beam_size=self.beam_size,
-                vad_filter=True,
+                vad_filter=False,  # Disable VAD to avoid missing content
                 word_timestamps=True  # Important for diarization alignment
             )
             

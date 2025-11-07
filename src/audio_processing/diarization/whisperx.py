@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 import logging
 import torch
 import numpy as np
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +24,21 @@ class WhisperXPipeline(SpeakerDiarizationPipeline):
             
             logger.info(f"[DIARIZATION] Loading pyannote pipeline (token: {'present' if hf_token else 'missing'})")
             
-            self.diarization_pipeline = Pipeline.from_pretrained(
-                "pyannote/speaker-diarization-3.1",
-                use_auth_token=hf_token  # Will use cached version if already downloaded
-            )
+            # Try local model first (fully portable)
+            local_model_path = Path("models/pyannote/models--pyannote--speaker-diarization-3.1")
+            if local_model_path.exists():
+                logger.info(f"[DIARIZATION] Using local model: {local_model_path}")
+                self.diarization_pipeline = Pipeline.from_pretrained(
+                    str(local_model_path),
+                    use_auth_token=hf_token
+                )
+            else:
+                # Fallback to HF cache
+                logger.info("[DIARIZATION] Using HuggingFace cache")
+                self.diarization_pipeline = Pipeline.from_pretrained(
+                    "pyannote/speaker-diarization-3.1",
+                    use_auth_token=hf_token
+                )
             # Use GPU if available
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             self.diarization_pipeline.to(device)
