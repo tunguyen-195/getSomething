@@ -6,7 +6,12 @@ celery_app = Celery(
     "speech_to_information",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["src.worker.tasks"],
+    include=[
+        "src.worker.tasks",  # Old tasks for backward compatibility
+        "src.worker.tasks.transcribe_task",
+        "src.worker.tasks.summarize_task",
+        "src.worker.tasks.visualize_task"
+    ],
 )
 
 # Configure Celery
@@ -33,5 +38,10 @@ celery_app.conf.update(
     },
 )
 
-# Import tasks
-from src.worker.tasks import *  # noqa 
+# Import old tasks for backward compatibility
+from src.worker.tasks import *  # noqa
+
+# Import new modular tasks
+from src.worker.tasks.transcribe_task import transcribe_audio_task  # noqa
+from src.worker.tasks.summarize_task import summarize_transcript_task, summarize_multi_task  # noqa
+from src.worker.tasks.visualize_task import visualize_task  # noqa 
