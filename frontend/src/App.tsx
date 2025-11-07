@@ -100,6 +100,28 @@ function App() {
       .catch(() => setLoadingCases(false));
   }, []);
 
+  // Load files when case selected
+  useEffect(() => {
+    if (selectedCase) {
+      fetch(`/api/v1/audio?case_id=${selectedCase.id}`)
+        .then(res => res.json())
+        .then(data => {
+          const mappedFiles = data.map((f: any) => ({
+            task_id: f.task_id || f.id,
+            filename: f.filename,
+            status: f.status || 'uploaded',
+            duration: f.duration,
+            num_speakers: f.num_speakers,
+            has_diarization: f.has_diarization,
+            transcript: f.transcript,
+            summary: f.summary
+          }));
+          setFiles(mappedFiles);
+        })
+        .catch(err => console.error('Failed to load files:', err));
+    }
+  }, [selectedCase]);
+
   const filteredCases = cases.filter(c =>
     c.title.toLowerCase().includes(search.toLowerCase()) ||
     c.case_code.toLowerCase().includes(search.toLowerCase())
@@ -478,13 +500,52 @@ function App() {
               </Typography>
             )}
             <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
-              <Tab label="Files" />
+              <Tab label="Files (V1)" />
+              <Tab label="Files (V2)" />
               <Tab label="Transcript" />
               <Tab label="Summary" />
               <Tab label="History" />
             </Tabs>
             {tab === 0 && <FileTable caseId={selectedCase.id} onSelectFile={setSelectedFileId} selectedFileId={selectedFileId} />}
-            {tab === 1 && selectedFileId ? <TranscriptPanel fileId={selectedFileId} /> : tab === 1 ? (
+            {tab === 1 && (
+              <Box display="flex" flexDirection="column" gap={2}>
+                {files.length === 0 ? (
+                  <Paper sx={{ p: 4, textAlign: 'center' }}>
+                    <Typography color="text.secondary">
+                      No files yet. Upload files via Files (V1) tab first, then they will appear here for modular processing.
+                    </Typography>
+                  </Paper>
+                ) : (
+                  files.map(file => (
+                    <FileCard
+                      key={file.task_id}
+                      file={{
+                        id: file.task_id,
+                        filename: file.filename,
+                        status: file.status,
+                        duration: file.duration,
+                        num_speakers: file.num_speakers,
+                        has_diarization: file.has_diarization,
+                        transcript: file.transcript,
+                        summary: file.summary,
+                      }}
+                      onTranscribe={() => {
+                        setSelectedTaskId(file.task_id);
+                        setTranscribeDialogOpen(true);
+                      }}
+                      onSummarize={() => {
+                        setSelectedTaskId(file.task_id);
+                        setSummarizeDialogOpen(true);
+                      }}
+                      onVisualize={() => setSnackbar({open: true, message: 'Visualization coming soon', severity: 'info'})}
+                      onDelete={() => setSnackbar({open: true, message: 'Delete coming soon', severity: 'info'})}
+                      onViewTranscript={() => setTab(2)}
+                    />
+                  ))
+                )}
+              </Box>
+            )}
+            {tab === 2 && selectedFileId ? <TranscriptPanel fileId={selectedFileId} /> : tab === 2 ? (
               selectedCase && selectedCase.transcripts && selectedCase.transcripts.length > 0 ? (
                 <Box>
                   <Typography variant="h6" fontWeight={700} mb={2}>Transcript các file</Typography>
@@ -503,7 +564,7 @@ function App() {
                 <Typography color="text.secondary">Chưa có transcript nào cho vụ việc này.</Typography>
               )
             ) : null}
-            {tab === 2 && (
+            {tab === 3 && (
               selectedCase && selectedCase.summaries && selectedCase.summaries.length > 0 ? (
                 <Box>
                   <Typography variant="h6" fontWeight={700} mb={2}>Tóm tắt các file</Typography>
@@ -515,7 +576,7 @@ function App() {
                 <Typography color="text.secondary">Chưa có tóm tắt nào cho vụ việc này.</Typography>
               )
             )}
-            {tab === 3 && (
+            {tab === 4 && (
               <Typography color="text.secondary">Tính năng lịch sử thao tác sẽ được bổ sung sau.</Typography>
             )}
           </Paper>
