@@ -255,6 +255,40 @@ def test_review_endpoint_updates_graph_and_enforces_revision(auth_enabled):
     assert conflict.json()["detail"]["current_revision"] == updated["graph_revision"]
 
 
+def test_visualize_endpoint_accepts_audio_id_for_frontend_fallback(auth_enabled):
+    user_id, username, password = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_task_for_user(user_id, case_id)
+    audio_id = _create_audio_for_task(user_id, case_id, task_id, status="transcribed")
+    assert update_task(
+        task_id,
+        {
+            "transcript": "SPEAKER_00 gọi số 0912345678",
+            "segments": [
+                {
+                    "id": "seg_1",
+                    "text": "SPEAKER_00 gọi số 0912345678",
+                    "start": 0.0,
+                    "end": 2.0,
+                    "speaker": "SPEAKER_00",
+                }
+            ],
+        },
+    )
+
+    client = _login_client(username, password)
+    response = client.post(
+        f"/api/v1/audio/v2/visualize/{audio_id}",
+        json={"visualization_type": "all"},
+        headers=_csrf_header(client),
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["task_id"] == task_id
+    assert body["visualization_data"]["schema_version"] == "analysis_intelligence.v2"
+
+
 def test_merge_entities_rejects_self_loop_relations(auth_enabled):
     user_id, username, password = _create_user()
     case_id = _create_case_for_user(user_id)

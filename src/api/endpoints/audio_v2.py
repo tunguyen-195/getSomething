@@ -263,30 +263,35 @@ async def visualize_v2(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    resolved_task_id: str | None = None
     try:
-        from src.services.task_service import get_task, update_task
+        from src.services.task_service import get_task, resolve_task_id, update_task
         from src.services.visualization_service import generate_visualization
 
-        task = get_task(task_id)
+        resolved_task_id = resolve_task_id(task_id, db=db)
+        if not resolved_task_id:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        task = get_task(resolved_task_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
-        assert_task_access(db, current_user, task_id, "process")
+        assert_task_access(db, current_user, resolved_task_id, "process")
         check_rate_limit(f"rl:process:{current_user.id}", settings.PROCESS_RATE_LIMIT_PER_HOUR, 3600)
 
-        update_task(task_id, {"status": "visualizing"}, db=db)
+        update_task(resolved_task_id, {"status": "visualizing"}, db=db)
         db.commit()
 
-        result = generate_visualization(task_id, visualization_type)
+        result = generate_visualization(resolved_task_id, visualization_type)
         payload = extract_visualization_payload(result)
         update_task(
-            task_id,
+            resolved_task_id,
             {"status": "visualized", "visualization_data": payload, "has_visualization": True},
             db=db,
         )
         db.commit()
 
         return {
-            "task_id": task_id,
+            "task_id": resolved_task_id,
             "status": "visualized",
             "visualization_data": payload,
             "has_visualization": True,
@@ -298,7 +303,7 @@ async def visualize_v2(
         logger.error(f"[API_V2] Visualize error: {e}", exc_info=True)
         try:
             from src.services.task_service import update_task
-            update_task(task_id, {"status": "failed", "error": str(e)}, db=db)
+            update_task(resolved_task_id or task_id, {"status": "failed", "error": str(e)}, db=db)
             db.commit()
         except Exception:
             db.rollback()

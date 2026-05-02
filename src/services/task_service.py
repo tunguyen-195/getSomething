@@ -266,6 +266,29 @@ def get_task(task_id: str, db: Session | None = None) -> Optional[Dict[str, Any]
             db.close()
 
 
+def resolve_task_id(identifier: str | int, db: Session | None = None) -> str | None:
+    """Resolve a task id, accepting an AudioFile id for legacy/frontend compatibility."""
+    own_session = db is None
+    db = db or SessionLocal()
+    raw = str(identifier)
+    try:
+        if db.query(DBTask.id).filter(DBTask.id == raw).first():
+            return raw
+
+        try:
+            audio_id = int(raw)
+        except (TypeError, ValueError):
+            return None
+
+        audio = db.query(AudioFile.task_id).filter(AudioFile.id == audio_id).first()
+        if audio and audio.task_id:
+            return audio.task_id
+        return None
+    finally:
+        if own_session:
+            db.close()
+
+
 def update_task(task_id: str, data: Dict[str, Any], db: Session | None = None) -> bool:
     own_session = db is None
     db = db or SessionLocal()

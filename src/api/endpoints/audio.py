@@ -9,6 +9,7 @@ from src.services.task_service import (
     extract_visualization_payload,
     get_task,
     list_tasks,
+    resolve_task_id,
     update_task,
 )
 from src.services.transcribe_service import transcribe_audio
@@ -338,34 +339,38 @@ async def create_visualization(
     Returns:
         Visualization data with nodes, edges, timeline, events
     """
-    audio_file = None
+    resolved_task_id: str | None = None
     try:
-        logger.info(f"[VISUALIZE_API] Starting visualization | task_id={task_id} | type={visualization_type}")
-        assert_task_access(db, current_user, task_id, "process")
+        resolved_task_id = resolve_task_id(task_id, db=db)
+        if not resolved_task_id:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        logger.info(f"[VISUALIZE_API] Starting visualization | task_id={resolved_task_id} | type={visualization_type}")
+        assert_task_access(db, current_user, resolved_task_id, "process")
         check_rate_limit(f"rl:process:{current_user.id}", settings.PROCESS_RATE_LIMIT_PER_HOUR, 3600)
 
-        update_task(task_id, {"status": "visualizing"}, db=db)
+        update_task(resolved_task_id, {"status": "visualizing"}, db=db)
         db.commit()
 
         # Generate visualization
-        result = generate_visualization(task_id, visualization_type)
+        result = generate_visualization(resolved_task_id, visualization_type)
 
         payload = extract_visualization_payload(result)
         update_task(
-            task_id,
+            resolved_task_id,
             {"status": "visualized", "visualization_data": payload, "has_visualization": True},
             db=db,
         )
         db.commit()
 
-        logger.info(f"[VISUALIZE_API] Completed | task_id={task_id}")
+        logger.info(f"[VISUALIZE_API] Completed | task_id={resolved_task_id}")
         return result
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"[VISUALIZE_API] Error: {e}", exc_info=True)
-        update_task(task_id, {"status": "failed", "error": str(e)}, db=db)
+        update_task(resolved_task_id or task_id, {"status": "failed", "error": str(e)}, db=db)
         db.commit()
         raise HTTPException(status_code=500, detail=str(e))
 
