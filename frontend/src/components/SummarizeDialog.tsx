@@ -10,8 +10,8 @@ interface SummarizeDialogProps {
 }
 
 const SummarizeDialog: React.FC<SummarizeDialogProps> = ({ open, onClose, onConfirm, transcriptLength }) => {
-  const [modelName, setModelName] = useState('gemma2:9b');
-  const [summaryType, setSummaryType] = useState('detailed');
+  const [modelName, setModelName] = useState('vistral');
+  const [summaryType, setSummaryType] = useState('investigation');
   const [includeContext, setIncludeContext] = useState(true);
 
   const handleConfirm = () => {
@@ -26,14 +26,14 @@ const SummarizeDialog: React.FC<SummarizeDialogProps> = ({ open, onClose, onConf
       </DialogTitle>
       <DialogContent sx={{ mt: 3 }}>
         <Typography variant="body2" color="text.secondary" mb={2}>Transcript: {transcriptLength || 0} words</Typography>
-        
+
         <Typography variant="subtitle2" fontWeight={700} mb={1}>AI MODEL</Typography>
         <FormControl fullWidth sx={{ mb: 2 }}>
           <Select value={modelName} onChange={(e) => setModelName(e.target.value)} size="small">
-            <MenuItem value="gemma2:9b">Gemma 2 9B (Most powerful)</MenuItem>
-            <MenuItem value="deepseek-r1:7b">DeepSeek R1 7B (Language expert)</MenuItem>
-            <MenuItem value="mistral:7b">Mistral 7B (Balanced)</MenuItem>
-            <MenuItem value="llama3.2:3b">Llama 3.2 3B (Fast)</MenuItem>
+            <MenuItem value="vistral">🇻🇳 Vistral 7B (Vietnamese, Llama.cpp - Fast)</MenuItem>
+            <MenuItem value="qwen3">🌏 Qwen3 8B (32K Context, Llama.cpp)</MenuItem>
+            <MenuItem value="forensic">🔍 Forensic Analysis (Vistral + Template)</MenuItem>
+            <MenuItem value="gemma2:9b">Gemma 2 9B (Ollama Fallback)</MenuItem>
           </Select>
         </FormControl>
 

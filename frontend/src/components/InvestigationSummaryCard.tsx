@@ -13,6 +13,7 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import EventIcon from '@mui/icons-material/Event';
 import PlaceIcon from '@mui/icons-material/Place';
 import LabelIcon from '@mui/icons-material/Label';
+import { apiFetch } from '../api/client';
 
 // Kiểu dữ liệu cho props
 interface InvestigationSummaryCardProps {
@@ -57,7 +58,7 @@ const ANALYZE_ENDPOINT = API_BASE_URL + '/api/v1/summaries/analyze';
 
 // Helper gọi API với model fallback
 async function analyzeSummaryWithFallback(summary: string, taskId?: string) {
-  let res = await fetch(ANALYZE_ENDPOINT, {
+  let res = await apiFetch(ANALYZE_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ summary, task_id: taskId })
@@ -70,7 +71,7 @@ async function analyzeSummaryWithFallback(summary: string, taskId?: string) {
 const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ summary, contextAnalysis, taskId }) => {
   const [showSensitive, setShowSensitive] = useState(false);
   const [tab, setTab] = useState(0);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<string | false>(false);
   const [analysis, setAnalysis] = useState<any>(contextAnalysis || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -141,9 +142,9 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
 
   // Nhạy cảm: lấy từ sensitive_info, đồng thời gom các entity có is_sensitive=true
   const sensitiveEntities = [
-    ...(Array.isArray(parsedAnalysis?.entities?.people) ? parsedAnalysis.entities.people.filter(e => e.is_sensitive) : []),
-    ...(Array.isArray(parsedAnalysis?.entities?.locations) ? parsedAnalysis.entities.locations.filter(e => e.is_sensitive) : []),
-    ...(Array.isArray(parsedAnalysis?.entities?.time) ? parsedAnalysis.entities.time.filter(e => e.is_sensitive) : []),
+    ...(Array.isArray(parsedAnalysis?.entities?.people) ? parsedAnalysis.entities.people.filter((e: any) => e.is_sensitive) : []),
+    ...(Array.isArray(parsedAnalysis?.entities?.locations) ? parsedAnalysis.entities.locations.filter((e: any) => e.is_sensitive) : []),
+    ...(Array.isArray(parsedAnalysis?.entities?.time) ? parsedAnalysis.entities.time.filter((e: any) => e.is_sensitive) : []),
     ...(parsedAnalysis?.entities?.contact?.phone?.is_sensitive ? [parsedAnalysis.entities.contact.phone] : []),
     ...(parsedAnalysis?.entities?.contact?.email?.is_sensitive ? [parsedAnalysis.entities.contact.email] : []),
     ...(parsedAnalysis?.entities?.contact?.id?.is_sensitive ? [parsedAnalysis.entities.contact.id] : []),
@@ -492,4 +493,4 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
   );
 };
 
-export default InvestigationSummaryCard; 
+export default InvestigationSummaryCard;

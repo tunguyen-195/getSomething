@@ -13,6 +13,7 @@ from .models.pyannote_manager import get_pyannote_manager
 from src.services.task_service import get_task, update_task
 from src.database.models.models import AudioFile
 from src.core.logging import logger
+from src.services.audio_storage import resolve_audio_path
 
 
 def transcribe_audio_v2(
@@ -24,159 +25,194 @@ def transcribe_audio_v2(
     fast_mode: bool = True
 ) -> Dict:
     """
-    Transcribe audio file with optional speaker diarization.
-    Uses model managers for better performance and resource management.
-    
-    Args:
-        task_id: Task ID
-        db: Database session
-        enable_diarization: Enable speaker diarization
-        diarization_method: Method (pyannote, simple_vad, none)
-        language: Language code (default: vi)
-        fast_mode: Skip heavy post-processing
-        
-    Returns:
-        dict with transcript, segments, speakers, duration, etc.
+    Transcribe audio file using configured engine.
+    Supports:
+    - Cherry Core (Offline, Enhanced with PhoWhisper + Pyannote 4.0)
+    - Original Stack (Faster-Whisper + Pyannote 3.1)
     """
     logger.info(
         f"[TRANSCRIBE_V2] Starting | task_id={task_id} | "
         f"diarization={enable_diarization} | method={diarization_method} | fast={fast_mode}"
     )
-    
+
     start_time = time.time()
-    
+
     try:
         # Get task and audio file
         task = get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
-        
+
         audio_file = db.query(AudioFile).filter(AudioFile.task_id == task_id).first()
         if not audio_file:
             raise HTTPException(status_code=404, detail="Audio file not found")
-        
-        audio_path = Path(audio_file.file_path)
+
+        audio_path = resolve_audio_path(audio_file.file_path)
         if not audio_path.exists():
             raise HTTPException(status_code=404, detail=f"Audio file not found: {audio_path}")
-        
+
         # Update status to transcribing
         update_task(task_id, {"status": "transcribing"})
         audio_file.status = "transcribing"
         db.commit()
-        
-        # Get Whisper manager (lazy loaded)
-        whisper_mgr = get_whisper_manager()
-        logger.info("[TRANSCRIBE_V2] Whisper manager ready")
-        
-        # Step 1: Transcribe with Whisper (Optimized for Vietnamese accuracy)
-        logger.info(f"[TRANSCRIBE_V2] Transcribing audio: {audio_path.name}")
-        segments_iter, info = whisper_mgr.transcribe(
-            str(audio_path),
-            language=language,
-            beam_size=10,                     # Increased from 5 for better Vietnamese accuracy
-            temperature=0.0,                  # Deterministic output (repeatable)
-            best_of=5,                        # Generate 5 samples, pick best
-            compression_ratio_threshold=2.4,  # Detect repetitions
-            log_prob_threshold=-1.0,          # Filter low-confidence segments
-            no_speech_threshold=0.6,          # Detect silence/non-speech
-            initial_prompt="Đây là cuộc hội thoại bằng tiếng Việt.",  # Vietnamese context
-            vad_filter=False,                 # Don't cut content
-            word_timestamps=True              # Get word-level timing for better accuracy
-        )
-        
-        # Collect segments
+
+        # CHERRY CORE INTEGRATION (Offline & Enhanced)
+        # Use Cherry adapters if available
+        USE_CHERRY_CORE = True # Enforced for this version
+
         segments = []
         full_text_parts = []
-        
-        for segment in segments_iter:
-            seg_dict = {
-                'start': segment.start,
-                'end': segment.end,
-                'text': segment.text.strip(),
-                'speaker': None  # Will be filled by diarization
-            }
-            segments.append(seg_dict)
-            full_text_parts.append(segment.text.strip())
-        
-        full_transcript = " ".join(full_text_parts)
-        duration = info.duration
-        
-        logger.info(
-            f"[TRANSCRIBE_V2] Whisper done | segments={len(segments)} | "
-            f"duration={duration:.1f}s | language={info.language}"
-        )
-        
-        # Step 2: Speaker Diarization (if enabled)
         num_speakers = 1
         diarization_time = 0
-        
-        if enable_diarization and diarization_method == "pyannote":
-            pyannote_mgr = get_pyannote_manager()
-            
-            if pyannote_mgr.is_available():
-                logger.info("[TRANSCRIBE_V2] Running Pyannote diarization...")
-                diar_start = time.time()
-                
-                diarization = pyannote_mgr.diarize(str(audio_path))
-                
-                if diarization:
-                    # Merge speaker labels with transcript segments
-                    speakers_found = set()
-                    
-                    for seg in segments:
-                        mid_time = (seg['start'] + seg['end']) / 2
-                        
-                        # Find speaker at this timestamp
-                        for turn, _, speaker in diarization.itertracks(yield_label=True):
-                            if turn.start <= mid_time <= turn.end:
-                                seg['speaker'] = speaker
-                                speakers_found.add(speaker)
-                                break
-                    
-                    num_speakers = len(speakers_found)
-                    diarization_time = time.time() - diar_start
-                    
-                    logger.info(
-                        f"[TRANSCRIBE_V2] Diarization done | speakers={num_speakers} | "
-                        f"time={diarization_time:.1f}s"
-                    )
-                else:
-                    logger.warning("[TRANSCRIBE_V2] Diarization returned None")
-            else:
-                logger.warning("[TRANSCRIBE_V2] Pyannote not available, skipping diarization")
-                enable_diarization = False
-        
-        # Step 3: Format output
+        duration = 0
+        info = None
+
+        if USE_CHERRY_CORE:
+            try:
+                from src.services.transcription.cherry_transcription_service import get_cherry_transcriber
+                logger.info("[TRANSCRIBE_V2] Using Cherry Core Engine (Offline Mode)")
+                cherry_svc = get_cherry_transcriber()
+
+                # Force Whisper V2 for all languages as requested by user
+                model_type_sel = "whisper"
+
+                # Use Cherry Transcriber
+                cherry_result = cherry_svc.transcribe(
+                    audio_path=str(audio_path),
+                    language=language,
+                    enable_diarization=enable_diarization,
+                    model_type=model_type_sel
+                )
+
+                # Adapt result to existing variables
+                segments = cherry_result['segments']
+                duration = cherry_result['duration']
+                full_text_parts = [str(s.get('text', '')) for s in segments]
+
+                num_speakers = cherry_result['num_speakers']
+                diarization_time = cherry_result['diarization_time']
+
+                # Set generic info object for logging compatibility
+                class InfoStub:
+                    def __init__(self, lang, dur):
+                        self.language = lang
+                        self.duration = dur
+                info = InfoStub(language, duration)
+
+            except ImportError as e:
+                logger.error(f"[TRANSCRIBE_V2] Cherry Core import failed: {e}. Falling back to legacy.")
+                USE_CHERRY_CORE = False
+            except Exception as e:
+                logger.error(f"[TRANSCRIBE_V2] Cherry Core execution failed: {e}. Falling back to legacy.")
+                USE_CHERRY_CORE = False
+
+        if not USE_CHERRY_CORE:
+            # ORIGINAL LOGIC
+            whisper_mgr = get_whisper_manager()
+            logger.info("[TRANSCRIBE_V2] Legacy Whisper manager ready")
+
+            # Step 1: Transcribe with Whisper
+            whisper_params = {
+                "language": language,
+                "beam_size": 1,
+                "temperature": 0.0,
+                "compression_ratio_threshold": 2.4,
+                "log_prob_threshold": -1.0,
+                "no_speech_threshold": 0.5,
+                "initial_prompt": "Tiếng Việt",
+                "vad_filter": True,
+                "vad_parameters": {
+                    "threshold": 0.4,
+                    "min_speech_duration_ms": 200,
+                    "min_silence_duration_ms": 1500,
+                    "speech_pad_ms": 800,
+                },
+                "word_timestamps": True,
+                "condition_on_previous_text": False,
+            }
+
+            segments_iter, info = whisper_mgr.transcribe(str(audio_path), **whisper_params)
+
+            # Filter logic (simplified for brevity, main anti-hallucination)
+            prompt_texts = ["tiếng việt", "hãy chuyển đổi"]
+            yt_patterns = ["subscribe", "đăng ký kênh", "thanks for watching"]
+
+            for segment in segments_iter:
+                text = segment.text.strip()
+                text_lower = text.lower()
+                is_valid = True
+
+                # Filter prompts
+                for p in prompt_texts:
+                    if p in text_lower and len(text) < 50:
+                        is_valid = False; break
+
+                if is_valid:
+                    # Filter YT
+                    for yt in yt_patterns:
+                        if yt in text_lower and len(text) < 100:
+                             is_valid = False; break
+
+                if is_valid:
+                    seg_dict = {
+                        'start': segment.start,
+                        'end': segment.end,
+                        'text': text,
+                        'speaker': None,
+                        'confidence': getattr(segment, 'avg_logprob', None)
+                    }
+                    segments.append(seg_dict)
+                    full_text_parts.append(text)
+
+            duration = info.duration
+
+            # Step 2: Diarization (Legacy)
+            if enable_diarization:
+                pyannote_mgr = get_pyannote_manager()
+                if pyannote_mgr.is_available():
+                    diar_start = time.time()
+                    diarization = pyannote_mgr.diarize(str(audio_path))
+                    if diarization:
+                        speakers_found = set()
+                        for seg in segments:
+                            # Merge logic (simplified)
+                            start, end = seg['start'], seg['end']
+                            best_overlap, best_spk = 0, None
+                            for turn, _, speaker in diarization.itertracks(yield_label=True):
+                                o_start = max(start, turn.start)
+                                o_end = min(end, turn.end)
+                                if o_end > o_start:
+                                    ratio = (o_end - o_start) / (end - start)
+                                    if ratio > best_overlap:
+                                        best_overlap, best_spk = ratio, speaker
+                            if best_spk and best_overlap > 0.3:
+                                seg['speaker'] = best_spk
+                                speakers_found.add(best_spk)
+                        num_speakers = len(speakers_found)
+                        diarization_time = time.time() - diar_start
+
+        # Step 3: Format output (Common)
         formatted_transcript = ""
-        
+        full_transcript = " ".join(full_text_parts)
+
         if enable_diarization and num_speakers > 1:
-            # Format with speaker labels
             for seg in segments:
                 speaker_label = seg.get('speaker', 'Unknown')
-                time_start = f"{int(seg['start']//3600):02d}:{int((seg['start']%3600)//60):02d}:{seg['start']%60:06.3f}"
-                time_end = f"{int(seg['end']//3600):02d}:{int((seg['end']%3600)//60):02d}:{seg['end']%60:06.3f}"
-                formatted_transcript += f"{time_start} --> {time_end} [{speaker_label}]\n{seg['text']}\n\n"
+                # Format time HH:MM:SS.mmm
+                start_s = seg['start']
+                end_s = seg['end']
+                t_start = f"{int(start_s//3600):02d}:{int((start_s%3600)//60):02d}:{start_s%60:06.3f}"
+                t_end = f"{int(end_s//3600):02d}:{int((end_s%3600)//60):02d}:{end_s%60:06.3f}"
+                formatted_transcript += f"{t_start} --> {t_end} [{speaker_label}]\n{seg.get('text', '')}\n\n"
         else:
-            # Plain format
-            for seg in segments:
-                formatted_transcript += f"{seg['text']} "
-            formatted_transcript = formatted_transcript.strip()
-        
-        # Save transcript to file
-        transcript_file = str(audio_path).replace('.mp3', '_transcript.txt')
-        transcript_file = transcript_file.replace('.wav', '_transcript.txt')
-        transcript_file = transcript_file.replace('.m4a', '_transcript.txt')
-        
-        with open(transcript_file, 'w', encoding='utf-8') as f:
-            f.write(formatted_transcript)
-        
-        logger.info(f"[TRANSCRIBE_V2] Saved transcript to {transcript_file}")
-        
-        # Calculate metrics
+            formatted_transcript = full_transcript
+
+        transcript_file = None
+
+        # Calculate result
         total_time = time.time() - start_time
         speed_factor = duration / total_time if total_time > 0 else 0
-        
-        # Prepare response
+
         response = {
             "task_id": task_id,
             "status": "transcribed",
@@ -191,44 +227,44 @@ def transcribe_audio_v2(
             "diarization_time": diarization_time,
             "speed_factor": speed_factor,
             "diarization_method": diarization_method if enable_diarization else "none",
-            "language": info.language,
+            "language": info.language if info else "vi",
             "transcript_file": transcript_file,
             "fast_mode": fast_mode
         }
-        
-        # Update task with result
+
+        result_dict = response.copy()
+        result_dict.update({
+             "transcription": full_transcript,
+             "summary": "",
+             "context_analysis": {},
+             "confidence": 1.0,
+             "filename": audio_path.name
+        })
+
         update_task(task_id, {
             "status": "transcribed",
+            "result": result_dict,
             "transcript": full_transcript,
-            "has_diarization": enable_diarization and num_speakers > 1,
+            "has_diarization": response["has_diarization"],
             "num_speakers": num_speakers,
             "duration": duration,
             "processing_time": total_time
         })
-        
-        # Update audio file
+
         audio_file.status = "transcribed"
         audio_file.duration = duration
         db.commit()
-        
-        logger.info(
-            f"[TRANSCRIBE_V2] Complete | task_id={task_id} | "
-            f"speakers={num_speakers} | total_time={total_time:.1f}s | "
-            f"speed={speed_factor:.1f}x"
-        )
-        
+
+        logger.info(f"[TRANSCRIBE_V2] Complete | task_id={task_id} | time={total_time:.1f}s")
         return response
-        
+
     except Exception as e:
         logger.error(f"[TRANSCRIBE_V2] Error: {e}", exc_info=True)
-        
-        # Update status to failed
         try:
             update_task(task_id, {"status": "failed", "error": str(e)})
-            if audio_file:
+            if 'audio_file' in locals() and audio_file:
                 audio_file.status = "failed"
                 db.commit()
         except:
             pass
-        
         raise HTTPException(status_code=500, detail=str(e))

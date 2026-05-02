@@ -1,5 +1,4 @@
 import os
-import shutil
 import json
 from fastapi import UploadFile, HTTPException
 from pathlib import Path
@@ -9,37 +8,40 @@ from src.database.models.models import AudioFile
 from src.services.task_service import create_task, update_task, get_task
 from src.speech_to_text.transcriber import Transcriber, OllamaProcessor
 from src.audio_processing.processor import AudioProcessor
+from src.services.audio_storage import (
+    cleanup_file,
+    finalize_staged_upload,
+    resolve_audio_path,
+    stage_upload,
+)
 
 
 
-def save_audio_and_create_task(file: UploadFile, db, case_id: int = None) -> dict:
-    """Lưu file audio vào storage/audio, tạo AudioFile và Task (status: pending). Trả về task_id, audio_file_id."""
-    logger.info(f"[AUDIO_SERVICE] Bắt đầu lưu file: {file.filename if file else 'None'} | case_id={case_id}")
+def save_audio_and_create_task(file: UploadFile, db, case_id: int = None, user_id: int | None = None) -> dict:
+    """Lưu file audio an toàn, tạo AudioFile và Task, trả về task_id/audio_id."""
+    logger.info(f"[AUDIO_SERVICE] Bắt đầu lưu upload audio | case_id={case_id}")
+    staged = None
+    stored = None
     try:
-        if not file.filename or not file.filename.lower().endswith((".mp3", ".wav", ".m4a", ".ogg")):
-            raise HTTPException(status_code=400, detail="Invalid or missing file format")
-        audio_storage_dir = Path("storage/audio")
-        audio_storage_dir.mkdir(parents=True, exist_ok=True)
-        audio_storage_path = audio_storage_dir / file.filename
-        with open(audio_storage_path, "wb") as out_file:
-            shutil.copyfileobj(file.file, out_file)
         if case_id is not None and not isinstance(case_id, int):
             try:
                 case_id = int(case_id)
             except Exception:
                 raise HTTPException(status_code=400, detail="case_id phải là số nguyên")
-        task = create_task(file.filename, case_id=case_id, db=db)
+        staged = stage_upload(file)
+        task = create_task(staged.original_filename, case_id=case_id, db=db, user_id=user_id, commit=False)
         if not task:
             raise HTTPException(status_code=400, detail="Case ID không tồn tại hoặc không thể tạo task")
+        stored = finalize_staged_upload(staged, int(task["case_id"]))
         audio_file = AudioFile(
-            filename=file.filename,
-            case_id=case_id,
+            filename=stored.original_filename,
+            case_id=task["case_id"],
             task_id=task["id"],
-            file_path=str(audio_storage_path),
-            status="pending",
+            file_path=stored.relative_path,
+            status="uploaded",
             language_id=1,
-            uploaded_by=1,
-            file_size=os.path.getsize(audio_storage_path),
+            uploaded_by=user_id or task.get("user_id") or 1,
+            file_size=stored.size,
             duration=None,
             audio_status_id=None,
             processed_at=None,
@@ -48,19 +50,42 @@ def save_audio_and_create_task(file: UploadFile, db, case_id: int = None) -> dic
             is_archived=False,
             archive_reason=None,
             storage_type='local',
-            storage_config='{}',
-            extra_metadata='{}'
+            storage_config={},
+            extra_metadata={"original_filename": stored.original_filename}
         )
         db.add(audio_file)
+        db.flush()
+        update_task(task["id"], {
+            "result": {
+                "audio_id": audio_file.id,
+                "download_url": f"/api/v1/audio/{audio_file.id}/download",
+                "filename": stored.original_filename,
+            }
+        }, db=db)
         db.commit()
         db.refresh(audio_file)
         logger.info(
-            f"[AUDIO_SERVICE] Đã lưu file: {file.filename if file else 'None'} | "
+            "[AUDIO_SERVICE] Đã lưu upload audio | "
             f"task_id={task['id']} | audio_file_id={audio_file.id}"
         )
-        return {"task_id": task["id"], "audio_file_id": audio_file.id, "status": "pending"}
+        return {
+            "task_id": task["id"],
+            "audio_id": audio_file.id,
+            "audio_file_id": audio_file.id,
+            "filename": audio_file.filename,
+            "status": "uploaded",
+            "file_size": audio_file.file_size,
+            "download_url": f"/api/v1/audio/{audio_file.id}/download",
+        }
     except Exception as e:
+        db.rollback()
+        if staged:
+            cleanup_file(staged.temp_path)
+        if stored:
+            cleanup_file(stored.absolute_path)
         logger.error(f"Error saving audio and creating task: {str(e)}", exc_info=True)
+        if isinstance(e, HTTPException):
+            raise
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -80,58 +105,56 @@ def process_task_with_diarization(task_id: str, model_name: str, db, diarization
         audio_file = db.query(AudioFile).filter(AudioFile.task_id == task_id).first()
         if not audio_file:
             raise HTTPException(status_code=404, detail="Audio file not found")
+        audio_path_str = str(resolve_audio_path(audio_file.file_path))
         audio_processor = AudioProcessor()
-        audio, sr = audio_processor.load_audio(audio_file.file_path)
+        audio, sr = audio_processor.load_audio(audio_path_str)
         audio = audio_processor.enhance_speech_llase(audio)
         pipeline = get_pipeline(diarization_method)
         if pipeline:
-            segments = pipeline.run(audio_file.file_path)
+            segments = pipeline.run(audio_path_str)
             transcript = " ".join([seg["text"] for seg in segments])
             summary = summarize_transcript(transcript, context=None, model_name=model_name)
             result = {
-                "status": "completed",
+                "status": "summarized",
                 "filename": audio_file.filename,
                 "segments": segments,
                 "summary": summary,
                 "diarization_method": diarization_method,
-                "audio_url": f"/storage/audio/{audio_file.filename}"
+                "download_url": f"/api/v1/audio/{audio_file.id}/download"
             }
-            update_task(task_id, {"status": "completed", "result": result})
-            audio_file.status = "completed"
+            update_task(task_id, {"status": "summarized", "result": result})
+            audio_file.status = "summarized"
             db.commit()
             return result
         else:
             # Enhanced transcription với diarization support
             transcriber = Transcriber()
-            
+
             # Get options from task or use defaults
             options = {}
             if hasattr(audio_file, 'options') and audio_file.options:
                 import json
                 options = json.loads(audio_file.options) if isinstance(audio_file.options, str) else audio_file.options
-            
+
             fast_mode = options.get('fast_mode', getattr(settings, 'WHISPER_FAST_MODE', True))
             enable_diarization = options.get('enable_diarization', diarization_method != "none")
-            
+
             # Use new diarization method if enabled
             if enable_diarization and diarization_method != "none":
                 logger.info(f"[AUDIO_SERVICE] Using transcribe_with_diarization | fast_mode={fast_mode} | diarization={diarization_method}")
                 result = transcriber.transcribe_with_diarization(
-                    audio_file.file_path, 
+                    audio_path_str,
                     fast_mode=fast_mode,
                     enable_diarization=True
                 )
                 # Save formatted transcript to file
-                transcript_file = audio_file.file_path.replace('.mp3', '.txt').replace('.wav', '.txt')
-                with open(transcript_file, 'w', encoding='utf-8') as f:
-                    f.write(result.get('formatted_transcript', ''))
-                logger.info(f"[AUDIO_SERVICE] Saved formatted transcript to {transcript_file}")
+                logger.info("[AUDIO_SERVICE] Formatted transcript retained in Task.result")
             else:
                 # Use old method without diarization
-                result = transcriber.transcribe(audio_file.file_path, fast_mode=fast_mode)
-            
+                result = transcriber.transcribe(audio_path_str, fast_mode=fast_mode)
+
             logger.info(f"[AUDIO_SERVICE] Kết quả transcribe | task_id={task_id} | fast_mode={fast_mode} | diarization={enable_diarization} | result_keys={list(result.keys())}")
-            wer, cer, noise_score = benchmark_asr(result.get("transcription"), audio_file.file_path)
+            wer, cer, noise_score = benchmark_asr(result.get("transcription"), audio_path_str)
             logger.info(f"[AUDIO_SERVICE] Benchmark | WER={wer}, CER={cer}, noise_score={noise_score}")
             transcript = result.get("transcription")
             caption = result.get("caption")
@@ -147,9 +170,9 @@ def process_task_with_diarization(task_id: str, model_name: str, db, diarization
             if caption:
                 context_analysis["caption"] = caption
             summary = summarize_transcript(transcript, context=context_analysis, model_name=model_name)
-            logger.info(f"[AUDIO_SERVICE] Kết quả summarize | task_id={task_id} | summary={summary}")
+            logger.info(f"[AUDIO_SERVICE] Kết quả summarize | task_id={task_id} | summary_len={len(summary) if summary else 0}")
             update_task(task_id, {
-                "status": "completed",
+                "status": "summarized",
                 "result": {
                     "filename": audio_file.filename,
                     "duration": result.get("duration"),
@@ -160,13 +183,13 @@ def process_task_with_diarization(task_id: str, model_name: str, db, diarization
                     "confidence": result.get("confidence"),
                     "processing_time": result.get("processing_time"),
                     "context_analysis": context_analysis,
-                    "audio_url": f"/storage/audio/{audio_file.filename}"
+                    "download_url": f"/api/v1/audio/{audio_file.id}/download"
                 }
             })
-            audio_file.status = "completed"
+            audio_file.status = "summarized"
             db.commit()
             return {
-                "status": "completed",
+                "status": "summarized",
                 "filename": audio_file.filename,
                 "duration": result.get("duration", 0),
                 "transcription": transcript if transcript else "",
@@ -176,7 +199,7 @@ def process_task_with_diarization(task_id: str, model_name: str, db, diarization
                 "confidence": result.get("confidence", 0),
                 "processing_time": result.get("processing_time", 0),
                 "context_analysis": context_analysis,
-                "audio_url": f"/storage/audio/{audio_file.filename}"
+                "download_url": f"/api/v1/audio/{audio_file.id}/download"
             }
     except Exception as e:
         logger.error(f"Error processing task {task_id}: {str(e)}", exc_info=True)
@@ -189,13 +212,13 @@ def translate_line_to_vietnamese(text: str) -> str:
     """Dịch một dòng văn bản sang tiếng Việt"""
     if not text:
         return text
-    
+
     # Kiểm tra có tiếng Anh không
     import re
     english_pattern = re.compile(r'[a-zA-Z]+')
     if not english_pattern.search(text):
         return text  # Đã là tiếng Việt
-    
+
     # Thay thế các từ tiếng Anh phổ biến
     replacements = {
         # Cụm từ dài trước
@@ -447,12 +470,12 @@ def translate_line_to_vietnamese(text: str) -> str:
         'earlier': 'sớm hơn',
         'sooner': 'sớm hơn'
     }
-    
+
     # Thay thế cụm từ trước
     result = text
     for english, vietnamese in replacements.items():
         result = result.replace(english, vietnamese)
-    
+
     # Sau đó thay thế các từ đơn với word boundary
     word_replacements = {
         'a': 'một',
@@ -600,20 +623,20 @@ def translate_line_to_vietnamese(text: str) -> str:
         'walks': 'đi bộ',
         'walked': 'đã đi bộ'
     }
-    
+
     # Thay thế từ đơn với word boundary
     for english, vietnamese in word_replacements.items():
         # Sử dụng regex để thay thế chỉ khi là từ riêng biệt
         pattern = r'\b' + re.escape(english) + r'\b'
         result = re.sub(pattern, vietnamese, result, flags=re.IGNORECASE)
-    
+
     # Dọn dẹp khoảng trắng thừa
     result = re.sub(r'\s+', ' ', result).strip()
-    
+
     # Thêm cảnh báo nếu vẫn còn tiếng Anh
     if english_pattern.search(result):
         result += "\n\n[LƯU Ý: Vẫn còn một số từ tiếng Anh do không thể dịch tự động]"
-    
+
     return result
 
 
@@ -632,11 +655,11 @@ def summarize_transcript(
 ) -> str:
     if not transcript:
         return "Không có tóm tắt."
-    
+
     # Sử dụng model mặc định từ config nếu không chỉ định
     if model_name is None:
         model_name = settings.DEFAULT_AI_MODEL
-    
+
     if context is None:
         context = OllamaProcessor(model_name=model_name).analyze_context(transcript)
     if context is None:
@@ -646,7 +669,7 @@ def summarize_transcript(
     else:
         model = model_name
     # Ép đầu ra tiếng Việt ở mọi prompt tóm tắt - MẠNH MẼ HƠN
-    vi_requirement = """YÊU CẦU BẮT BUỘC: 
+    vi_requirement = """YÊU CẦU BẮT BUỘC:
 1. TRẢ LỜI 100% BẰNG TIẾNG VIỆT
 2. KHÔNG ĐƯỢC DÙNG TIẾNG ANH
 3. NẾU VIẾT TIẾNG ANH SẼ BỊ TỪ CHỐI
@@ -694,7 +717,7 @@ Nếu có context_analysis, hãy ưu tiên sử dụng để làm rõ tóm tắt
         if context and 'privacy_summary' in context:
             prompt += f"\nThông tin nhạy cảm: {context['privacy_summary']}"
         prompt += f"\nNội dung hội thoại: {transcript}"
-        
+
         import requests
         response = requests.post(
             "http://localhost:11434/api/generate",
@@ -786,7 +809,7 @@ def summarize_multi_transcripts(transcripts: list[str], context: dict = None, mo
     # Sử dụng model mặc định từ config nếu không chỉ định
     if model_name is None:
         model_name = settings.DEFAULT_AI_MODEL
-        
+
     if context is None and transcripts:
         context = OllamaProcessor(model_name=model_name).analyze_context('\n'.join(transcripts))
     if context is None:
@@ -797,7 +820,7 @@ def summarize_multi_transcripts(transcripts: list[str], context: dict = None, mo
         model = model_name
     joined = '\n'.join(transcripts)
     if model in ["gpt-oss", "qwen2.5:7b", "gemma2:9b", "deepseek-r1:7b", "mistral:7b-instruct", "llama3.2:3b"]:
-        vi_requirement = """YÊU CẦU BẮT BUỘC: 
+        vi_requirement = """YÊU CẦU BẮT BUỘC:
 1. TRẢ LỜI 100% BẰNG TIẾNG VIỆT
 2. KHÔNG ĐƯỢC DÙNG TIẾNG ANH
 3. NẾU VIẾT TIẾNG ANH SẼ BỊ TỪ CHỐI
@@ -806,7 +829,7 @@ def summarize_multi_transcripts(transcripts: list[str], context: dict = None, mo
 
 """
         prompt = (
-            vi_requirement + 
+            vi_requirement +
             "Tóm tắt tổng hợp các hội thoại dưới đây, tập trung vào các thông tin quan trọng, "
             "các thực thể, mối quan hệ, mức độ nhạy cảm, quyết định, hành động, cảm xúc, ngữ cảnh.\n"
         )
@@ -850,26 +873,26 @@ def benchmark_asr(transcription: str, audio_path: str):
     wer = 0.1  # giả lập
     cer = 0.05
     noise_score = 0.2
-    return wer, cer, noise_score 
+    return wer, cer, noise_score
 
 
 
 def force_vietnamese_output(text: str, preserve_original: bool = False) -> str:
     """Ép buộc đầu ra tiếng Việt - nếu phát hiện tiếng Anh sẽ thay thế bằng tiếng Việt tương ứng
-    
+
     Args:
         text: Văn bản cần xử lý
         preserve_original: Nếu True, giữ nguyên ngôn ngữ gốc và chỉ dịch tóm tắt
     """
     if not text:
         return text
-    
+
     # Nếu cần giữ nguyên ngôn ngữ gốc, chỉ xử lý phần tóm tắt
     if preserve_original and settings.PRESERVE_ORIGINAL_LANGUAGE:
         # Tách phần transcript gốc và phần tóm tắt
         lines = text.split('\n')
         processed_lines = []
-        
+
         for line in lines:
             if any(keyword in line.lower() for keyword in ['tóm tắt', 'summary', 'nội dung', 'content', 'kết luận']):
                 # Đây là phần tóm tắt - áp dụng dịch tiếng Việt
@@ -877,15 +900,15 @@ def force_vietnamese_output(text: str, preserve_original: bool = False) -> str:
             else:
                 # Đây là transcript gốc - giữ nguyên
                 processed_lines.append(line)
-        
+
         return '\n'.join(processed_lines)
-    
+
     # Kiểm tra có tiếng Anh không
     import re
     english_pattern = re.compile(r'[a-zA-Z]+')
     if not english_pattern.search(text):
         return text  # Đã là tiếng Việt
-    
+
     # Thay thế các từ tiếng Anh phổ biến
     replacements = {
         # Cụm từ dài trước
@@ -1137,12 +1160,12 @@ def force_vietnamese_output(text: str, preserve_original: bool = False) -> str:
         'earlier': 'sớm hơn',
         'sooner': 'sớm hơn'
     }
-    
+
     # Thay thế cụm từ trước
     result = text
     for english, vietnamese in replacements.items():
         result = result.replace(english, vietnamese)
-    
+
     # Sau đó thay thế các từ đơn với word boundary
     word_replacements = {
         'a': 'một',
@@ -1289,18 +1312,18 @@ def force_vietnamese_output(text: str, preserve_original: bool = False) -> str:
         'walks': 'đi bộ',
         'walked': 'đã đi bộ'
     }
-    
+
     # Thay thế từ đơn với word boundary
     for english, vietnamese in word_replacements.items():
         # Sử dụng regex để thay thế chỉ khi là từ riêng biệt
         pattern = r'\b' + re.escape(english) + r'\b'
         result = re.sub(pattern, vietnamese, result, flags=re.IGNORECASE)
-    
+
     # Dọn dẹp khoảng trắng thừa
     result = re.sub(r'\s+', ' ', result).strip()
-    
+
     # Thêm cảnh báo nếu vẫn còn tiếng Anh
     if english_pattern.search(result):
         result += "\n\n[LƯU Ý: Vẫn còn một số từ tiếng Anh do không thể dịch tự động]"
-    
-    return result 
+
+    return result

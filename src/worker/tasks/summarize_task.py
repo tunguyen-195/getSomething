@@ -20,14 +20,14 @@ def summarize_transcript_task(
 ):
     """
     Celery task for transcript summarization
-    
+
     Args:
         task_id: Task ID (must have transcript)
         model_name: LLM model to use
         summary_type: Type of summary
         include_context: Include context analysis
         user_prompt: Optional user prompt
-        
+
     Returns:
         Result dict or error
     """
@@ -35,60 +35,96 @@ def summarize_transcript_task(
         f"[CELERY_SUMMARIZE] Task started | task_id={task_id} | "
         f"celery_id={self.request.id} | model={model_name}"
     )
-    
+
     try:
         # Get task to extract transcript
         task = get_task(task_id)
         if not task:
             raise ValueError(f"Task {task_id} not found")
-        
-        transcript = task.get("transcript")
-        if not transcript:
-            raise ValueError(f"Task {task_id} has no transcript. Run transcription first.")
-        
+
+        # Get transcript from task result (standardized to "transcription")
+        transcript = None
+        if task.get("result") and isinstance(task["result"], dict):
+            # Transcript is stored in result["transcription"] (TaskResult schema)
+            transcript = task["result"].get("transcription")
+
+        if not transcript or not transcript.strip():
+            logger.warning(f"[CELERY_SUMMARIZE] No transcription found for task {task_id}. Task result keys: {list(task.get('result', {}).keys()) if task.get('result') else 'No result'}")
+            raise ValueError(f"Task {task_id} has no transcription. Run transcription first.")
+
         # Import here to avoid circular dependencies
         from src.services.summarization.summary_service_v2 import summarize_transcript_v2
-        
+
         # Update status
         update_task(task_id, {"status": "summarizing"})
-        
-        # Execute summarization
-        result = summarize_transcript_v2(
-            transcript=transcript,
-            model_name=model_name,
-            summary_type=summary_type,
-            include_context=include_context,
-            user_prompt=user_prompt
-        )
-        
+
+        # Execute summarization with timeout protection
+        logger.info(f"[CELERY_SUMMARIZE] Starting summarization | transcript_length={len(transcript)}")
+
+        try:
+            result = summarize_transcript_v2(
+                transcript=transcript,
+                model_name=model_name,
+                summary_type=summary_type,
+                include_context=include_context,
+                user_prompt=user_prompt
+            )
+        except Exception as summary_error:
+            logger.error(f"[CELERY_SUMMARIZE] Summarization failed: {summary_error}", exc_info=True)
+            raise ValueError(f"Summarization failed: {str(summary_error)}")
+
         if not result.get("available"):
-            raise ValueError("LLM not available for summarization")
-        
+            error_msg = result.get("summary", "LLM not available for summarization")
+            logger.error(f"[CELERY_SUMMARIZE] {error_msg}")
+            raise ValueError(error_msg)
+
+        # Get current task result and update it
+        current_task = get_task(task_id)
+        current_result = current_task.get("result", {}) if current_task else {}
+
+        # Update result dict with summary
+        if isinstance(current_result, dict):
+            current_result["summary"] = result["summary"]
+            if result.get("context"):
+                current_result["context_analysis"] = result["context"]
+            current_result["summary_model"] = result.get("model")
+            current_result["summary_type"] = summary_type
+        else:
+            # If result is not a dict, create new one
+            current_result = {
+                "transcription": transcript,
+                "summary": result["summary"],
+                "context_analysis": result.get("context", {}),
+                "summary_model": result.get("model"),
+                "summary_type": summary_type
+            }
+
         # Update task with summary
         update_task(task_id, {
             "status": "summarized",
-            "summary": result["summary"],
+            "result": current_result,
+            "summary": result["summary"],  # Also save as direct field for backward compatibility
             "context": result.get("context"),
             "model_name": result.get("model")
         })
-        
+
         logger.info(f"[CELERY_SUMMARIZE] Task complete | task_id={task_id}")
-        
+
         return {
             "status": "success",
             "task_id": task_id,
             "result": result
         }
-        
+
     except Exception as e:
         logger.error(f"[CELERY_SUMMARIZE] Task failed | task_id={task_id} | error={e}", exc_info=True)
-        
+
         # Update task status
         try:
             update_task(task_id, {"status": "failed", "error": str(e)})
         except:
             pass
-        
+
         return {
             "status": "error",
             "task_id": task_id,
@@ -106,13 +142,13 @@ def summarize_multi_task(
 ):
     """
     Celery task for multi-transcript summarization
-    
+
     Args:
         task_ids: List of task IDs
         model_name: LLM model to use
         summary_type: Type of summary
         case_id: Case ID
-        
+
     Returns:
         Result dict or error
     """
@@ -120,22 +156,24 @@ def summarize_multi_task(
         f"[CELERY_MULTI_SUMMARY] Task started | count={len(task_ids)} | "
         f"celery_id={self.request.id} | case={case_id}"
     )
-    
+
     try:
         # Collect transcripts from all tasks
         transcripts = []
-        
+
         for tid in task_ids:
             task = get_task(tid)
-            if task and task.get("transcript"):
-                transcripts.append(task["transcript"])
-        
+            if task and task.get("result"):
+                transcript = task["result"].get("transcription")
+                if transcript:
+                    transcripts.append(transcript)
+
         if not transcripts:
             raise ValueError("No transcripts found in provided tasks")
-        
+
         # Import here
         from src.services.summarization.summary_service_v2 import summarize_multi_transcripts_v2
-        
+
         # Execute multi-summarization
         result = summarize_multi_transcripts_v2(
             transcripts=transcripts,
@@ -143,18 +181,18 @@ def summarize_multi_task(
             summary_type=summary_type,
             case_id=case_id
         )
-        
+
         logger.info(f"[CELERY_MULTI_SUMMARY] Task complete | case={case_id}")
-        
+
         return {
             "status": "success",
             "case_id": case_id,
             "result": result
         }
-        
+
     except Exception as e:
         logger.error(f"[CELERY_MULTI_SUMMARY] Task failed | error={e}", exc_info=True)
-        
+
         return {
             "status": "error",
             "case_id": case_id,

@@ -26,6 +26,7 @@ import requests
 import librosa
 from src.audio_processing.processor import AudioProcessor
 from src.core.config import settings
+from src.audio_processing.vad.silero_adapter import SileroVADAdapter
 
 @dataclass
 class AudioSegment:
@@ -44,19 +45,19 @@ class OllamaProcessor:
             "mistral:7b-instruct": "Mistral 7B Instruct - Model cân bằng giữa hiệu suất và tốc độ",
             "llama3.2:3b": "Llama 3.2 3B - Model nhẹ, phù hợp cho xử lý nhanh"
         }
-        
+
         if model_name not in self.available_models:
             logger.warning(f"Model {model_name} không có sẵn. Sử dụng model mặc định: gemma2:9b")
             model_name = "gemma2:9b"
-            
+
         self.model_name = model_name
         self.api_url = "http://localhost:11434/api/generate"
         logger.info(f"Initialized Ollama processor with model: {model_name}")
-        
+
     def get_available_models(self) -> dict:
         """Get list of available models and their descriptions"""
         return self.available_models
-        
+
     def set_model(self, model_name: str) -> bool:
         """Set the model to use for analysis"""
         if model_name in self.available_models:
@@ -65,7 +66,7 @@ class OllamaProcessor:
             return True
         logger.warning(f"Model {model_name} không có sẵn")
         return False
-        
+
     def ensure_analysis_fields(self, result: dict) -> dict:
         fields = [
             'entities', 'relationships', 'actions', 'offers', 'decisions',
@@ -252,22 +253,74 @@ Lưu ý:
                 models = [line.split()[0] for line in proc.stdout.splitlines() if line.strip() and not line.startswith("NAME")]
             except Exception:
                 models = []
-            priority = ["gemma2:9b", "deepseek-r1:7b", "mistral:7b-instruct", "llama3.2:3b"]
-            model_name = next((m for m in priority if m in models), "gemma2:9b")
+            # Priority list: Qwen 2.5 first (best for structured JSON), then others
+            priority = [
+                "qwen2.5:7b",            # Best for structured JSON output
+                "qwen2.5:14b",           # Larger Qwen if available
+                "llama3.1:latest",       # Good reasoning
+                "gpt-oss:20b",           # Highest quality GPT-OSS model
+                "gemma2:9b",             # High quality general model
+                "mistral:7b-instruct",   # Balanced model
+            ]
+            model_name = next((m for m in priority if m in models), "qwen2.5:7b")
             self.model_name = model_name
 
             prompt = f"""
-Bạn là AI chuyên trực quan hóa hội thoại. Hãy trích xuất các thành phần sau từ hội thoại:
-- nodes: danh sách thực thể (người, tổ chức, địa điểm, sự kiện, ...)
-- edges: mối quan hệ giữa các thực thể (ai liên hệ ai, ai thực hiện hành động gì với ai, ...)
-- timeline: các mốc thời gian, sự kiện chính
-- entity_types: loại thực thể (person, org, location, event, ...)
-- main_events: danh sách sự kiện chính
+Bạn là AI chuyên gia phân tích và trực quan hóa hội thoại. Phân tích KỸ LƯỠNG và trả về JSON với cấu trúc CHÍNH XÁC sau:
 
-Chỉ trả về object JSON với các trường trên, không bọc trong markdown, không thêm ```json.
+{{
+  "nodes": [
+    {{"id": "person_1", "label": "Tên người", "type": "person", "importance": 8}},
+    {{"id": "loc_1", "label": "Địa điểm", "type": "location", "importance": 6}},
+    {{"id": "org_1", "label": "Tổ chức", "type": "organization", "importance": 7}},
+    {{"id": "event_1", "label": "Sự kiện", "type": "event", "importance": 9}},
+    {{"id": "time_1", "label": "Thời gian", "type": "time", "importance": 5}}
+  ],
+  "edges": [
+    {{"from": "person_1", "to": "loc_1", "label": "ở tại", "type": "located_at"}},
+    {{"from": "person_1", "to": "org_1", "label": "làm việc cho", "type": "works_for"}},
+    {{"from": "person_1", "to": "event_1", "label": "tham gia", "type": "participates_in"}}
+  ],
+  "timeline": [
+    {{"time": "thời gian cụ thể", "event": "Mô tả sự kiện chi tiết", "entities_involved": ["person_1", "loc_1"]}},
+    {{"time": "sau đó", "event": "Sự kiện tiếp theo", "entities_involved": ["person_1"]}}
+  ],
+  "main_events": [
+    "Sự kiện 1: Mô tả chi tiết về sự kiện quan trọng nhất",
+    "Sự kiện 2: Mô tả chi tiết về sự kiện quan trọng thứ hai"
+  ],
+  "entity_types": ["person", "location", "organization", "event", "time"],
+  "summary": {{
+    "topic": "Chủ đề chính của hội thoại",
+    "key_entities": ["entity quan trọng 1", "entity quan trọng 2"],
+    "key_actions": ["hành động 1", "hành động 2"]
+  }},
+  "sentiment": {{
+    "overall": "positive|negative|neutral|mixed",
+    "confidence": 0.85,
+    "details": "Giải thích ngắn về cảm xúc trong hội thoại"
+  }},
+  "insights": [
+    "Insight 1: Điểm đáng chú ý hoặc bất thường",
+    "Insight 2: Mối quan hệ ẩn hoặc pattern quan trọng"
+  ]
+}}
 
-Hội thoại:
+QUY TẮC BẮT BUỘC:
+1. Mỗi node PHẢI có id DUY NHẤT (format: type_số, vd: person_1, loc_2)
+2. edges.from và edges.to PHẢI reference node.id đã tồn tại
+3. timeline PHẢI sorted theo thứ tự thời gian
+4. importance: 1-3=thấp, 4-6=trung bình, 7-10=cao
+5. Nếu không rõ thời gian, dùng "không xác định" hoặc "trong cuộc hội thoại"
+6. Tối thiểu phải trích xuất 3-5 nodes và 2-3 edges
+7. main_events phải có ít nhất 2 sự kiện
+
+Hội thoại cần phân tích:
+\"\"\"
 {text}
+\"\"\"
+
+CHỈ TRẢ VỀ JSON THUẦN TÚY, KHÔNG BỌC TRONG ```json``` HOẶC MARKDOWN.
 """
             response = requests.post(
                 self.api_url,
@@ -395,14 +448,14 @@ class Transcriber:
         # Support both local path và automatic download/cache
         use_local = getattr(settings, 'WHISPER_USE_LOCAL', True)
         download_root = getattr(settings, 'WHISPER_MODEL_PATH', 'models/whisper') if use_local else None
-        
+
         if use_local:
             logger.info(f"[OFFLINE MODE] Using local model cache: {download_root}")
-        
+
         # Load model - will use cache if available, download if needed
         self.model = WhisperModel(
-            model_name, 
-            device=device, 
+            model_name,
+            device=device,
             compute_type=compute_type,
             download_root=download_root
         )
@@ -424,8 +477,16 @@ class Transcriber:
         self.speaker_pipeline = None
         self.pipeline = self.model
         self.audio_processor = AudioProcessor()
+        # Initialize Silero VAD Adapter (Start-Fix)
+        try:
+            self.vad_adapter = SileroVADAdapter()
+            logger.info("✅ Silero VAD Adapter initialized for start-fix")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to init Silero VAD: {e}")
+            self.vad_adapter = None
+
         logger.info(f"Transcriber initialized: model={model_name}, device={device}, compute_type={compute_type}")
-        
+
     def _set_segmentation_params(self, min_segment_length, max_segment_length, context_window, overlap):
         # Ưu tiên giá trị truyền vào, nếu None thì lấy từ instance, nếu vẫn None thì lấy mặc định, ép kiểu an toàn
         self.context_window = int(context_window) if context_window is not None else getattr(self, 'context_window', 5) or 5
@@ -457,7 +518,7 @@ class Transcriber:
         except Exception as e:
             logger.error(f"Error loading audio: {str(e)}")
             raise
-    
+
     def _detect_silence(self, audio: np.ndarray, sr: int = 16000) -> List[Tuple[float, float]]:
         """Detect silence segments in audio"""
         try:
@@ -473,11 +534,11 @@ class Transcriber:
             rms = librosa.feature.rms(y=audio)[0]
             # Convert to dB
             db = 20 * np.log10(rms + 1e-10)
-            
+
             # Find silence segments
             is_silence = db < self.silence_thresh
             silence_segments = []
-            
+
             start = None
             for i, silent in enumerate(is_silence):
                 if silent and start is None:
@@ -488,13 +549,13 @@ class Transcriber:
                     if duration >= self.min_silence_len / 1000:
                         silence_segments.append((start * 512 / sr, end * 512 / sr))
                     start = None
-            
+
             return silence_segments
-            
+
         except Exception as e:
             logger.error(f"Error detecting silence: {str(e)}")
             return []
-    
+
     def _segment_audio(self, audio: np.ndarray, sr: int = 16000) -> List[AudioSegment]:
         """Segment audio: truyền toàn bộ audio vào model, không tách đoạn theo silence. Nếu audio > 30 phút thì chia đều."""
         try:
@@ -533,7 +594,7 @@ class Transcriber:
         except Exception as e:
             logger.error(f"Error segmenting audio: {str(e)}")
             return []
-    
+
     def _process_segment(self, segment: AudioSegment) -> str:
         """Process a single audio segment."""
         try:
@@ -564,7 +625,7 @@ class Transcriber:
         except Exception as e:
             logger.error(f"Error processing segment: {str(e)}")
             return ""
-    
+
     def _post_process_text(self, text: str) -> str:
         """Post-process transcribed text: loại filler, chuẩn hóa dấu câu, kiểm tra ngôn ngữ."""
         try:
@@ -588,12 +649,12 @@ class Transcriber:
         except Exception as e:
             logger.error(f"Error post-processing text: {str(e)}")
             return text
-    
+
     def _is_noisy(self, audio: np.ndarray) -> bool:
         """Phát hiện audio nhiễu (placeholder, cần tích hợp model thực tế)"""
         # TODO: Tích hợp model phát hiện nhiễu
         return False
-    
+
     def _generate_caption(self, audio: np.ndarray, sr: int = 16000) -> str:
         """Sinh caption mô tả toàn bộ nội dung audio bằng Whisper (nếu hỗ trợ)."""
         try:
@@ -617,36 +678,47 @@ class Transcriber:
         except Exception as e:
             logger.error(f"Error generating caption: {str(e)}")
             return ""
-    
+
     def transcribe_with_diarization(self, audio_path: str, fast_mode: bool = False, enable_diarization: bool = True) -> dict:
         """
         Transcribe audio with speaker diarization
-        
+
         Args:
             audio_path: Path to audio file
             fast_mode: Skip heavy LLM post-processing
             enable_diarization: Enable speaker diarization (labels who spoke when)
-            
+
         Returns:
             dict with 'segments' containing [{'start', 'end', 'text', 'speaker'}]
                  and 'formatted_transcript' in SRT-like format
         """
         logger.info(f"[TRANSCRIBER] Starting transcribe_with_diarization | audio={audio_path} | fast_mode={fast_mode} | diarization={enable_diarization}")
-        
+
         try:
             start_time = time.time()
-            
+
+            # Step 0: Preprocess audio with Silero VAD (Fix Missing Start)
+            process_path = audio_path
+            if self.vad_adapter:
+                try:
+                    logger.info(f"[VAD-PRE] Running Silero VAD to fix start/end and remove silence...")
+                    process_path = self.vad_adapter.remove_silence(audio_path)
+                    logger.info(f"[VAD-PRE] Processed audio saved to: {process_path}")
+                except Exception as e:
+                    logger.error(f"[VAD-PRE] Failed to process audio: {e}. Using original.")
+                    process_path = audio_path
+
             # Step 1: Run Whisper transcription to get segments with timestamps
             # NOTE: vad_filter can cut off beginning/end of audio, so we disable it
             # for diarization to ensure we don't miss any content
             segments_whisper, info = self.model.transcribe(
-                audio_path,
+                process_path,
                 language="vi",
                 beam_size=self.beam_size,
                 vad_filter=False,  # Disable VAD to avoid missing content
                 word_timestamps=True  # Important for diarization alignment
             )
-            
+
             # Convert generator to list
             transcript_segments = []
             for seg in segments_whisper:
@@ -655,24 +727,26 @@ class Transcriber:
                     'end': seg.end,
                     'text': seg.text.strip()
                 })
-            
+
             logger.info(f"[TRANSCRIBER] Whisper produced {len(transcript_segments)} segments")
-            
+
             # Step 2: Run speaker diarization if enabled
             final_segments = transcript_segments
             if enable_diarization and len(transcript_segments) > 0:
                 try:
                     from src.audio_processing.diarization.whisperx import WhisperXPipeline
                     diarizer = WhisperXPipeline()
-                    
+
                     # Get speaker segments
-                    speaker_segments = diarizer.run(audio_path)
+                    # Use processed path for better alignment if VAD was successful
+                    diar_audio_path = process_path if process_path and os.path.exists(process_path) else audio_path
+                    speaker_segments = diarizer.run(diar_audio_path)
                     logger.info(f"[DIARIZATION] Found {len(speaker_segments)} speaker segments")
-                    
+
                     # Assign speakers to transcript segments
                     if len(speaker_segments) > 0:
                         final_segments = diarizer.assign_speakers_to_transcript(
-                            transcript_segments, 
+                            transcript_segments,
                             speaker_segments,
                             audio_path=audio_path  # Pass audio path for fallback
                         )
@@ -680,22 +754,22 @@ class Transcriber:
                     else:
                         # Fallback: assign default speaker
                         final_segments = [
-                            {**seg, 'speaker': 'Speaker 0'} 
+                            {**seg, 'speaker': 'Speaker 0'}
                             for seg in transcript_segments
                         ]
                 except Exception as e:
                     logger.error(f"[DIARIZATION] Error: {e}. Using no speaker labels.")
                     final_segments = [
-                        {**seg, 'speaker': 'Speaker 0'} 
+                        {**seg, 'speaker': 'Speaker 0'}
                         for seg in transcript_segments
                     ]
             else:
                 # No diarization: assign default speaker
                 final_segments = [
-                    {**seg, 'speaker': 'Speaker 0'} 
+                    {**seg, 'speaker': 'Speaker 0'}
                     for seg in transcript_segments
                 ]
-            
+
             # Step 3: Format output like ElevenLabs Scribe / file mẫu
             formatted_lines = []
             for seg in final_segments:
@@ -703,19 +777,19 @@ class Transcriber:
                 end_time_str = self._format_timestamp(seg['end'])
                 speaker = seg.get('speaker', 'Speaker 0')
                 text = seg['text']
-                
+
                 # Format: HH:MM:SS,mmm --> HH:MM:SS,mmm [Speaker X]
                 formatted_lines.append(f"{start_time_str} --> {end_time_str} [{speaker}]")
                 formatted_lines.append(text)
                 formatted_lines.append("")  # Empty line
-            
+
             formatted_transcript = "\n".join(formatted_lines)
-            
+
             # Step 4: Optional full-mode processing
             full_text = " ".join([seg['text'] for seg in final_segments])
             context_analysis = {}
             summary = ""
-            
+
             if not fast_mode:
                 try:
                     context_analysis = self.llm_processor.analyze_context(full_text)
@@ -724,10 +798,10 @@ class Transcriber:
                         context_analysis = json.loads(context_analysis)
                 except Exception as e:
                     logger.warning(f"[LLM] Context analysis failed: {e}")
-            
+
             processing_time = time.time() - start_time
             duration = info.duration if hasattr(info, 'duration') else final_segments[-1]['end'] if final_segments else 0
-            
+
             result = {
                 'transcription': full_text,
                 'formatted_transcript': formatted_transcript,
@@ -742,14 +816,14 @@ class Transcriber:
                 'fast_mode': fast_mode,
                 'diarization_enabled': enable_diarization
             }
-            
+
             logger.info(f"[TRANSCRIBER] Completed in {processing_time:.2f}s | Speed: {result['speed_factor']:.1f}x")
             return result
-            
+
         except Exception as e:
             logger.error(f"[TRANSCRIBER] Error in transcribe_with_diarization: {e}", exc_info=True)
             raise
-    
+
     def _format_timestamp(self, seconds: float) -> str:
         """Format seconds to HH:MM:SS,mmm"""
         hours = int(seconds // 3600)
@@ -757,10 +831,10 @@ class Transcriber:
         secs = int(seconds % 60)
         millis = int((seconds % 1) * 1000)
         return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
-    
+
     def transcribe(self, audio_path: str, fast_mode: bool = False) -> dict:
         """Transcribe audio file to text with parallel processing và context analysis
-        
+
         Args:
             audio_path: Path to audio file
             fast_mode: If True, skip heavy post-processing (LLM analysis, summarization)
@@ -840,7 +914,7 @@ class Transcriber:
             caption = ""
             context_analysis = {}
             summary = ""
-            
+
             if not fast_mode:
                 # Sinh caption mô tả audio
                 caption = self._generate_caption(audio, sr)
@@ -903,4 +977,4 @@ class Transcriber:
             return result
         except Exception as e:
             logger.error(f"Error transcribing audio: {str(e)}", exc_info=True)
-            raise 
+            raise

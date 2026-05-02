@@ -8,10 +8,10 @@ import sys
 # Thêm thư mục src vào sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../')))
 
-# Import the models
-from database.models.base import Base
-from database.config.database import SQLALCHEMY_DATABASE_URL
-from database.models import models  # Import tất cả các model để Alembic nhận diện
+# Import the models through the same package path used by the application.
+from src.database.models.base import Base
+from src.database.config.database import SQLALCHEMY_DATABASE_URL
+from src.database.models import models  # Import all models so Alembic sees metadata
 
 # this is the Alembic Config object
 config = context.config
@@ -58,4 +58,4 @@ def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    run_migrations_online() 
+    run_migrations_online()

@@ -1,0 +1,18 @@
+name: "General Intelligence & Surveillance"
+description: "Phân tích hội thoại thông thường để xây dựng hồ sơ đối tượng (Shadow Profiling), tìm kiếm thông tin tình báo ẩn."
+keywords:
+  - "lịch trình"
+  - "đi đâu"
+  - "gặp ai"
+  - "tiền nong"
+  - "gia đình"
+  - "sở thích"
+  - "quan điểm"
+  - "nợ nần"
+  - "bệnh tật"
+focus_areas:
+  - "**Life Patterns (Thói quen)**: Giờ giấc sinh hoạt, địa điểm thường lui tới."
+  - "**Social Graph (Quan hệ)**: Vợ chồng, con cái, bạn bè, đồng nghiệp, 'bồ bịch'."
+  - "**Financial Status (Tài chính)**: Mua sắm lớn, than nghèo kể khổ, khoe khoang, nợ nần."
+  - "**Vulnerabilities (Điểm yếu)**: Bệnh lý, mâu thuẫn gia đình, thói hư tật xấu (cờ bạc, rượu chè)."
+  - "**Intentions (Dự định)**: Kế hoạch đi lại, công tác, gặp gỡ sắp tới."

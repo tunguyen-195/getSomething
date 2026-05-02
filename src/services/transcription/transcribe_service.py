@@ -7,7 +7,7 @@ from src.speech_to_text.transcriber import Transcriber
 from src.services.task_service import get_task, update_task
 from src.database.models.models import AudioFile
 from fastapi import HTTPException
-from pathlib import Path
+from src.services.audio_storage import resolve_audio_path
 
 
 def transcribe_audio(
@@ -20,14 +20,14 @@ def transcribe_audio(
     """
     Transcribe audio file with optional speaker diarization.
     This is a SEPARATE step from summarization.
-    
+
     Args:
         task_id: Task ID
         db: Database session
         enable_diarization: Enable speaker diarization
         diarization_method: Method for diarization (pyannote, simple_vad, none)
         fast_mode: Skip heavy post-processing for faster results
-        
+
     Returns:
         dict with transcript, segments, speakers, duration, etc.
     """
@@ -36,30 +36,30 @@ def transcribe_audio(
         f"task_id={task_id} | diarization={enable_diarization} | "
         f"method={diarization_method} | fast_mode={fast_mode}"
     )
-    
+
     try:
         # Get task and audio file
         task = get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
-        
+
         audio_file = db.query(AudioFile).filter(AudioFile.task_id == task_id).first()
         if not audio_file:
             raise HTTPException(status_code=404, detail="Audio file not found")
-        
+
         # Check if file exists
-        audio_path = Path(audio_file.file_path)
+        audio_path = resolve_audio_path(audio_file.file_path)
         if not audio_path.exists():
             raise HTTPException(status_code=404, detail=f"Audio file not found: {audio_path}")
-        
+
         # Update status to transcribing
         update_task(task_id, {"status": "transcribing"})
         audio_file.status = "transcribing"
         db.commit()
-        
+
         # Initialize transcriber
         transcriber = Transcriber()
-        
+
         # Transcribe with or without diarization
         if enable_diarization and diarization_method != "none":
             logger.info(f"[TRANSCRIBE_SERVICE] Using diarization method: {diarization_method}")
@@ -68,23 +68,15 @@ def transcribe_audio(
                 fast_mode=fast_mode,
                 enable_diarization=True
             )
-            
-            # Save formatted transcript to file
-            transcript_file = str(audio_path).replace('.mp3', '_transcript.txt').replace('.wav', '_transcript.txt').replace('.m4a', '_transcript.txt')
-            with open(transcript_file, 'w', encoding='utf-8') as f:
-                f.write(result.get('formatted_transcript', ''))
-            
-            logger.info(f"[TRANSCRIBE_SERVICE] Saved formatted transcript to {transcript_file}")
-            
+
+            transcript_file = None
+
         else:
             logger.info("[TRANSCRIBE_SERVICE] Transcribing without diarization")
             result = transcriber.transcribe(str(audio_path), fast_mode=fast_mode)
-            
-            # Save plain transcript
-            transcript_file = str(audio_path).replace('.mp3', '_transcript.txt').replace('.wav', '_transcript.txt').replace('.m4a', '_transcript.txt')
-            with open(transcript_file, 'w', encoding='utf-8') as f:
-                f.write(result.get('transcription', ''))
-        
+
+            transcript_file = None
+
         # Extract results
         transcript = result.get('transcription', '') or result.get('transcript', '')
         segments = result.get('segments', [])
@@ -92,7 +84,7 @@ def transcribe_audio(
         duration = result.get('duration', 0)
         processing_time = result.get('processing_time', 0)
         speed_factor = result.get('speed_factor', 0)
-        
+
         # Prepare response
         response = {
             "task_id": task_id,
@@ -108,7 +100,7 @@ def transcribe_audio(
             "fast_mode": fast_mode,
             "transcript_file": transcript_file
         }
-        
+
         # Update task with transcription result
         update_task(task_id, {
             "status": "transcribed",
@@ -118,23 +110,23 @@ def transcribe_audio(
             "duration": duration,
             "processing_time": processing_time
         })
-        
+
         # Update audio file
         audio_file.status = "transcribed"
         audio_file.duration = duration
         db.commit()
-        
+
         logger.info(
             f"[TRANSCRIBE_SERVICE] Completed | task_id={task_id} | "
             f"speakers={num_speakers} | duration={duration:.1f}s | "
             f"processing_time={processing_time:.1f}s"
         )
-        
+
         return response
-        
+
     except Exception as e:
         logger.error(f"[TRANSCRIBE_SERVICE] Error: {e}", exc_info=True)
-        
+
         # Update status to failed
         try:
             update_task(task_id, {"status": "failed", "error": str(e)})
@@ -144,5 +136,5 @@ def transcribe_audio(
                 db.commit()
         except:
             pass
-        
+
         raise HTTPException(status_code=500, detail=str(e))

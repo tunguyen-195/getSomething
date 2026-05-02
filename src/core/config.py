@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings
 from pydantic import AnyHttpUrl, validator
 
 class Settings(BaseSettings):
+    ENVIRONMENT: str = "development"
     # Backend
     BACKEND_HOST: str = "0.0.0.0"
     BACKEND_PORT: int = 8000
@@ -10,6 +11,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "your-super-secret-key-here"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    AUTH_ENABLED: bool = False
+    INIT_DB_ON_STARTUP: bool = False
+    ENABLE_API_DOCS: bool = True
     VERSION: str = "0.1.0"
     DESCRIPTION: str = "Speech to Information API"
 
@@ -42,7 +46,7 @@ class Settings(BaseSettings):
     HF_TOKEN: str = ""  # HuggingFace token for gated models (pyannote)
     VOSK_MODEL_PATH: str = "models/vosk-model-vn-0.4"
     T5_MODEL_PATH: str = "models/t5-base"
-    
+
     # Language & AI Model Settings
     DEFAULT_LANGUAGE: str = "vi"  # Tiếng Việt
     DEFAULT_AI_MODEL: str = "gpt-oss"  # Model AI mặc định
@@ -55,6 +59,22 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE: int = 100_000_000  # 100MB
     ALLOWED_EXTENSIONS: List[str] = ["wav", "mp3", "m4a", "ogg"]
     AUDIO_STORAGE_ROOT: str = "storage/audio"
+
+    # Auth/session cookies
+    COOKIE_SECURE: bool = False
+    COOKIE_SAMESITE: str = "lax"
+    COOKIE_DOMAIN: str | None = None
+    COOKIE_PATH: str = "/"
+    CSRF_COOKIE_NAME: str = "csrf_token"
+    AUTH_COOKIE_NAME: str = "access_token"
+    TRUSTED_PROXY_IPS: List[str] = []
+
+    # Rate limits
+    RATE_LIMIT_ENABLED: bool = True
+    LOGIN_RATE_LIMIT_ATTEMPTS: int = 5
+    LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 900
+    UPLOAD_RATE_LIMIT_PER_HOUR: int = 20
+    PROCESS_RATE_LIMIT_PER_HOUR: int = 60
 
     # Logging
     LOG_LEVEL: str = "INFO"
@@ -95,4 +115,38 @@ class Settings(BaseSettings):
         extra = "allow"
         model_config = {'protected_namespaces': ()}
 
-settings = Settings() 
+settings = Settings()
+
+def validate_security_settings() -> None:
+    """Fail fast for production-grade security settings."""
+    production = settings.ENVIRONMENT.lower() in {"prod", "production"} or (
+        settings.AUTH_ENABLED and not settings.DEBUG
+    )
+    if not production:
+        return
+
+    secret = settings.SECRET_KEY or ""
+    lowered = secret.lower()
+    weak_markers = [
+        "your-super-secret-key-here",
+        "changeme",
+        "change_me",
+        "secret",
+        "password",
+        "default",
+        "template",
+    ]
+    if (
+        len(secret) < 32
+        or lowered in weak_markers
+        or any(marker in lowered for marker in weak_markers)
+        or len(set(secret)) < 8
+    ):
+        raise RuntimeError(
+            "Weak SECRET_KEY for production/auth-enabled mode. Generate one with: "
+            "python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+        )
+    if not settings.COOKIE_SECURE:
+        raise RuntimeError("COOKIE_SECURE must be true in production/auth-enabled mode")
+    if settings.COOKIE_SAMESITE.lower() == "none" and not settings.COOKIE_SECURE:
+        raise RuntimeError("SameSite=None cookies require COOKIE_SECURE=true")

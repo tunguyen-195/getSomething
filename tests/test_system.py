@@ -10,6 +10,11 @@ import soundfile as sf
 
 client = TestClient(app)
 
+def create_test_wav(path: str, duration: float = 0.2):
+    sr = 16000
+    samples = np.zeros(int(sr * duration), dtype=np.float32)
+    sf.write(path, samples, sr)
+
 @pytest.fixture(scope="session")
 def test_db():
     """Create test database."""
@@ -32,8 +37,7 @@ def test_audio_upload():
     """Test audio file upload."""
     # Create test audio file
     test_file = "test.wav"
-    with open(test_file, "wb") as f:
-        f.write(b"test audio content")
+    create_test_wav(test_file)
 
     case_id = create_test_case()
     try:
@@ -48,7 +52,7 @@ def test_audio_upload():
         assert response.status_code == 200
         data = response.json()
         assert "task_id" in data or "audio_file_id" in data
-        assert data["status"] in ["success", "pending"]
+        assert data["status"] == "uploaded"
     finally:
         # Clean up
         if os.path.exists(test_file):
@@ -74,7 +78,7 @@ def test_task_status():
     response = client.get(f"/api/v1/tasks/{task_id}")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] in ["pending", "processing", "completed"]
+    assert data["status"] in ["uploaded", "transcribing", "transcribed", "summarizing", "summarized", "visualizing", "visualized", "failed"]
 
 def test_batch_processing():
     """Test batch processing endpoint."""
@@ -83,8 +87,7 @@ def test_batch_processing():
     case_id = create_test_case()
     try:
         for file in test_files:
-            with open(file, "wb") as f:
-                f.write(b"test audio content")
+            create_test_wav(file)
 
         # Mở tất cả file và giữ chúng mở khi gửi request
         file_objs = [open(file, "rb") for file in test_files]
@@ -137,7 +140,7 @@ def test_result_retrieval():
     assert response.status_code == 200
     data = response.json()
     assert "task_id" in data
-    assert data["status"] == "completed"
+    assert data["status"] == "uploaded"
     assert "result" in data
 
 def test_audio_pipeline_quality():
@@ -162,4 +165,38 @@ def test_audio_pipeline_quality():
     # ...
     # Xóa file test
     if os.path.exists("test_noise.wav"):
-        os.remove("test_noise.wav") 
+        os.remove("test_noise.wav")
+
+def test_upload_rejects_traversal_filename():
+    case_id = create_test_case()
+    test_file = "valid_name.wav"
+    create_test_wav(test_file)
+    try:
+        with open(test_file, "rb") as f:
+            response = client.post(
+                "/api/v1/audio/upload",
+                files={"file": ("../evil.wav", f, "audio/wav")},
+                data={"case_id": str(case_id)},
+            )
+        assert response.status_code == 400
+    finally:
+        if os.path.exists(test_file):
+            os.remove(test_file)
+
+
+def test_upload_rejects_fake_audio_content():
+    case_id = create_test_case()
+    test_file = "fake.wav"
+    with open(test_file, "wb") as f:
+        f.write(b"not actually audio")
+    try:
+        with open(test_file, "rb") as f:
+            response = client.post(
+                "/api/v1/audio/upload",
+                files={"file": ("fake.wav", f, "audio/wav")},
+                data={"case_id": str(case_id)},
+            )
+        assert response.status_code == 400
+    finally:
+        if os.path.exists(test_file):
+            os.remove(test_file)

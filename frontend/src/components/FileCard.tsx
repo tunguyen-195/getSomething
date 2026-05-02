@@ -28,15 +28,19 @@ import {
 interface FileCardProps {
   file: {
     id: string;
+    audio_id?: string | number;
     filename: string;
     duration?: number;
     size?: number;
-    status: 'uploaded' | 'transcribing' | 'transcribed' | 'summarizing' | 'summarized' | 'failed';
+    status: 'uploaded' | 'transcribing' | 'transcribed' | 'summarizing' | 'summarized' | 'visualizing' | 'visualized' | 'failed';
     num_speakers?: number;
     has_diarization?: boolean;
     created_at?: string;
     transcript?: string;
     summary?: string;
+    visualization_data?: any;
+    has_visualization?: boolean;
+    download_url?: string;
   };
   onTranscribe: () => void;
   onSummarize: () => void;
@@ -56,7 +60,8 @@ const FileCard: React.FC<FileCardProps> = ({
   const [expanded, setExpanded] = useState(false);
   const [transcriptExpanded, setTranscriptExpanded] = useState(false);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
-  
+  const [visualizationExpanded, setVisualizationExpanded] = useState(false);
+
   const [copiedTranscript, setCopiedTranscript] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
 
@@ -84,6 +89,8 @@ const FileCard: React.FC<FileCardProps> = ({
       case 'transcribed': return '#43a047'; // Green
       case 'summarizing': return '#ff9800'; // Orange
       case 'summarized': return '#9c27b0'; // Purple
+      case 'visualizing': return '#673ab7'; // Deep Purple
+      case 'visualized': return '#3f51b5'; // Indigo
       case 'failed': return '#d32f2f'; // Red
       default: return '#757575';
     }
@@ -96,15 +103,19 @@ const FileCard: React.FC<FileCardProps> = ({
       case 'transcribed': return 'Transcribed';
       case 'summarizing': return 'Summarizing...';
       case 'summarized': return 'Summarized';
+      case 'visualizing': return 'Visualizing...';
+      case 'visualized': return 'Visualized';
       case 'failed': return 'Failed';
       default: return status;
     }
   };
 
-  const isProcessing = file.status === 'transcribing' || file.status === 'summarizing';
+  const isProcessing = file.status === 'transcribing' || file.status === 'summarizing' || file.status === 'visualizing';
   const canTranscribe = file.status === 'uploaded' || file.status === 'failed';
-  const canSummarize = file.status === 'transcribed' || file.status === 'summarized';
-  const canVisualize = file.status === 'transcribed' || file.status === 'summarized';
+  // Fixed: Include 'visualized' status and check for transcript existence
+  const canSummarize = ['transcribed', 'summarized', 'visualized'].includes(file.status) || !!file.transcript;
+  const canVisualize = ['transcribed', 'summarized', 'visualized'].includes(file.status) || !!file.transcript;
+
 
   const formatDuration = (seconds?: number) => {
     if (!seconds) return 'N/A';
@@ -116,6 +127,24 @@ const FileCard: React.FC<FileCardProps> = ({
   const formatSize = (bytes?: number) => {
     if (!bytes) return 'N/A';
     return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  };
+
+  // Clean markdown để hiển thị văn bản hành chính chuẩn
+  const cleanMarkdown = (text: string): string => {
+    if (!text) return '';
+    return text
+      .replace(/^#{1,6}\s*/gm, '')           // Remove headers
+      .replace(/\*\*([^*]+)\*\*/g, '$1')      // Remove bold
+      .replace(/__([^_]+)__/g, '$1')
+      .replace(/\*([^*]+)\*/g, '$1')          // Remove italic
+      .replace(/_([^_]+)_/g, '$1')
+      .replace(/^[\-\*]\s+/gm, '• ')          // Convert bullets to •
+      .replace(/^(\d+)\.\s+/gm, '$1. ')       // Keep numbered lists clean
+      .replace(/```[\s\S]*?```/g, '')         // Remove code blocks
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/^[\-\*_]{3,}$/gm, '')         // Remove horizontal rules
+      .replace(/\n{3,}/g, '\n\n')             // Remove extra blank lines
+      .trim();
   };
 
   return (
@@ -180,6 +209,29 @@ const FileCard: React.FC<FileCardProps> = ({
         )}
 
         <Divider sx={{ my: 2, borderColor: 'rgba(255, 214, 0, 0.3)' }} />
+
+        {/* Audio Player */}
+        <Box mb={2}>
+          <Typography variant="subtitle2" fontWeight={700} color="#d32f2f" mb={1}>
+            🎧 AUDIO PLAYER
+          </Typography>
+          <Box
+            sx={{
+              p: 1.5,
+              bgcolor: 'rgba(211, 47, 47, 0.05)',
+              borderRadius: '12px',
+              border: '1px solid rgba(211, 47, 47, 0.2)',
+            }}
+          >
+            <audio
+              controls
+              style={{ width: '100%', height: 40 }}
+              src={file.download_url || `/api/v1/audio/${file.audio_id || file.id}/download`}
+            >
+              Your browser does not support the audio element.
+            </audio>
+          </Box>
+        </Box>
 
         {/* Actions Section */}
         <Box>
@@ -284,28 +336,44 @@ const FileCard: React.FC<FileCardProps> = ({
               <Typography variant="body2" fontWeight={600}>
                 Visualize
               </Typography>
+              {file.has_visualization && <CheckIcon sx={{ color: '#3f51b5', fontSize: 18 }} />}
             </Box>
             <Box display="flex" gap={1} ml={4}>
-              {canVisualize ? (
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<VisualizeIcon />}
-                  onClick={onVisualize}
-                  sx={{
-                    color: '#9c27b0',
-                    borderColor: '#9c27b0',
-                    fontWeight: 700,
-                    borderRadius: '8px',
-                    textTransform: 'none',
-                    '&:hover': {
-                      bgcolor: 'rgba(156, 39, 176, 0.08)',
-                      borderColor: '#7b1fa2',
-                    },
-                  }}
-                >
-                  Generate
-                </Button>
+              {file.status === 'visualizing' ? (
+                <Box display="flex" alignItems="center" gap={1}>
+                  <RefreshIcon sx={{ color: '#673ab7', animation: 'spin 1s linear infinite', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} />
+                  <Typography variant="caption" color="text.secondary">
+                    Generating visualization...
+                  </Typography>
+                </Box>
+              ) : canVisualize ? (
+                <>
+                  <Button
+                    variant={file.has_visualization ? "outlined" : "contained"}
+                    size="small"
+                    startIcon={file.has_visualization ? <RefreshIcon /> : <VisualizeIcon />}
+                    onClick={onVisualize}
+                    sx={{
+                      bgcolor: file.has_visualization ? 'transparent' : '#9c27b0',
+                      color: file.has_visualization ? '#9c27b0' : '#fff',
+                      borderColor: '#9c27b0',
+                      fontWeight: 700,
+                      borderRadius: '8px',
+                      textTransform: 'none',
+                      '&:hover': {
+                        bgcolor: file.has_visualization ? 'rgba(156, 39, 176, 0.08)' : '#7b1fa2',
+                        borderColor: '#7b1fa2',
+                      },
+                    }}
+                  >
+                    {file.has_visualization ? 'Re-generate' : 'Generate'}
+                  </Button>
+                  {file.has_visualization && (
+                    <Typography variant="caption" color="success.main" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      ✓ Ready
+                    </Typography>
+                  )}
+                </>
               ) : (
                 <Typography variant="caption" color="text.secondary">
                   ⏳ Transcribe first
@@ -320,11 +388,11 @@ const FileCard: React.FC<FileCardProps> = ({
         {/* VIEW RESULTS Section - Appears after completion */}
         {(file.transcript || file.summary) && (
           <Box mb={3}>
-            <Typography 
-              variant="subtitle2" 
-              fontWeight={700} 
-              color="#43a047" 
-              mb={1.5} 
+            <Typography
+              variant="subtitle2"
+              fontWeight={700}
+              color="#43a047"
+              mb={1.5}
               sx={{ letterSpacing: 0.5 }}
             >
               👁️ VIEW RESULTS
@@ -393,14 +461,14 @@ const FileCard: React.FC<FileCardProps> = ({
                 </Button>
               )}
 
-              {file.status === 'summarized' && (
+              {file.has_visualization && (
                 <Button
                   variant="outlined"
                   startIcon={<ViewIcon />}
-                  onClick={onVisualize}
+                  onClick={() => setVisualizationExpanded(!visualizationExpanded)}
                   sx={{
-                    borderColor: '#9c27b0',
-                    color: '#9c27b0',
+                    borderColor: '#3f51b5',
+                    color: '#3f51b5',
                     fontWeight: 700,
                     borderRadius: '12px',
                     borderWidth: '2.5px',
@@ -410,9 +478,9 @@ const FileCard: React.FC<FileCardProps> = ({
                     textTransform: 'none',
                     '&:hover': {
                       borderWidth: '2.5px',
-                      bgcolor: 'rgba(156, 39, 176, 0.1)',
+                      bgcolor: 'rgba(63, 81, 181, 0.1)',
                       transform: 'scale(1.05)',
-                      boxShadow: '0 4px 16px rgba(156, 39, 176, 0.3)',
+                      boxShadow: '0 4px 16px rgba(63, 81, 181, 0.3)',
                     },
                     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                     animation: 'fadeInUp 0.5s ease-out 0.2s',
@@ -428,10 +496,10 @@ const FileCard: React.FC<FileCardProps> = ({
 
         {/* Delete Button */}
         <Box display="flex" justifyContent="flex-end" mb={2}>
-          <IconButton 
-            size="small" 
-            onClick={onDelete} 
-            sx={{ 
+          <IconButton
+            size="small"
+            onClick={onDelete}
+            sx={{
               color: '#d32f2f',
               '&:hover': {
                 bgcolor: 'rgba(211, 47, 47, 0.1)',
@@ -461,7 +529,7 @@ const FileCard: React.FC<FileCardProps> = ({
                   size="small"
                   variant={copiedTranscript ? "contained" : "outlined"}
                   onClick={handleCopyTranscript}
-                  sx={{ 
+                  sx={{
                     borderRadius: '8px',
                     bgcolor: copiedTranscript ? '#43a047' : undefined,
                     color: copiedTranscript ? '#fff' : '#43a047',
@@ -470,7 +538,7 @@ const FileCard: React.FC<FileCardProps> = ({
                 >
                   {copiedTranscript ? '✓ Copied!' : '📋 Copy'}
                 </Button>
-                <IconButton 
+                <IconButton
                   size="small"
                   onClick={() => setTranscriptExpanded(!transcriptExpanded)}
                   sx={{
@@ -509,10 +577,10 @@ const FileCard: React.FC<FileCardProps> = ({
               </Box>
             </Collapse>
             {!transcriptExpanded && (
-              <Typography 
-                variant="body2" 
+              <Typography
+                variant="body2"
                 color="text.secondary"
-                sx={{ 
+                sx={{
                   mt: 1,
                   px: 1,
                   fontStyle: 'italic',
@@ -543,7 +611,7 @@ const FileCard: React.FC<FileCardProps> = ({
                   size="small"
                   variant={copiedSummary ? "contained" : "outlined"}
                   onClick={handleCopySummary}
-                  sx={{ 
+                  sx={{
                     borderRadius: '8px',
                     bgcolor: copiedSummary ? '#ff9800' : undefined,
                     color: copiedSummary ? '#fff' : '#ff9800',
@@ -552,7 +620,7 @@ const FileCard: React.FC<FileCardProps> = ({
                 >
                   {copiedSummary ? '✓ Copied!' : '📋 Copy'}
                 </Button>
-                <IconButton 
+                <IconButton
                   size="small"
                   onClick={() => setSummaryExpanded(!summaryExpanded)}
                   sx={{
@@ -586,15 +654,15 @@ const FileCard: React.FC<FileCardProps> = ({
                     fontSize: '0.95rem',
                   }}
                 >
-                  {file.summary}
+                  {cleanMarkdown(file.summary || '')}
                 </Typography>
               </Box>
             </Collapse>
             {!summaryExpanded && (
-              <Typography 
-                variant="body2" 
+              <Typography
+                variant="body2"
                 color="text.secondary"
-                sx={{ 
+                sx={{
                   mt: 1,
                   px: 1,
                   fontStyle: 'italic',
