@@ -1,0 +1,5 @@
+"""Compatibility module for turbo transcription.
+
+The previous file was an empty UTF-16 placeholder, which made Python fail with
+``source code string cannot contain null bytes`` during compile checks.
+"""

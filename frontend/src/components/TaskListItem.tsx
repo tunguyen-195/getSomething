@@ -157,7 +157,7 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
           </Grid>
           <Grid item xs={12} sm={3} md={3} lg={3}>
             <Typography variant="body2" color="primary" fontWeight={500}>Tóm tắt:</Typography>
-             <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap', maxHeight: 60, overflow: 'hidden', textOverflow: 'ellipsis' }}>{summary || 'Không có tóm tắt'}</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap', maxHeight: 120, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical' }}>{summary || 'Không có tóm tắt'}</Typography>
           </Grid>
           <Grid item xs={12} sm={2} md={2} lg={2}>
             <Tooltip title="Xem chi tiết">
@@ -187,34 +187,34 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
           )}
           {tab === 1 && (
             <Grid container spacing={2}>
-               {/* Phần tóm tắt chi tiết - Luôn hiển thị đầy đủ nội dung */} 
-               <Grid item xs={12} md={6}>
-                 <Card sx={{ bgcolor: '#f8f9fa', borderRadius: 4, boxShadow: 3, p: 3, minHeight: 100, mb: 1, position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
-                   <Box display="flex" alignItems="center" mb={1}>
-                     <Typography variant="h6" color="primary" fontWeight={700} sx={{ display: 'flex', alignItems: 'center', fontSize: 18 }}>
-                       <SummarizeIcon sx={{ mr: 1, color: '#1976d2' }} />Tóm tắt chi tiết
-                     </Typography>
-                     <Tooltip title={copiedSummary ? 'Đã copy!' : 'Copy summary'}>
-                       <Button size="small" variant="outlined" color={copiedSummary ? 'success' : 'primary'} sx={{ ml: 2 }} startIcon={<ContentCopyIcon />} onClick={() => {navigator.clipboard.writeText(summary); setCopiedSummary(true); setTimeout(() => setCopiedSummary(false), 1500);}}>{copiedSummary ? 'Đã copy' : 'Copy'}</Button>
-                     </Tooltip>
-                   </Box>
-                   <Typography
-                     variant="body1"
-                     color="text.primary"
-                     sx={{ whiteSpace: 'pre-wrap', fontWeight: 500, fontSize: 16 }}
-                   >
-                     {summary || 'Không có tóm tắt'}
-                   </Typography>
-                 </Card>
-               </Grid>
+              {/* Phần tóm tắt chi tiết - Luôn hiển thị đầy đủ nội dung */}
+              <Grid item xs={12} md={6}>
+                <Card sx={{ bgcolor: '#f8f9fa', borderRadius: 4, boxShadow: 3, p: 3, minHeight: 100, mb: 1, position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
+                  <Box display="flex" alignItems="center" mb={1}>
+                    <Typography variant="h6" color="primary" fontWeight={700} sx={{ display: 'flex', alignItems: 'center', fontSize: 18 }}>
+                      <SummarizeIcon sx={{ mr: 1, color: '#1976d2' }} />Tóm tắt chi tiết
+                    </Typography>
+                    <Tooltip title={copiedSummary ? 'Đã copy!' : 'Copy summary'}>
+                      <Button size="small" variant="outlined" color={copiedSummary ? 'success' : 'primary'} sx={{ ml: 2 }} startIcon={<ContentCopyIcon />} onClick={() => { navigator.clipboard.writeText(summary); setCopiedSummary(true); setTimeout(() => setCopiedSummary(false), 1500); }}>{copiedSummary ? 'Đã copy' : 'Copy'}</Button>
+                    </Tooltip>
+                  </Box>
+                  <Typography
+                    variant="body1"
+                    color="text.primary"
+                    sx={{ whiteSpace: 'pre-wrap', fontWeight: 500, fontSize: 16 }}
+                  >
+                    {summary || 'Không có tóm tắt'}
+                  </Typography>
+                </Card>
+              </Grid>
               <Grid item xs={12} md={6}>
                 <Box display="flex" alignItems="center" mb={1}>
                   <Typography variant="subtitle2" fontWeight={700} fontSize={16} mr={2}>Transcript</Typography>
                   <Tooltip title={copiedTranscript ? 'Đã copy!' : 'Copy transcript'}>
-                    <Button size="small" variant="outlined" color={copiedTranscript ? 'success' : 'primary'} startIcon={<ContentCopyIcon />} onClick={() => {navigator.clipboard.writeText(transcript); setCopiedTranscript(true); setTimeout(() => setCopiedTranscript(false), 1500);}}>{copiedTranscript ? 'Đã copy' : 'Copy'}</Button>
+                    <Button size="small" variant="outlined" color={copiedTranscript ? 'success' : 'primary'} startIcon={<ContentCopyIcon />} onClick={() => { navigator.clipboard.writeText(transcript); setCopiedTranscript(true); setTimeout(() => setCopiedTranscript(false), 1500); }}>{copiedTranscript ? 'Đã copy' : 'Copy'}</Button>
                   </Tooltip>
                 </Box>
-                <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto', fontSize: 15 }}>{transcript || 'Không có transcript'}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap', maxHeight: 600, overflow: 'auto', fontSize: 15 }}>{transcript || 'Không có transcript'}</Typography>
               </Grid>
             </Grid>
           )}
@@ -253,4 +253,4 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
   );
 };
 
-export default TaskListItem; 
+export default TaskListItem;

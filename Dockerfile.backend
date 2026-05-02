@@ -1,5 +1,5 @@
-# Use CUDA base image if GPU is available
-FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04
+# Use CUDA 12.1 to match the pinned PyTorch cu121 wheels.
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -14,14 +14,18 @@ RUN apt-get update && apt-get install -y \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
+RUN ffprobe -version >/dev/null
+
 # Set working directory
 WORKDIR /app
 
-# Copy requirements file
+# Copy requirements files
 COPY requirements.txt .
+COPY requirements-torch-cu121.txt .
 
 # Install Python dependencies
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements-torch-cu121.txt --index-url https://download.pytorch.org/whl/cu121 \
+    && pip3 install --no-cache-dir -r requirements.txt
 
 # Copy source code
 COPY . .
@@ -33,4 +37,4 @@ RUN mkdir -p uploads models logs
 EXPOSE 8000
 
 # Run the application
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"] 
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
