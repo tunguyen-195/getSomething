@@ -273,63 +273,23 @@ Tóm tắt:
         if not summary or len(summary) < 10:
              raise Exception("Generated summary is too short or empty")
 
-        # Step 3: Extract structured data for visualization (Analysis Tab)
-        # This replaces the regex-based extraction in frontend
+        # Step 3: Build review-required compatibility visualization from summary text.
+        # It is not trusted evidence and must not emit critical relations.
         visualization_data = {}
         try:
             if summary_type in ["investigation", "detailed", "forensic"]:
-                logger.info("[SUMMARY_V2] Extracting structured data for visualization...")
+                from src.services.analysis_intelligence.service import generate_text_graph
 
-                extract_prompt = f"""
-Trích xuất các thực thể từ văn bản sau thành format JSON phục vụ phân tích điều tra.
-Chỉ trả về JSON hợp lệ, không có markdown formatting.
-
-Format JSON yêu cầu:
-{{
-  "nodes": [
-    {{"id": "p1", "label": "Tên Người 1", "type": "person"}},
-    {{"id": "l1", "label": "Địa điểm 1", "type": "place"}}
-  ],
-  "edges": [],
-  "main_events": ["Sự kiện 1", "Sự kiện 2"],
-  "timeline": [
-    {{"time": "Ngày/Giờ", "event": "Mô tả sự kiện"}}
-  ],
-  "extracted_entities": [
-    {{"type": "money", "value": "Số tiền", "context": "Ngữ cảnh"}},
-    {{"type": "phone", "value": "SĐT", "context": "Chủ sở hữu"}},
-    {{"type": "email", "value": "Email", "context": "Chủ sở hữu"}}
-  ]
-}}
-
-Văn bản cần trích xuất:
-{summary}
-
-Lưu ý:
-- "type" của nodes chỉ nhận: "person", "place", "organization"
-- Nếu không có thông tin, trả về danh sách rỗng []
-- Trích xuất tối đa các thông tin quan trọng.
-"""
-                extraction = llm_mgr.generate(
-                    extract_prompt,
-                    model=model_name,
-                    temperature=0.3, # Low temp for structured output
-                    max_tokens=1024
+                graph = generate_text_graph(
+                    summary,
+                    source_kind="summary_text",
+                    source_method="legacy_summary_derived",
                 )
-
-                # Parse JSON safely
-                import json
-                import re
-
-                # Cleanup markdown code blocks if present
-                clean_json = extraction.replace("```json", "").replace("```", "").strip()
-                try:
-                    visualization_data = json.loads(clean_json)
-                    logger.info(f"[SUMMARY_V2] Extracted: {len(visualization_data.get('nodes', []))} nodes, {len(visualization_data.get('main_events', []))} events")
-                except json.JSONDecodeError:
-                    logger.warning(f"[SUMMARY_V2] Failed to parse extraction JSON: {clean_json[:100]}...")
-                    # Fallback empty
-                    visualization_data = {}
+                visualization_data = graph.to_storage_dict()
+                logger.info(
+                    "[SUMMARY_V2] Derived review-required visualization | "
+                    f"entities={len(visualization_data.get('entities', []))}"
+                )
 
         except Exception as e_extract:
             logger.error(f"[SUMMARY_V2] Extraction error: {e_extract}")

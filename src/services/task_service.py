@@ -82,6 +82,8 @@ def extract_visualization_payload(value: Any) -> Any:
     """Return the raw visualization graph/timeline payload from wrapper-shaped results."""
     if not isinstance(value, dict):
         return value
+    if value.get("schema_version") == "analysis_intelligence.v2":
+        return value
     if "visualization_data" in value:
         return extract_visualization_payload(value["visualization_data"])
     if "data" in value and (

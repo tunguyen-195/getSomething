@@ -1,6 +1,7 @@
 ﻿"""Audio API v2 - Modular"""
-from fastapi import APIRouter, UploadFile, File, HTTPException, Body, Depends, Form
-from typing import Dict, Any
+from fastapi import APIRouter, UploadFile, File, HTTPException, Body, Depends, Form, Request
+from pydantic import BaseModel, Field
+from typing import Dict, Any, Literal
 from src.core.logging import logger
 from src.database.config.database import get_db
 from sqlalchemy.orm import Session
@@ -8,9 +9,76 @@ from src.services.audio_service import save_audio_and_create_task
 from src.core.auth import assert_case_access, assert_task_access, check_rate_limit, get_current_user
 from src.core.config import settings
 from src.database.models.models import User
+from src.services.audit_service import log_activity
 from src.services.task_service import extract_visualization_payload
 
 router = APIRouter()
+
+
+ReviewStatusPatch = Literal["machine_suggested", "needs_review", "confirmed", "rejected"]
+
+
+class ReviewPatch(BaseModel):
+    review_status: ReviewStatusPatch
+    expected_revision: int = Field(ge=1)
+    review_note: str | None = Field(default=None, max_length=2000)
+
+
+class EntityPatch(BaseModel):
+    expected_revision: int = Field(ge=1)
+    label: str | None = Field(default=None, max_length=500)
+    type: str | None = Field(default=None, max_length=100)
+    aliases: list[str] | None = None
+    review_note: str | None = Field(default=None, max_length=2000)
+
+
+class EntityMergeRequest(BaseModel):
+    source_entity_ids: list[str] = Field(min_length=2)
+    expected_revision: int = Field(ge=1)
+    target_label: str | None = Field(default=None, max_length=500)
+    target_type: str | None = Field(default=None, max_length=100)
+
+
+class EntitySplitRequest(BaseModel):
+    replacement_entities: list[dict[str, Any]] = Field(min_length=1)
+    expected_revision: int = Field(ge=1)
+
+
+def _task_audio_id(task) -> int | None:
+    return task.audio_files[0].id if getattr(task, "audio_files", None) else None
+
+
+def _log_graph_update(
+    db: Session,
+    request: Request,
+    current_user: User,
+    *,
+    task,
+    action: str,
+    item_id: str | None = None,
+    item_count: int | None = None,
+    graph_revision: int | None = None,
+) -> None:
+    detail: dict[str, Any] = {
+        "resource": "analysis_graph_v2",
+        "action": action,
+    }
+    if item_id:
+        detail["item_id"] = item_id
+    if item_count is not None:
+        detail["item_count"] = item_count
+    if graph_revision is not None:
+        detail["graph_revision"] = graph_revision
+    log_activity(
+        db,
+        "update",
+        current_user.id,
+        request=request,
+        case_id=task.case_id,
+        audio_id=_task_audio_id(task),
+        task_id=task.id,
+        detail=detail,
+    )
 
 @router.post("/upload")
 async def upload_audio_v2(
@@ -235,3 +303,171 @@ async def visualize_v2(
         except Exception:
             db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/visualize/{task_id}/items/{item_id}/review")
+async def review_visualization_item(
+    task_id: str,
+    item_id: str,
+    patch: ReviewPatch,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        from src.services.analysis_intelligence.storage import review_item
+
+        task = assert_task_access(db, current_user, task_id, "write")
+        updated = review_item(
+            db,
+            task_id=task_id,
+            item_id=item_id,
+            review_status=patch.review_status,
+            user_id=current_user.id,
+            expected_revision=patch.expected_revision,
+            review_note=patch.review_note,
+        )
+        _log_graph_update(
+            db,
+            request,
+            current_user,
+            task=task,
+            action="review_item",
+            item_id=item_id,
+            graph_revision=updated.graph_revision,
+        )
+        db.commit()
+        return {"task_id": task_id, "visualization_data": updated.to_storage_dict()}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[API_V2] Review item error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update analysis review status")
+
+
+@router.patch("/visualize/{task_id}/entities/{entity_id}")
+async def update_visualization_entity(
+    task_id: str,
+    entity_id: str,
+    patch: EntityPatch,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        from src.services.analysis_intelligence.storage import update_entity
+
+        task = assert_task_access(db, current_user, task_id, "write")
+        patch_data = patch.model_dump(exclude_unset=True)
+        expected_revision = patch_data.pop("expected_revision")
+        updated = update_entity(
+            db,
+            task_id=task_id,
+            entity_id=entity_id,
+            patch=patch_data,
+            user_id=current_user.id,
+            expected_revision=expected_revision,
+        )
+        _log_graph_update(
+            db,
+            request,
+            current_user,
+            task=task,
+            action="update_entity",
+            item_id=entity_id,
+            graph_revision=updated.graph_revision,
+        )
+        db.commit()
+        return {"task_id": task_id, "visualization_data": updated.to_storage_dict()}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[API_V2] Update entity error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update analysis entity")
+
+
+@router.post("/visualize/{task_id}/entities/merge")
+async def merge_visualization_entities(
+    task_id: str,
+    payload: EntityMergeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        from src.services.analysis_intelligence.storage import merge_entities
+
+        task = assert_task_access(db, current_user, task_id, "write")
+        updated = merge_entities(
+            db,
+            task_id=task_id,
+            source_entity_ids=payload.source_entity_ids,
+            user_id=current_user.id,
+            expected_revision=payload.expected_revision,
+            target_label=payload.target_label,
+            target_type=payload.target_type,
+        )
+        _log_graph_update(
+            db,
+            request,
+            current_user,
+            task=task,
+            action="merge_entities",
+            item_count=len(payload.source_entity_ids),
+            graph_revision=updated.graph_revision,
+        )
+        db.commit()
+        return {"task_id": task_id, "visualization_data": updated.to_storage_dict()}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[API_V2] Merge entities error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to merge analysis entities")
+
+
+@router.post("/visualize/{task_id}/entities/{entity_id}/split")
+async def split_visualization_entity(
+    task_id: str,
+    entity_id: str,
+    payload: EntitySplitRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        from src.services.analysis_intelligence.storage import split_entity
+
+        task = assert_task_access(db, current_user, task_id, "write")
+        updated = split_entity(
+            db,
+            task_id=task_id,
+            entity_id=entity_id,
+            replacement_entities=payload.replacement_entities,
+            user_id=current_user.id,
+            expected_revision=payload.expected_revision,
+        )
+        _log_graph_update(
+            db,
+            request,
+            current_user,
+            task=task,
+            action="split_entity",
+            item_id=entity_id,
+            item_count=len(payload.replacement_entities),
+            graph_revision=updated.graph_revision,
+        )
+        db.commit()
+        return {"task_id": task_id, "visualization_data": updated.to_storage_dict()}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[API_V2] Split entity error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to split analysis entity")

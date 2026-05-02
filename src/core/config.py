@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     VOSK_MODEL_PATH: str = "models/vosk-model-vn-0.4"
     T5_MODEL_PATH: str = "models/t5-base"
 
+    # Evidence-grounded analysis intelligence
+    ANALYSIS_INTELLIGENCE_V2_ENABLED: bool = True
+    ANALYSIS_INTELLIGENCE_LLM_ENABLED: bool = False
+    ANALYSIS_CLIP_MAX_DURATION_SECONDS: int = 60
+
     # Language & AI Model Settings
     DEFAULT_LANGUAGE: str = "vi"  # Tiếng Việt
     DEFAULT_AI_MODEL: str = "gpt-oss"  # Model AI mặc định

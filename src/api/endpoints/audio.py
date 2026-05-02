@@ -22,7 +22,7 @@ from src.database.config.database import get_db
 from sqlalchemy.orm import Session
 import subprocess
 from src.speech_to_text.transcriber import OllamaProcessor
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import unquote
@@ -561,6 +561,103 @@ def resummarize_task(
     result["model_name"] = model_name
     update_task(task_id, {"result": result})
     return {"summary": summary, "model": model_name}
+
+
+@router.get("/{audio_id}/clip")
+def stream_audio_clip(
+    audio_id: int,
+    start: float = Query(..., ge=0),
+    end: float = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if end <= start:
+        raise HTTPException(status_code=400, detail="end must be greater than start")
+
+    duration = end - start
+    max_duration = float(settings.ANALYSIS_CLIP_MAX_DURATION_SECONDS)
+    if duration > max_duration:
+        raise HTTPException(status_code=400, detail="Audio clip duration exceeds configured limit")
+
+    audio = assert_audio_access(db, current_user, audio_id, "read")
+    check_rate_limit(f"rl:audio_clip:{current_user.id}:{audio_id}", settings.PROCESS_RATE_LIMIT_PER_HOUR, 3600)
+    if not audio.file_path:
+        raise HTTPException(status_code=404, detail="Audio file not found")
+
+    audio_path = resolve_audio_path(audio.file_path)
+    if not audio_path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+
+    command = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-ss",
+        f"{start:.3f}",
+        "-t",
+        f"{duration:.3f}",
+        "-i",
+        str(audio_path),
+        "-vn",
+        "-acodec",
+        "pcm_s16le",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        "-f",
+        "wav",
+        "pipe:1",
+    ]
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="Audio clip encoder is unavailable")
+    except Exception as exc:
+        logger.warning("[AUDIO_CLIP] Failed to start encoder | audio_id=%s | error=%s", audio_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to start audio clip encoder")
+
+    def iter_clip():
+        try:
+            if process.stdout is None:
+                raise RuntimeError("ffmpeg stdout pipe was not created")
+            while True:
+                chunk = process.stdout.read(64 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+            return_code = process.wait(timeout=2)
+            if return_code != 0:
+                logger.warning("[AUDIO_CLIP] Encoder exited with code %s | audio_id=%s", return_code, audio_id)
+        finally:
+            for stream in (process.stdout, process.stderr):
+                try:
+                    if stream:
+                        stream.close()
+                except Exception:
+                    pass
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=2)
+
+    return StreamingResponse(
+        iter_clip(),
+        media_type="audio/wav",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": 'inline; filename="audio-clip.wav"',
+        },
+    )
+
 
 @router.get("/{audio_id}/download")
 def download_audio(

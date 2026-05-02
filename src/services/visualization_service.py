@@ -12,7 +12,8 @@ from fastapi import HTTPException
 def fallback_extract_visualization(text: str) -> dict:
     """
     Fallback extraction when Ollama is unavailable.
-    Uses regex patterns to extract basic entities from Vietnamese text.
+    Uses only high-precision regex patterns. It intentionally does not infer
+    people, events, or relationships.
     """
     logger.info("[FALLBACK_VIZ] Using regex-based extraction (Ollama unavailable)")
 
@@ -20,33 +21,13 @@ def fallback_extract_visualization(text: str) -> dict:
     edges = []
     timeline = []
     main_events = []
-    node_id_counter = {'person': 0, 'location': 0, 'time': 0, 'phone': 0, 'event': 0}
-
-    # Vietnamese name patterns (Nguyễn, Trần, Lê, etc.)
-    name_pattern = r'\b((?:Ông|Bà|Anh|Chị|Em|Cô|Chú|Bác|Thầy|Cô)\s+)?([A-ZÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ][a-zàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]+(?:\s+[A-ZÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ][a-zàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]+){1,3})\b'
+    node_id_counter = {'time': 0, 'phone': 0}
 
     # Phone patterns
     phone_pattern = r'\b(0\d{9,10}|\+84\d{9,10}|\d{3}[-.\s]?\d{3}[-.\s]?\d{4})\b'
 
     # Time patterns (Vietnamese)
     time_pattern = r'\b(\d{1,2}[:/h]\d{2}|\d{1,2}\s*giờ(?:\s*\d{1,2}\s*phút)?|sáng|chiều|tối|đêm|hôm nay|ngày mai|hôm qua|\d{1,2}/\d{1,2}(?:/\d{2,4})?)\b'
-
-    # Location patterns
-    location_pattern = r'\b((?:số\s+)?\d+\s+(?:đường|phố|ngõ|ngách|hẻm)\s+[A-ZĐa-zđ\s]+|(?:phường|quận|huyện|xã|thị trấn|thành phố|tỉnh)\s+[A-ZĐa-zđ\s]+|khách sạn\s+[A-ZĐa-zđ\s]+|nhà hàng\s+[A-ZĐa-zđ\s]+)\b'
-
-    # Extract names
-    seen_names = set()
-    for match in re.finditer(name_pattern, text, re.IGNORECASE):
-        name = match.group(2).strip()
-        if name and len(name) > 2 and name not in seen_names:
-            seen_names.add(name)
-            node_id_counter['person'] += 1
-            nodes.append({
-                'id': f"person_{node_id_counter['person']}",
-                'label': name,
-                'type': 'person',
-                'importance': 7
-            })
 
     # Extract phone numbers
     for match in re.finditer(phone_pattern, text):
@@ -75,42 +56,6 @@ def fallback_extract_visualization(text: str) -> dict:
             timeline.append({
                 'time': time_val,
                 'event': f'Sự kiện lúc {time_val}'
-            })
-
-    # Extract locations
-    for match in re.finditer(location_pattern, text, re.IGNORECASE):
-        loc = match.group(1).strip()
-        if loc:
-            node_id_counter['location'] += 1
-            nodes.append({
-                'id': f"location_{node_id_counter['location']}",
-                'label': loc,
-                'type': 'location',
-                'importance': 6
-            })
-
-    # Extract sentence-like events (sentences with verbs)
-    sentences = re.split(r'[.!?]', text)
-    event_keywords = ['đặt', 'thuê', 'mua', 'bán', 'gọi', 'hẹn', 'gặp', 'đến', 'đi', 'nhận', 'gửi', 'trả', 'thanh toán', 'xác nhận', 'hủy']
-    for sent in sentences[:10]:  # Limit to first 10 sentences
-        sent = sent.strip()
-        if len(sent) > 15:
-            for keyword in event_keywords:
-                if keyword in sent.lower():
-                    main_events.append(sent[:100])  # Truncate long sentences
-                    break
-
-    # Create edges between people and locations/times
-    person_nodes = [n for n in nodes if n['type'] == 'person']
-    other_nodes = [n for n in nodes if n['type'] != 'person']
-
-    for p in person_nodes[:3]:  # Limit edges
-        for o in other_nodes[:3]:
-            edges.append({
-                'from': p['id'],
-                'to': o['id'],
-                'label': 'liên quan',
-                'type': 'related_to'
             })
 
     logger.info(f"[FALLBACK_VIZ] Extracted: {len(nodes)} nodes, {len(edges)} edges, {len(main_events)} events")
@@ -228,75 +173,10 @@ def generate_visualization(
     )
 
     try:
-        # Get task
-        task = get_task(task_id)
-        if not task:
-            raise HTTPException(status_code=404, detail="Task not found")
+        from src.services.analysis_intelligence.service import generate_task_graph
 
-        # Check if transcript exists (check multiple locations for compatibility)
-        transcript = task.get('transcript')
-        if not transcript:
-            # Try to get from result (v2 format stores in result.transcription)
-            result = task.get('result', {})
-            if isinstance(result, str):
-                import json
-                try:
-                    result = json.loads(result)
-                except:
-                    result = {}
-            transcript = result.get('transcription') or result.get('transcript') or result.get('text')
-
-        if not transcript:
-            raise HTTPException(
-                status_code=400,
-                detail="Task must be transcribed first. Please run transcription before visualization."
-            )
-
-        # Try Ollama first, fallback to regex if fail
-        viz_data = {}
-        use_fallback = False
-
-        try:
-            processor = OllamaProcessor()
-            logger.info(f"[VISUALIZATION_SERVICE] Trying Ollama analysis...")
-            viz_data = processor.visualize_context(transcript)
-
-            # Check if Ollama returned valid data (non-empty nodes or timeline)
-            if not viz_data or (not viz_data.get('nodes') and not viz_data.get('timeline')):
-                logger.warning("[VISUALIZATION_SERVICE] Ollama returned empty data, using fallback")
-                use_fallback = True
-        except Exception as ollama_error:
-            logger.warning(f"[VISUALIZATION_SERVICE] Ollama failed: {ollama_error}, using fallback")
-            use_fallback = True
-
-        # Use fallback extraction if Ollama failed
-        if use_fallback:
-            viz_data = fallback_extract_visualization(transcript)
-
-        # Normalize and validate visualization data
-        viz_data = normalize_viz_data(viz_data)
-
-
-        # Filter by type if not "all"
-        if visualization_type != "all":
-            if visualization_type == "timeline":
-                viz_data = {
-                    'timeline': viz_data.get('timeline', []),
-                    'main_events': viz_data.get('main_events', [])
-                }
-            elif visualization_type == "entity_graph":
-                viz_data = {
-                    'nodes': viz_data.get('nodes', []),
-                    'edges': viz_data.get('edges', []),
-                    'entity_types': viz_data.get('entity_types', [])
-                }
-            elif visualization_type == "relationship_map":
-                viz_data = {
-                    'nodes': viz_data.get('nodes', []),
-                    'edges': viz_data.get('edges', [])
-                }
-
-        viz_data = extract_visualization_payload(viz_data)
+        graph = generate_task_graph(task_id, visualization_type)
+        viz_data = graph.to_storage_dict()
 
         # Prepare response
         response = {
@@ -312,16 +192,16 @@ def generate_visualization(
         # update_task also unwraps wrapper-shaped payloads for compatibility.
         try:
             update_task(task_id, {"visualization_data": response, "has_visualization": True})
-            logger.info(f"[VISUALIZATION_SERVICE] Saved visualization_data to Task.result")
+            logger.info("[VISUALIZATION_SERVICE] Saved evidence-grounded visualization_data")
         except Exception as e:
             logger.warning(f"[VISUALIZATION_SERVICE] Failed to save visualization to result: {e}")
 
 
         logger.info(
             f"[VISUALIZATION_SERVICE] Completed | task_id={task_id} | "
-            f"nodes={len(viz_data.get('nodes', []))} | "
-            f"edges={len(viz_data.get('edges', []))} | "
-            f"events={len(viz_data.get('main_events', []))}"
+            f"entities={len(viz_data.get('entities', []))} | "
+            f"relations={len(viz_data.get('relations', []))} | "
+            f"events={len(viz_data.get('events', []))}"
         )
 
         return response

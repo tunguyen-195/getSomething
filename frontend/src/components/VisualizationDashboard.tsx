@@ -32,6 +32,7 @@ import {
     SentimentSatisfied as SentimentIcon,
     TrendingUp as TrendingIcon,
 } from '@mui/icons-material';
+import { getLegacyVisualizationData } from '../utils/visualization';
 
 // Types
 interface VisualizationNode {
@@ -71,6 +72,7 @@ interface VisualizationData {
         details?: string;
     };
     insights?: string[];
+    legacy_view?: VisualizationData;
 }
 
 interface FileWithVisualization {
@@ -142,7 +144,7 @@ const VisualizationDashboard: React.FC<VisualizationDashboardProps> = ({
         [filesWithViz, selectedFileId]
     );
 
-    const data = selectedFile?.visualization_data || {};
+    const data = getLegacyVisualizationData(selectedFile?.visualization_data);
 
     // Stats
     const stats = useMemo(() => ({
@@ -245,7 +247,7 @@ const VisualizationDashboard: React.FC<VisualizationDashboardProps> = ({
                                 {file.filename}
                             </Typography>
                             <Typography variant="caption" color="text.secondary">
-                                {file.visualization_data?.nodes?.length || 0} entities
+                                {getLegacyVisualizationData(file.visualization_data).nodes?.length || 0} entities
                             </Typography>
                         </Paper>
                     ))}

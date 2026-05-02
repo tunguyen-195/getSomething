@@ -143,8 +143,13 @@ def visualize_summary(summary: str = Body(..., embed=True), current_user: User =
     logger.info(f"[SUMMARY_VISUALIZE] Bắt đầu visualize_summary | summary_len={len(summary) if summary else 0}")
     check_rate_limit(f"rl:process:{current_user.id}", settings.PROCESS_RATE_LIMIT_PER_HOUR, 3600)
     try:
-        processor = OllamaProcessor()
-        result = processor.visualize_context(summary)
+        from src.services.analysis_intelligence.service import generate_text_graph
+
+        result = generate_text_graph(
+            summary,
+            source_kind="summary_text",
+            source_method="legacy_summary_derived",
+        ).to_storage_dict()
         logger.info(
             f"[SUMMARY_VISUALIZE] visualize_context keys: "
             f"{list(result.keys()) if isinstance(result, dict) else 'non-dict'}"

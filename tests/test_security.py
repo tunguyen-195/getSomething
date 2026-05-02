@@ -503,15 +503,17 @@ def test_visualization_payload_is_unwrapped_across_writers(auth_enabled, monkeyp
     finally:
         db.close()
 
-    class FakeProcessor:
-        def visualize_context(self, transcript: str):
-            return payload
-
-    monkeypatch.setattr("src.services.visualization_service.OllamaProcessor", lambda: FakeProcessor())
     from src.services.visualization_service import generate_visualization
 
     result = generate_visualization(task_id)
-    assert result["visualization_data"] == payload
+    assert result["visualization_data"]["schema_version"] == "analysis_intelligence.v2"
+    assert result["visualization_data"]["legacy_view"] == {
+        "nodes": result["visualization_data"]["nodes"],
+        "edges": result["visualization_data"]["edges"],
+        "timeline": result["visualization_data"]["timeline"],
+        "main_events": result["visualization_data"]["main_events"],
+        "entity_types": result["visualization_data"]["entity_types"],
+    }
 
     monkeypatch.setattr("src.api.endpoints.audio.generate_visualization", lambda *_args, **_kwargs: wrapper)
     monkeypatch.setattr("src.services.visualization_service.generate_visualization", lambda *_args, **_kwargs: wrapper)

@@ -312,8 +312,8 @@ QUY TẮC BẮT BUỘC:
 3. timeline PHẢI sorted theo thứ tự thời gian
 4. importance: 1-3=thấp, 4-6=trung bình, 7-10=cao
 5. Nếu không rõ thời gian, dùng "không xác định" hoặc "trong cuộc hội thoại"
-6. Tối thiểu phải trích xuất 3-5 nodes và 2-3 edges
-7. main_events phải có ít nhất 2 sự kiện
+6. Nếu không có bằng chứng rõ ràng, trả về mảng rỗng thay vì suy đoán
+7. Không tạo node, edge hoặc event chỉ để đủ số lượng
 
 Hội thoại cần phân tích:
 \"\"\"
@@ -411,7 +411,12 @@ CHỈ TRẢ VỀ JSON THUẦN TÚY, KHÔNG BỌC TRONG ```json``` HOẶC MARKDOW
                 for k in ["timeline", "nodes", "edges", "entity_types", "main_events"]:
                     if k not in analysis:
                         analysis[k] = []
-                logger.info(f"[visualize_context] Final analysis: {analysis}")
+                logger.info(
+                    "[visualize_context] Final analysis generated | "
+                    f"nodes={len(analysis.get('nodes', [])) if isinstance(analysis, dict) else 0} | "
+                    f"edges={len(analysis.get('edges', [])) if isinstance(analysis, dict) else 0} | "
+                    f"events={len(analysis.get('main_events', [])) if isinstance(analysis, dict) else 0}"
+                )
                 return analysis
             else:
                 raise Exception(f"Ollama API error: {response.status_code}")

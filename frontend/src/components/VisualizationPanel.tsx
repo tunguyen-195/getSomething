@@ -23,6 +23,7 @@ import {
   Hub as HubIcon,
   AccessTime as TimeIcon,
 } from '@mui/icons-material';
+import { getLegacyVisualizationData } from '../utils/visualization';
 
 interface VisualizationData {
   nodes?: Array<{ id: string; label: string; type?: string }>;
@@ -30,6 +31,7 @@ interface VisualizationData {
   timeline?: Array<{ time?: string; event: string }>;
   main_events?: string[];
   entity_types?: string[];
+  legacy_view?: VisualizationData;
 }
 
 interface FileWithVisualization {
@@ -53,7 +55,7 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({ files }) => {
   const getVisualizationData = (): VisualizationData => {
     if (selectedFile) {
       const file = filesWithViz.find(f => f.task_id === selectedFile);
-      return file?.visualization_data || {};
+      return getLegacyVisualizationData(file?.visualization_data);
     }
     // Combine all visualization data
     const combined: VisualizationData = {
@@ -65,10 +67,11 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({ files }) => {
     };
     filesWithViz.forEach(f => {
       if (f.visualization_data) {
-        combined.nodes = [...(combined.nodes || []), ...(f.visualization_data.nodes || [])];
-        combined.edges = [...(combined.edges || []), ...(f.visualization_data.edges || [])];
-        combined.timeline = [...(combined.timeline || []), ...(f.visualization_data.timeline || [])];
-        combined.main_events = [...(combined.main_events || []), ...(f.visualization_data.main_events || [])];
+        const viz = getLegacyVisualizationData(f.visualization_data);
+        combined.nodes = [...(combined.nodes || []), ...(viz.nodes || [])];
+        combined.edges = [...(combined.edges || []), ...(viz.edges || [])];
+        combined.timeline = [...(combined.timeline || []), ...(viz.timeline || [])];
+        combined.main_events = [...(combined.main_events || []), ...(viz.main_events || [])];
       }
     });
     return combined;

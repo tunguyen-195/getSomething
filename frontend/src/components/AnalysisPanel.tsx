@@ -34,6 +34,7 @@ import {
     RecordVoiceOver as SpeakerIcon,
     Category as TopicIcon,
 } from '@mui/icons-material';
+import { getLegacyVisualizationData } from '../utils/visualization';
 
 interface VisualizationData {
     nodes?: Array<{ id: string; label: string; type?: string }>;
@@ -41,6 +42,7 @@ interface VisualizationData {
     timeline?: Array<{ time?: string; event: string }>;
     main_events?: string[];
     extracted_entities?: Array<{ type: string; value: string; context?: string }>;
+    legacy_view?: VisualizationData;
 }
 
 interface FileWithData {
@@ -129,17 +131,18 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({ files, caseId }) => {
 
         filesWithData.forEach(f => {
             if (f.visualization_data) {
-                f.visualization_data.nodes?.forEach(n => {
+                const viz = getLegacyVisualizationData(f.visualization_data);
+                viz.nodes?.forEach(n => {
                     if (n.type?.toLowerCase() === 'person') people.add(n.label);
                     if (['place', 'location'].includes(n.type?.toLowerCase() || '')) places.add(n.label);
                     if (n.type?.toLowerCase() === 'phone') phones.add(n.label);
                 });
-                f.visualization_data.main_events?.forEach(e => events.push(e));
-                f.visualization_data.timeline?.forEach(t => timeline.push({ ...t, file: f.filename }));
+                viz.main_events?.forEach(e => events.push(e));
+                viz.timeline?.forEach(t => timeline.push({ ...t, file: f.filename }));
 
                 // Use LLM extracted entities if available
-                if (f.visualization_data.extracted_entities) {
-                    f.visualization_data.extracted_entities.forEach(e => {
+                if (viz.extracted_entities) {
+                    viz.extracted_entities.forEach(e => {
                         let icon = <TopicIcon />;
                         let color = '#757575';
 
@@ -162,7 +165,8 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({ files, caseId }) => {
             }
 
             // Only use regex fallback if NO LLM entities found
-            if (f.summary && (!f.visualization_data?.extracted_entities || f.visualization_data.extracted_entities.length === 0)) {
+            const viz = getLegacyVisualizationData(f.visualization_data);
+            if (f.summary && (!viz.extracted_entities || viz.extracted_entities.length === 0)) {
                 // allKeyInfo = [...allKeyInfo, ...extractKeyInfo(f.summary)]; // Regex fallback disabled per user request
             }
         });
