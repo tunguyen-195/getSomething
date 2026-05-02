@@ -308,6 +308,19 @@ def test_logout_revokes_server_side_session(auth_enabled):
     assert replay.get("/api/v1/auth/me").status_code == 401
 
 
+def test_csrf_refresh_after_authenticated_reload_stays_usable(auth_enabled):
+    _, username, password = _create_user()
+    client = _login_client(username, password)
+
+    refreshed = client.get("/api/v1/auth/csrf")
+    assert refreshed.status_code == 200
+    csrf = refreshed.json()["csrf_token"]
+    assert client.cookies.get(settings.CSRF_COOKIE_NAME) == csrf
+
+    response = client.post("/api/v1/auth/logout", headers={"x-csrf-token": csrf})
+    assert response.status_code == 200, response.text
+
+
 def test_resource_level_auth_blocks_cross_case_task(auth_enabled):
     user_a_id, user_a, password_a = _create_user()
     user_b_id, _, _ = _create_user()

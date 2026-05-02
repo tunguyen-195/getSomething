@@ -2,9 +2,33 @@ let csrfToken: string | null = null;
 
 const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const API_BASE_URL = typeof window !== 'undefined' && (window as any).API_BASE_URL ? (window as any).API_BASE_URL : '';
+const CSRF_COOKIE_NAME = 'csrf_token';
 
-export async function getCsrfToken(): Promise<string> {
-  if (csrfToken) return csrfToken;
+function readCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const prefix = `${name}=`;
+  const value = document.cookie
+    .split(';')
+    .map(part => part.trim())
+    .find(part => part.startsWith(prefix));
+  return value ? decodeURIComponent(value.slice(prefix.length)) : null;
+}
+
+async function responseDetail(response: Response): Promise<string | null> {
+  try {
+    const body = await response.clone().json();
+    return typeof body?.detail === 'string' ? body.detail : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getCsrfToken(forceRefresh = false): Promise<string> {
+  const cookieToken = readCookie(CSRF_COOKIE_NAME);
+  if (!forceRefresh && cookieToken) {
+    csrfToken = cookieToken;
+    return csrfToken;
+  }
   const response = await fetch(`${API_BASE_URL}/api/v1/auth/csrf`, {
     credentials: 'include',
     cache: 'no-store',
@@ -20,16 +44,27 @@ export async function getCsrfToken(): Promise<string> {
 export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   const method = (init.method || 'GET').toUpperCase();
   const headers = new Headers(init.headers || {});
+  const shouldAttachCsrf = unsafeMethods.has(method);
 
-  if (unsafeMethods.has(method)) {
+  if (shouldAttachCsrf) {
     headers.set('X-CSRF-Token', await getCsrfToken());
   }
 
-  const response = await fetch(input, {
+  let response = await fetch(input, {
     ...init,
     headers,
     credentials: 'include',
   });
+
+  if (shouldAttachCsrf && response.status === 403 && (await responseDetail(response)) === 'CSRF validation failed') {
+    csrfToken = null;
+    headers.set('X-CSRF-Token', await getCsrfToken(true));
+    response = await fetch(input, {
+      ...init,
+      headers,
+      credentials: 'include',
+    });
+  }
 
   if (response.status === 401) {
     window.dispatchEvent(new CustomEvent('auth:required'));

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from src.core.config import settings
 from src.core.auth import (
     audit_security_event,
+    authenticate_request,
     check_rate_limit,
     clear_auth_cookies,
     client_ip,
@@ -32,8 +33,17 @@ def _generic_login_error():
 
 
 @router.get("/csrf")
-def get_csrf(response: Response):
-    token = issue_csrf_cookie(response)
+def get_csrf(request: Request, response: Response, db: Session = Depends(get_db)):
+    token = request.cookies.get(settings.CSRF_COOKIE_NAME) or issue_csrf_cookie(response)
+    if settings.AUTH_ENABLED and request.cookies.get(settings.AUTH_COOKIE_NAME):
+        try:
+            _, session = authenticate_request(request, db)
+            db_session = db.query(AuthSession).filter(AuthSession.id == session.id).first()
+            if db_session:
+                db_session.csrf_token_hash = hash_value(token)
+                db.commit()
+        except HTTPException:
+            db.rollback()
     return {"csrf_token": token}
 
 
