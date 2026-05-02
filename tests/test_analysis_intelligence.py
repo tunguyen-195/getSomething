@@ -1,3 +1,7 @@
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 from src.core.config import settings
@@ -59,6 +63,36 @@ def _entity(entity_id: str = "ent_phone_1", ref: EvidenceRef | None = None, **kw
         evidence_refs=[ref or _text_ref()],
         **kwargs,
     )
+
+
+def test_visualization_service_import_does_not_load_asr_stack():
+    code = (
+        "import importlib, sys\n"
+        "importlib.import_module('src.services.visualization_service')\n"
+        "for name in ('torch', 'faster_whisper', 'librosa', 'pyannote.audio'):\n"
+        "    print(f'{name}={name in sys.modules}')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path.cwd(),
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    loaded = dict(line.split("=", 1) for line in result.stdout.strip().splitlines() if "=" in line)
+    assert loaded == {
+        "torch": "False",
+        "faster_whisper": "False",
+        "librosa": "False",
+        "pyannote.audio": "False",
+    }
+
+
+def test_context_analysis_parse_failure_log_is_redacted():
+    source = Path("src/speech_to_text/transcriber.py").read_text(encoding="utf-8")
+    assert "context_analysis={context_analysis}" not in source
+    assert "raw_len" in source
 
 
 def test_evidence_source_kind_rules_and_review_defaults():
@@ -221,6 +255,73 @@ def test_review_endpoint_updates_graph_and_enforces_revision(auth_enabled):
     assert conflict.json()["detail"]["current_revision"] == updated["graph_revision"]
 
 
+def test_merge_entities_rejects_self_loop_relations(auth_enabled):
+    user_id, username, password = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_task_for_user(user_id, case_id)
+    _create_audio_for_task(user_id, case_id, task_id, status="transcribed")
+    text = "A gọi B qua điện thoại"
+    segment = SegmentUnit(
+        id="seg_1",
+        source_kind="transcript_segment",
+        text=text,
+        source_text_sha256=sha256_text(text),
+        audio_id=1,
+        start_time=1.0,
+        end_time=3.0,
+        speaker_id="SPEAKER_00",
+    )
+    ref = EvidenceRef(
+        source_kind="transcript_segment",
+        source_text_sha256=sha256_text(text),
+        text_span=text,
+        char_start=0,
+        char_end=len(text),
+        audio_id=1,
+        segment_id="seg_1",
+        start_time=1.0,
+        end_time=3.0,
+        speaker_id="SPEAKER_00",
+    )
+    graph = AnalysisGraphV2(
+        task_id=task_id,
+        segments=[segment],
+        entities=[
+            _entity("ent_a", ref, type="person", label="A", value="a"),
+            _entity("ent_b", ref, type="person", label="B", value="b"),
+        ],
+        relations=[
+            RelationItem(
+                id="rel_ab",
+                type="called",
+                label="called",
+                source_entity_id="ent_a",
+                target_entity_id="ent_b",
+                confidence=0.8,
+                confidence_reason="test relation",
+                source_method="test",
+                evidence_refs=[ref],
+            )
+        ],
+    )
+    assert graph.edges[0]["from"] == "ent_a"
+    assert graph.edges[0]["to"] == "ent_b"
+    assert update_task(task_id, {"visualization_data": graph.to_storage_dict(), "has_visualization": True})
+
+    client = _login_client(username, password)
+    response = client.post(
+        f"/api/v1/audio/v2/visualize/{task_id}/entities/merge",
+        json={"source_entity_ids": ["ent_a", "ent_b"], "expected_revision": graph.graph_revision},
+        headers=_csrf_header(client),
+    )
+    assert response.status_code == 200, response.text
+    updated = response.json()["visualization_data"]
+    assert updated["relations"][0]["source_entity_id"] == "ent_a"
+    assert updated["relations"][0]["target_entity_id"] == "ent_a"
+    assert updated["relations"][0]["review_status"] == "rejected"
+    assert updated["edges"] == []
+
+
 def test_audio_clip_endpoint_streams_with_privacy_headers_and_cleanup(auth_enabled, monkeypatch, tmp_path):
     user_id, username, password = _create_user()
     case_id = _create_case_for_user(user_id)
@@ -245,13 +346,14 @@ def test_audio_clip_endpoint_streams_with_privacy_headers_and_cleanup(auth_enabl
             self.closed = True
 
     class FakeProcess:
-        def __init__(self, *_args, **_kwargs):
+        def __init__(self, *_args, **kwargs):
             self.stdout = FakePipe([b"RIFF", b"WAVE"])
-            self.stderr = FakePipe([])
+            self.stderr = None
             self.returncode = None
             self.terminated = False
             self.killed = False
             created["process"] = self
+            created["stderr_arg"] = kwargs.get("stderr")
 
         def wait(self, timeout=None):
             self.returncode = 0
@@ -277,8 +379,9 @@ def test_audio_clip_endpoint_streams_with_privacy_headers_and_cleanup(auth_enabl
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["content-disposition"] == 'inline; filename="audio-clip.wav"'
     process = created["process"]
+    assert created["stderr_arg"] == subprocess.DEVNULL
     assert process.stdout.closed is True
-    assert process.stderr.closed is True
+    assert process.stderr is None
     assert process.terminated is False
     assert process.killed is False
 

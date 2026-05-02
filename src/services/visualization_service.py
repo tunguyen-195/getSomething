@@ -4,8 +4,7 @@ Handles timeline, entity graph, relationship map generation
 """
 import re
 from src.core.logging import logger
-from src.speech_to_text.transcriber import OllamaProcessor
-from src.services.task_service import extract_visualization_payload, get_task, update_task
+from src.services.task_service import update_task
 from fastapi import HTTPException
 
 

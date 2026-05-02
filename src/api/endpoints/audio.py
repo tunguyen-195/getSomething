@@ -21,7 +21,6 @@ from src.database.models.models import Case, AudioFile, Task, User
 from src.database.config.database import get_db
 from sqlalchemy.orm import Session
 import subprocess
-from src.speech_to_text.transcriber import OllamaProcessor
 from fastapi.responses import FileResponse, StreamingResponse
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -551,6 +550,8 @@ def resummarize_task(
         raise HTTPException(status_code=400, detail="No transcript found")
     # Nếu user_context_prompt thay đổi, phân tích lại context
     if user_context_prompt:
+        from src.speech_to_text.transcriber import OllamaProcessor
+
         context = OllamaProcessor(model_name=model_name).analyze_context(transcript)
     if context is None or not isinstance(context, dict):
         context = {}
@@ -614,7 +615,7 @@ def stream_audio_clip(
         process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
         )
     except FileNotFoundError:
         raise HTTPException(status_code=503, detail="Audio clip encoder is unavailable")

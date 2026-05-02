@@ -931,7 +931,12 @@ class Transcriber:
                     try:
                         context_analysis = _json.loads(context_analysis)
                     except Exception as e:
-                        logger.warning(f"[CONTEXT_ANALYSIS] Lỗi parse JSON: {e}. context_analysis={context_analysis}")
+                        logger.warning(
+                            "[CONTEXT_ANALYSIS] Parse JSON failed | error_class=%s | raw_type=%s | raw_len=%s",
+                            e.__class__.__name__,
+                            type(context_analysis).__name__,
+                            len(context_analysis),
+                        )
                         context_analysis = {}
                 if not isinstance(context_analysis, dict):
                     logger.warning(f"[CONTEXT_ANALYSIS] context_analysis không phải dict: {type(context_analysis)}. Reset về dict rỗng.")

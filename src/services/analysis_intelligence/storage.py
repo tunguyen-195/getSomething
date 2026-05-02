@@ -189,6 +189,11 @@ def merge_entities(
             relation["source_entity_id"] = target_id
         if relation.get("target_entity_id") in seen:
             relation["target_entity_id"] = target_id
+        if relation.get("source_entity_id") == relation.get("target_entity_id"):
+            relation["review_status"] = "rejected"
+            relation["reviewed_by"] = user_id
+            relation["reviewed_at"] = now
+            relation["review_note"] = "Hidden after entity merge produced a self-loop"
     data["graph_revision"] = graph.graph_revision + 1
     updated = AnalysisGraphV2(**data)
     _write_graph(task, updated)
