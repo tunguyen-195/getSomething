@@ -37,6 +37,16 @@ interface Case {
 
 const drawerWidth = 320;
 
+async function apiErrorMessage(response: Response): Promise<string> {
+  try {
+    const body = await response.clone().json();
+    const detail = typeof body?.detail === 'string' ? body.detail : null;
+    return detail ? `HTTP ${response.status}: ${detail}` : `HTTP ${response.status}`;
+  } catch {
+    return `HTTP ${response.status}`;
+  }
+}
+
 function SummaryAccordionItem({ summary, idx, highlightSummary }: { summary: string, idx: number, highlightSummary: (s: string) => React.ReactNode }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
@@ -772,7 +782,7 @@ function App() {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ visualization_type: 'all' })
                       });
-                      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                      if (!response.ok) throw new Error(await apiErrorMessage(response));
                       await fetchFiles();
                       setVisualizeTaskId(taskId);
                       setVisualizeDialogOpen(true);

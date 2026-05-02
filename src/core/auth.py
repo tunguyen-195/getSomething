@@ -326,9 +326,18 @@ def assert_task_access(db: Session, user: User, task_id: str, action: str) -> Ta
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    linked_audio = db.query(AudioFile).filter(AudioFile.task_id == task_id).first()
     if task.case_id is None:
+        if linked_audio:
+            assert_case_access(db, user, linked_audio.case_id, action)
+            return task
         if not is_admin(user) and task.user_id != user.id:
             raise HTTPException(status_code=403, detail="Forbidden")
         return task
-    assert_case_access(db, user, task.case_id, action)
+    try:
+        assert_case_access(db, user, task.case_id, action)
+    except HTTPException as exc:
+        if exc.status_code != 403 or not linked_audio:
+            raise
+        assert_case_access(db, user, linked_audio.case_id, action)
     return task

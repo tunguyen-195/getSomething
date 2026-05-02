@@ -18,6 +18,7 @@ from src.services.task_service import extract_visualization_payload, update_task
 from tests.test_security import (
     _create_audio_for_task,
     _create_case_for_user,
+    _create_orphan_task_for_user,
     _create_task_for_user,
     _create_user,
     _csrf_header,
@@ -259,6 +260,41 @@ def test_visualize_endpoint_accepts_audio_id_for_frontend_fallback(auth_enabled)
     user_id, username, password = _create_user()
     case_id = _create_case_for_user(user_id)
     task_id = _create_task_for_user(user_id, case_id)
+    audio_id = _create_audio_for_task(user_id, case_id, task_id, status="transcribed")
+    assert update_task(
+        task_id,
+        {
+            "transcript": "SPEAKER_00 gọi số 0912345678",
+            "segments": [
+                {
+                    "id": "seg_1",
+                    "text": "SPEAKER_00 gọi số 0912345678",
+                    "start": 0.0,
+                    "end": 2.0,
+                    "speaker": "SPEAKER_00",
+                }
+            ],
+        },
+    )
+
+    client = _login_client(username, password)
+    response = client.post(
+        f"/api/v1/audio/v2/visualize/{audio_id}",
+        json={"visualization_type": "all"},
+        headers=_csrf_header(client),
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["task_id"] == task_id
+    assert body["visualization_data"]["schema_version"] == "analysis_intelligence.v2"
+
+
+def test_visualize_authorizes_legacy_task_by_linked_audio_case(auth_enabled):
+    user_id, username, password = _create_user()
+    other_user_id, _, _ = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_orphan_task_for_user(other_user_id)
     audio_id = _create_audio_for_task(user_id, case_id, task_id, status="transcribed")
     assert update_task(
         task_id,
