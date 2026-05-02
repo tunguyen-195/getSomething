@@ -1,14 +1,33 @@
 import importlib
+import subprocess
 import sys
+from pathlib import Path
 
 
-def test_pyannote_loader_import_is_heavy_dependency_safe(monkeypatch):
-    monkeypatch.delitem(sys.modules, "pyannote.audio", raising=False)
+def test_pyannote_loader_import_is_heavy_dependency_safe():
+    repo_root = Path(__file__).resolve().parents[1]
+    code = """
+import sys
+import src.services.transcription.models.pyannote_loader as module
 
-    module = importlib.import_module("src.services.transcription.models.pyannote_loader")
+assert module.DEFAULT_MODEL_ID == "pyannote/speaker-diarization-community-1"
+loaded = {
+    name: name in sys.modules
+    for name in ("pyannote.audio", "torch", "faster_whisper")
+}
+if any(loaded.values()):
+    print(loaded)
+    raise SystemExit(1)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
-    assert module.DEFAULT_MODEL_ID == "pyannote/speaker-diarization-community-1"
-    assert "pyannote.audio" not in sys.modules
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_load_pyannote_pipeline_does_not_download_when_disabled(monkeypatch, tmp_path):
