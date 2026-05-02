@@ -27,7 +27,8 @@ Neu chay Docker:
 ```powershell
 git clone https://github.com/tunguyen-195/getSomething.git
 cd getSomething
-git checkout feature/architecture-refactor
+# Chi dung khi test PR hien tai. Sau khi merge, dung main va bo qua dong nay.
+git checkout feature/architecture-refactor-pr
 ```
 
 Kiem tra source:
