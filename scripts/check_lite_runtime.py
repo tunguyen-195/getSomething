@@ -58,6 +58,9 @@ def model_available_locally(model_name: str, cache_root: Path) -> bool:
 
 
 def run_gpu_smoke(settings, *, audio_path: Path | None, offline_models_only: bool) -> None:
+    if audio_path and not audio_path.is_file():
+        raise RuntimeError("gpu_smoke_audio_unavailable")
+
     try:
         import torch
         import ctranslate2

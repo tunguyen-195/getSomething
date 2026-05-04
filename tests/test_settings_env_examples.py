@@ -119,3 +119,12 @@ def test_lite_runtime_gpu_smoke_failure_returns_dedicated_code(monkeypatch, caps
 
     assert check_lite_runtime.main() == 3
     assert "gpu_smoke_failed:model_unavailable_or_download_failed" in capsys.readouterr().out
+
+
+def test_lite_runtime_gpu_smoke_missing_audio_fails_before_gpu_imports():
+    import scripts.check_lite_runtime as check_lite_runtime
+
+    missing_audio = ROOT / "tests" / "fixtures" / "missing-gpu-smoke.wav"
+
+    with pytest.raises(RuntimeError, match="gpu_smoke_audio_unavailable"):
+        check_lite_runtime.run_gpu_smoke(object(), audio_path=missing_audio, offline_models_only=False)
