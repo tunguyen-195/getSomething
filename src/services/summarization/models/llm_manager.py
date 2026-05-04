@@ -63,6 +63,12 @@ class LLMManager:
             return configured
         return requested
 
+    def _http_error_message(self, response: requests.Response) -> str:
+        reason = "".join(ch if ch.isalnum() else "_" for ch in str(response.reason or "").lower())
+        reason = "_".join(part for part in reason.split("_") if part)[:80]
+        suffix = f"_{reason}" if reason else ""
+        return f"LLM API error: status={response.status_code}{suffix}"
+
     def check_availability(self) -> bool:
         """Check if the configured provider is available."""
         if self._is_chat_provider():
@@ -232,13 +238,8 @@ class LLMManager:
                     logger.debug(f"[LLM_MANAGER] Received response | length={len(result)}")
                     return result
             else:
-                error_msg = f"LLM API error: {response.status_code}"
-                try:
-                    error_detail = response.text[:500]
-                    error_msg += f" - {error_detail}"
-                except:
-                    pass
-                logger.error(f"[LLM_MANAGER] {error_msg}")
+                error_msg = self._http_error_message(response)
+                logger.error("[LLM_MANAGER] %s", error_msg)
                 raise Exception(error_msg)
 
         except requests.exceptions.Timeout as e:
@@ -274,7 +275,7 @@ class LLMManager:
                 timeout=(10, timeout),
             )
             if response.status_code != 200:
-                raise Exception(f"LLM API error: {response.status_code} - {response.text[:300]}")
+                raise Exception(self._http_error_message(response))
             data = response.json()
             choices = data.get("choices") or []
             if not choices:

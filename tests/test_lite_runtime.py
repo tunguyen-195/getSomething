@@ -1,6 +1,6 @@
 import pytest
 from fastapi import Response
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -183,7 +183,8 @@ def test_lite_background_job_rolls_back_broken_session_before_marking_failed(mon
     request_db.commit()
 
     def fail_with_db_error(task_id: str, *, db):
-        db.execute(text("SELECT * FROM table_that_does_not_exist"))
+        db.add(Task(id=task_id, filename="duplicate.wav", status="uploaded", result={}))
+        db.flush()
 
     lite_runtime.start_lite_job(
         db=request_db,
@@ -198,7 +199,7 @@ def test_lite_background_job_rolls_back_broken_session_before_marking_failed(mon
         db = Session()
         try:
             task = db.query(Task).filter(Task.id == "task-sql-fail").first()
-            return bool(task and task.status == "failed" and "table_that_does_not_exist" in (task.error or ""))
+            return bool(task and task.status == "failed" and task.error)
         finally:
             db.close()
 
@@ -281,6 +282,95 @@ def test_v2_transcription_detail_is_transcript_only_and_no_store(monkeypatch):
     assert "visualization_data" not in response
 
 
+def test_v2_summary_detail_is_summary_only_and_no_store(monkeypatch):
+    import asyncio
+    from src.api.endpoints import audio_v2
+    from src.services import task_service
+
+    monkeypatch.setattr(
+        task_service,
+        "get_task",
+        lambda task_id: {
+            "status": "summarized",
+            "result": {
+                "transcription": "must not leak",
+                "segments": [{"text": "must not leak"}],
+                "summary": "safe summary detail",
+                "summary_model": "test-model",
+                "visualization_data": {"nodes": ["must not leak"]},
+            },
+            "summary": "fallback summary",
+            "filename": "audio.wav",
+        },
+    )
+    monkeypatch.setattr(audio_v2, "assert_task_access", lambda *args, **kwargs: True)
+    response_obj = Response()
+
+    response = asyncio.run(
+        audio_v2.get_summary_detail_v2(
+            "task-summary",
+            response=response_obj,
+            db=None,
+            current_user=object(),
+        )
+    )
+
+    assert response["summary"] == "safe summary detail"
+    assert response["summary_model"] == "test-model"
+    assert response_obj.headers["Cache-Control"] == "no-store"
+    assert response_obj.headers["Pragma"] == "no-cache"
+    assert "transcription" not in response
+    assert "segments" not in response
+    assert "visualization_data" not in response
+
+
+def test_v2_analysis_detail_is_graph_only_and_no_store(monkeypatch):
+    import asyncio
+    from src.api.endpoints import audio_v2
+    from src.services import task_service
+
+    graph = {
+        "schema_version": "analysis_intelligence.v2",
+        "analysis_mode": "general",
+        "nodes": [],
+        "warnings": ["deterministic"],
+    }
+    monkeypatch.setattr(
+        task_service,
+        "get_task",
+        lambda task_id: {
+            "status": "visualized",
+            "result": {
+                "transcription": "must not leak",
+                "segments": [{"text": "must not leak"}],
+                "summary": "must not leak",
+                "has_visualization": True,
+                "visualization_data": graph,
+            },
+            "filename": "audio.wav",
+        },
+    )
+    monkeypatch.setattr(audio_v2, "assert_task_access", lambda *args, **kwargs: True)
+    response_obj = Response()
+
+    response = asyncio.run(
+        audio_v2.get_analysis_detail_v2(
+            "task-analysis",
+            response=response_obj,
+            db=None,
+            current_user=object(),
+        )
+    )
+
+    assert response["visualization_data"] == graph
+    assert response["schema_version"] == "analysis_intelligence.v2"
+    assert response_obj.headers["Cache-Control"] == "no-store"
+    assert response_obj.headers["Pragma"] == "no-cache"
+    assert "transcription" not in response
+    assert "segments" not in response
+    assert "summary" not in response
+
+
 def test_lite_audio_list_returns_metadata_not_transcript_payload(monkeypatch):
     from src.api.endpoints import audio
 
@@ -329,3 +419,41 @@ def test_lite_audio_list_returns_metadata_not_transcript_payload(monkeypatch):
     assert "visualization_data" not in item
     assert "context_analysis" not in item
     db.close()
+
+
+def test_llm_provider_error_does_not_include_response_body(monkeypatch):
+    import requests
+    from src.services.summarization.models.llm_manager import LLMManager
+
+    sensitive = "transcript 0978 711 253 should not appear"
+
+    class FakeResponse:
+        status_code = 500
+        reason = "Internal Server Error"
+        text = sensitive
+
+        def json(self):
+            return {}
+
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_PROVIDER", "openai")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_BASE_URL", "https://api.example.test/v1")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MODEL", "test-model")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MAX_INPUT_CHARS", 24000)
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MAX_OUTPUT_TOKENS", 2000)
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_TIMEOUT_SECONDS", 60)
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: type("ModelResponse", (), {
+        "status_code": 200,
+        "json": lambda self: {"data": [{"id": "test-model"}]},
+    })())
+    monkeypatch.setattr(requests, "post", lambda *args, **kwargs: FakeResponse())
+
+    monkeypatch.setattr(LLMManager, "_instance", None)
+    monkeypatch.setattr(LLMManager, "_initialized", False)
+    manager = LLMManager()
+    with pytest.raises(Exception) as exc:
+        manager.generate("hello", model="test-model")
+
+    message = str(exc.value)
+    assert "status=500" in message
+    assert sensitive not in message

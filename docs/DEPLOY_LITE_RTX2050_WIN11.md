@@ -137,7 +137,9 @@ Promotion also requires a 10-30 second Vietnamese smoke test, JSON parse pass, a
 
 ## LLM And Analysis
 
-Lite is API-first for deep analysis:
+Lite is API-first for summarization today. Analysis V2 still uses deterministic
+core extraction in this build; evidence-bound domain slot extraction with
+Structured Outputs is a follow-up phase, not an implemented runtime claim.
 
 ```env
 ANALYSIS_INTELLIGENCE_LLM_ENABLED=true
@@ -156,9 +158,10 @@ Rules:
 
 - API key is read server-side only.
 - Do not log prompt text, transcripts, or raw provider responses.
-- Structured JSON schema is required.
-- Evidence must locate back to transcript; otherwise drop the item or mark it `requires_review=true`.
-- If no API key is configured, analysis falls back to deterministic extraction and UI shows LLM disabled.
+- Current implementation uses the configured LLM provider for summarization, with input/output limits.
+- Analysis V2 records a warning when LLM is enabled because structured slot extraction is not active yet.
+- Future evidence-bound extraction must use strict structured output schema and locate every `evidence_text` back to the transcript; otherwise drop the item or mark it `requires_review=true`.
+- If no API key is configured, summarization falls back to provider-unavailable behavior and Analysis V2 remains deterministic.
 
 Local LLM fallback can use llama.cpp server:
 
@@ -233,7 +236,7 @@ The frontend header also shows edition, ASR provider/profile, LLM status, and ac
     - 2 conversations over 10 minutes.
 - Metrics:
     - RTF.
-    - Peak RAM.
+    - Peak RAM, measured across the Python process tree so whisper.cpp subprocess memory is included.
     - Peak VRAM.
     - Failure count.
     - Non-speech hallucination.

@@ -21,11 +21,19 @@ DATE_RE = re.compile(r"\b(?:ngay\s+)?\d{1,2}\s*(?:/|\s+thang\s+)\s*\d{1,2}\b", r
 MONEY_RE = re.compile(r"\b\d+(?:[.,]\d+)?\s*(?:trieu|nghin|k|d|dong)\b", re.IGNORECASE)
 
 
-def process_rss_mb() -> float | None:
+def process_tree_rss_mb() -> float | None:
     try:
         import psutil
 
-        return psutil.Process().memory_info().rss / (1024 * 1024)
+        process = psutil.Process()
+        processes = [process, *process.children(recursive=True)]
+        total = 0
+        for item in processes:
+            try:
+                total += item.memory_info().rss
+            except psutil.Error:
+                continue
+        return total / (1024 * 1024)
     except Exception:
         return None
 
@@ -53,7 +61,7 @@ def nvidia_vram_mb() -> float | None:
 class ResourceSampler:
     def __init__(self) -> None:
         self._stop = threading.Event()
-        self.peak_ram_mb: float | None = process_rss_mb()
+        self.peak_ram_mb: float | None = process_tree_rss_mb()
         self.peak_vram_mb: float | None = nvidia_vram_mb()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
@@ -67,7 +75,7 @@ class ResourceSampler:
 
     def _run(self) -> None:
         while not self._stop.wait(0.5):
-            ram = process_rss_mb()
+            ram = process_tree_rss_mb()
             vram = nvidia_vram_mb()
             if ram is not None:
                 self.peak_ram_mb = max(self.peak_ram_mb or 0, ram)

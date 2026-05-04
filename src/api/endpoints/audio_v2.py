@@ -45,6 +45,24 @@ class EntitySplitRequest(BaseModel):
     expected_revision: int = Field(ge=1)
 
 
+def _task_result_dict(task: dict[str, Any]) -> dict[str, Any]:
+    result_data = task.get("result", {})
+    if isinstance(result_data, str):
+        import json
+        try:
+            result_data = json.loads(result_data)
+        except Exception:
+            result_data = {}
+    if not isinstance(result_data, dict):
+        return {}
+    return result_data
+
+
+def _set_private_response_headers(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+
+
 def _task_audio_id(task) -> int | None:
     return task.audio_files[0].id if getattr(task, "audio_files", None) else None
 
@@ -234,15 +252,7 @@ async def get_status_v2(task_id: str, db: Session = Depends(get_db), current_use
             raise HTTPException(status_code=404, detail="Task not found")
         assert_task_access(db, current_user, task_id, "read")
 
-        result_data = task.get("result", {})
-        if isinstance(result_data, str):
-            import json
-            try:
-                result_data = json.loads(result_data)
-            except Exception:
-                result_data = {}
-        if not isinstance(result_data, dict):
-            result_data = {}
+        result_data = _task_result_dict(task)
 
         return {
             "task_id": task_id,
@@ -296,18 +306,9 @@ async def get_transcription_detail_v2(
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
         assert_task_access(db, current_user, task_id, "read")
-        response.headers["Cache-Control"] = "no-store"
-        response.headers["Pragma"] = "no-cache"
+        _set_private_response_headers(response)
 
-        result_data = task.get("result", {})
-        if isinstance(result_data, str):
-            import json
-            try:
-                result_data = json.loads(result_data)
-            except Exception:
-                result_data = {}
-        if not isinstance(result_data, dict):
-            result_data = {}
+        result_data = _task_result_dict(task)
 
         transcript = result_data.get("transcription") or result_data.get("transcript") or task.get("transcript")
         return {
@@ -330,6 +331,93 @@ async def get_transcription_detail_v2(
     except Exception as e:
         logger.error("[API_V2] Get transcription detail error | task_id=%s | error=%s", task_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to load transcription detail")
+
+
+@router.get("/summaries/{task_id}")
+async def get_summary_detail_v2(
+    task_id: str,
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Return summary-only detail for an authorized task.
+
+    This is the explicit boundary for generated summary text. It does not return
+    transcripts, segments, full Task.result, visualization data, or analysis graphs.
+    """
+    try:
+        from src.services.task_service import get_task
+
+        task = get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        assert_task_access(db, current_user, task_id, "read")
+        _set_private_response_headers(response)
+
+        result_data = _task_result_dict(task)
+        return {
+            "task_id": task_id,
+            "summary": result_data.get("summary") or task.get("summary"),
+            "summary_model": result_data.get("summary_model"),
+            "summary_type": result_data.get("summary_type"),
+            "warnings": result_data.get("warnings") or [],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "[API_V2] Get summary detail error | task_id=%s | error_class=%s",
+            task_id,
+            e.__class__.__name__,
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Failed to load summary detail")
+
+
+@router.get("/analyses/{task_id}")
+async def get_analysis_detail_v2(
+    task_id: str,
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Return analysis graph detail for an authorized task.
+
+    This endpoint does not return transcripts, segments, summaries, or full
+    Task.result. Evidence refs may include short text spans from the graph, so
+    callers must treat this as a detail endpoint.
+    """
+    try:
+        from src.services.task_service import get_task
+
+        task = get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        assert_task_access(db, current_user, task_id, "read")
+        _set_private_response_headers(response)
+
+        result_data = _task_result_dict(task)
+        analysis = result_data.get("visualization_data")
+        return {
+            "task_id": task_id,
+            "has_visualization": bool(result_data.get("has_visualization") or analysis),
+            "visualization_data": analysis,
+            "schema_version": analysis.get("schema_version") if isinstance(analysis, dict) else None,
+            "analysis_mode": analysis.get("analysis_mode") if isinstance(analysis, dict) else None,
+            "warnings": analysis.get("warnings") if isinstance(analysis, dict) else [],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "[API_V2] Get analysis detail error | task_id=%s | error_class=%s",
+            task_id,
+            e.__class__.__name__,
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Failed to load analysis detail")
 
 
 def _run_summarize_lite(

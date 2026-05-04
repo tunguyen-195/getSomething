@@ -135,6 +135,7 @@ function App() {
   const [analysisFocusTaskId, setAnalysisFocusTaskId] = useState<string | null>(null);
   const [analysisView, setAnalysisView] = useState<AnalysisView>('overview');
   const pollingIntervalsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const detailLoadingRef = useRef<Set<string>>(new Set());
   const [files, setFiles] = useState<any[]>([]);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' as 'success' | 'error' | 'info' | 'warning' });
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -174,6 +175,7 @@ function App() {
 
   const activeJob = runtimeProfile?.active_job || null;
   const processingBlocked = Boolean(activeJob?.active_task_id);
+  const appDisplayName = runtimeProfile?.display_name || 'SpeechToInformation';
 
   const mapApiFile = (f: any) => ({
     task_id: f.task_id || f.id,
@@ -276,6 +278,10 @@ function App() {
     return () => window.clearInterval(interval);
   }, [authChecked, currentUser]);
 
+  useEffect(() => {
+    document.title = appDisplayName;
+  }, [appDisplayName]);
+
   // Load files when case selected
   const fetchFiles = async () => {
     if (selectedCase && currentUser) {
@@ -311,6 +317,9 @@ function App() {
   };
 
   const loadTranscriptDetail = async (taskId: string) => {
+    const loadingKey = `transcript:${taskId}`;
+    if (detailLoadingRef.current.has(loadingKey)) return null;
+    detailLoadingRef.current.add(loadingKey);
     try {
       const response = await apiFetch(`${API_V2_BASE}/transcriptions/${taskId}`, {
         cache: 'no-store',
@@ -340,8 +349,91 @@ function App() {
     } catch (error: any) {
       setSnackbar({ open: true, message: `Failed to load transcript: ${error.message || 'Unknown error'}`, severity: 'error' });
       return null;
+    } finally {
+      detailLoadingRef.current.delete(loadingKey);
     }
   };
+
+  const loadSummaryDetail = async (taskId: string, showToast = false) => {
+    const loadingKey = `summary:${taskId}`;
+    if (detailLoadingRef.current.has(loadingKey)) return null;
+    detailLoadingRef.current.add(loadingKey);
+    try {
+      const response = await apiFetch(`${API_V2_BASE}/summaries/${taskId}`, {
+        cache: 'no-store',
+        headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' }
+      });
+      if (!response.ok) throw new Error(await apiErrorMessage(response));
+      const detail = await response.json();
+      setFiles(prev => prev.map(f => (
+        f.task_id === taskId
+          ? {
+            ...f,
+            summary: detail.summary || f.summary,
+            summary_available: Boolean(detail.summary || f.summary),
+          }
+          : f
+      )));
+      if (showToast && detail.summary) {
+        setSnackbar({ open: true, message: 'Summary loaded.', severity: 'success' });
+      }
+      return detail;
+    } catch (error: any) {
+      setSnackbar({ open: true, message: `Failed to load summary: ${error.message || 'Unknown error'}`, severity: 'error' });
+      return null;
+    } finally {
+      detailLoadingRef.current.delete(loadingKey);
+    }
+  };
+
+  const loadAnalysisDetail = async (taskId: string, showToast = false) => {
+    const loadingKey = `analysis:${taskId}`;
+    if (detailLoadingRef.current.has(loadingKey)) return null;
+    detailLoadingRef.current.add(loadingKey);
+    try {
+      const response = await apiFetch(`${API_V2_BASE}/analyses/${taskId}`, {
+        cache: 'no-store',
+        headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' }
+      });
+      if (!response.ok) throw new Error(await apiErrorMessage(response));
+      const detail = await response.json();
+      setFiles(prev => prev.map(f => (
+        f.task_id === taskId
+          ? {
+            ...f,
+            has_visualization: Boolean(detail.visualization_data || f.visualization_data),
+            visualization_data: detail.visualization_data || f.visualization_data,
+            analysis_available: Boolean(detail.visualization_data || f.visualization_data),
+          }
+          : f
+      )));
+      if (showToast && detail.visualization_data) {
+        setSnackbar({ open: true, message: 'Analysis loaded.', severity: 'success' });
+      }
+      return detail;
+    } catch (error: any) {
+      setSnackbar({ open: true, message: `Failed to load analysis: ${error.message || 'Unknown error'}`, severity: 'error' });
+      return null;
+    } finally {
+      detailLoadingRef.current.delete(loadingKey);
+    }
+  };
+
+  useEffect(() => {
+    if (tab !== 3) return;
+    files
+      .filter(f => f.summary_available && !f.summary)
+      .slice(0, 3)
+      .forEach(f => { void loadSummaryDetail(f.task_id); });
+  }, [tab, files]);
+
+  useEffect(() => {
+    if (tab !== 4) return;
+    files
+      .filter(f => (f.analysis_available || f.has_visualization) && !f.visualization_data)
+      .slice(0, 3)
+      .forEach(f => { void loadAnalysisDetail(f.task_id); });
+  }, [tab, files]);
 
   const handleGenerateAnalysis = async (taskId: string) => {
     const file = files.find(f => f.task_id === taskId);
@@ -638,10 +730,12 @@ function App() {
             void fetchFiles();
           } else if (currentStatus === 'summarized') {
             setSnackbar({ open: true, message: '✅ Summarization completed!', severity: 'success' });
-            void fetchFiles();
+            await fetchFiles();
+            void loadSummaryDetail(taskId);
           } else if (currentStatus === 'visualized') {
             setSnackbar({ open: true, message: '✅ Analysis completed!', severity: 'success' });
-            void fetchFiles();
+            await fetchFiles();
+            void loadAnalysisDetail(taskId);
           } else if (currentStatus === 'failed') {
             setSnackbar({ open: true, message: `❌ Task failed: ${statusData.error || 'Unknown error'}`, severity: 'error' });
           }
@@ -734,7 +828,7 @@ function App() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <img
               src={mode === 'dark' ? '/logo/white_on_trans.png' : '/logo/trans_bg.png'}
-              alt="Cherry2"
+              alt={appDisplayName}
               style={{ height: 36, width: 'auto' }}
             />
             <Typography
@@ -746,7 +840,7 @@ function App() {
                 display: { xs: 'none', sm: 'block' },
               }}
             >
-              Cherry<span style={{ fontWeight: 800, opacity: 0.7 }}>2</span>
+              {appDisplayName}
             </Typography>
           </Box>
           <Box sx={{ flexGrow: 1 }} />
@@ -989,7 +1083,13 @@ function App() {
                     setSummarizeDialogOpen(true);
                   }}
                   onGenerateAnalysis={handleGenerateAnalysis}
-                  onOpenAnalysis={(taskId) => focusAnalysis(taskId, 'visualization')}
+                  onOpenAnalysis={(taskId) => {
+                    const file = files.find(f => f.task_id === taskId);
+                    if (file && !file.visualization_data && (file.analysis_available || file.has_visualization)) {
+                      void loadAnalysisDetail(taskId);
+                    }
+                    focusAnalysis(taskId, 'visualization');
+                  }}
                   onRegenerateAnalysis={handleGenerateAnalysis}
                   onLoadTranscript={loadTranscriptDetail}
                   onDelete={async (taskId) => {
@@ -1088,17 +1188,17 @@ function App() {
             )}
             {/* Summary Tab (tab 3) */}
             {tab === 3 && (
-              files.filter(f => f.summary).length > 0 ? (
+              files.filter(f => f.summary || f.summary_available).length > 0 ? (
                 <Box>
                   <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
                     <Typography variant="h6" fontWeight={700}>📋 Summary các file</Typography>
                     <Chip
-                      label={`${files.filter(f => f.summary).length} file(s)`}
+                      label={`${files.filter(f => f.summary || f.summary_available).length} file(s)`}
                       size="small"
                       sx={{ bgcolor: '#ff9800', color: '#fff' }}
                     />
                   </Box>
-                  {files.filter(f => f.summary).map((file, idx) => (
+                  {files.filter(f => f.summary || f.summary_available).map((file, idx) => (
                     <Accordion key={file.task_id} defaultExpanded={idx === 0} sx={{ mb: 2, borderRadius: '12px !important', border: '1px solid rgba(255, 152, 0, 0.3)', '&:before': { display: 'none' } }}>
                       <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: 'rgba(255, 152, 0, 0.05)', borderRadius: '12px 12px 0 0' }}>
                         <Box display="flex" alignItems="center" gap={2} width="100%">
@@ -1110,6 +1210,16 @@ function App() {
                       </AccordionSummary>
                       <AccordionDetails sx={{ pt: 2 }}>
                         <Box display="flex" justifyContent="flex-end" mb={1}>
+                          {file.summary_available && !file.summary && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => loadSummaryDetail(file.task_id, true)}
+                              sx={{ mr: 1, borderRadius: '8px', textTransform: 'none', color: '#ff9800', borderColor: '#ff9800' }}
+                            >
+                              Load Summary
+                            </Button>
+                          )}
                           <Button
                             size="small"
                             variant="outlined"
@@ -1118,13 +1228,16 @@ function App() {
                               navigator.clipboard.writeText(file.summary || '');
                               setSnackbar({ open: true, message: '✅ Summary copied!', severity: 'success' });
                             }}
+                            disabled={!file.summary}
                             sx={{ borderRadius: '8px', textTransform: 'none', color: '#ff9800', borderColor: '#ff9800' }}
                           >
                             Copy
                           </Button>
                         </Box>
                         <Paper sx={{ p: 2, bgcolor: 'rgba(255, 152, 0, 0.03)', borderRadius: '12px', maxHeight: 400, overflow: 'auto' }}>
-                          <Typography sx={{ whiteSpace: 'pre-line', lineHeight: 1.8 }}>{file.summary}</Typography>
+                          <Typography sx={{ whiteSpace: 'pre-line', lineHeight: 1.8 }}>
+                            {file.summary || 'Summary available. Click Load Summary to view it.'}
+                          </Typography>
                         </Paper>
                       </AccordionDetails>
                     </Accordion>
