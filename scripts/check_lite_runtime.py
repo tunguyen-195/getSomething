@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -25,7 +27,88 @@ def status_line(name: str, ok: bool, detail: str = "") -> None:
     print(f"[{marker}] {name}{suffix}")
 
 
+def reason_code(value: object) -> str:
+    text = str(value).strip().lower()
+    compact = re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+    return compact[:120] or "unknown_error"
+
+
+def _normalized_model_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower().replace("faster-whisper-", ""))
+
+
+def model_available_locally(model_name: str, cache_root: Path) -> bool:
+    model_path = Path(model_name)
+    if model_path.exists():
+        return True
+    root_model_path = (ROOT / model_name).resolve()
+    if root_model_path.exists():
+        return True
+    cache_root = cache_root.resolve()
+    if not cache_root.exists():
+        return False
+    target = _normalized_model_name(model_name)
+    for cached_dir in cache_root.iterdir():
+        if not cached_dir.is_dir():
+            continue
+        cached_name = _normalized_model_name(cached_dir.name)
+        if target and target in cached_name:
+            return True
+    return False
+
+
+def run_gpu_smoke(settings, *, audio_path: Path | None, offline_models_only: bool) -> None:
+    try:
+        import torch
+        import ctranslate2
+    except Exception as exc:
+        raise RuntimeError("gpu_dependencies_unavailable") from exc
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("torch_cuda_unavailable")
+    if ctranslate2.get_cuda_device_count() <= 0:
+        raise RuntimeError("ctranslate2_cuda_device_unavailable")
+    supported = ctranslate2.get_supported_compute_types("cuda")
+    if "int8" not in supported:
+        raise RuntimeError("ctranslate2_cuda_int8_unavailable")
+
+    model_cache_dir = (ROOT / settings.WHISPER_MODEL_PATH).resolve()
+    if offline_models_only and not model_available_locally(settings.WHISPER_MODEL, model_cache_dir):
+        raise RuntimeError("model_unavailable_or_download_failed")
+
+    try:
+        from faster_whisper import WhisperModel
+
+        model = WhisperModel(
+            settings.WHISPER_MODEL,
+            device="cuda",
+            compute_type="int8",
+            download_root=str(model_cache_dir),
+            local_files_only=offline_models_only,
+        )
+        if audio_path:
+            segments, _info = model.transcribe(
+                str(audio_path),
+                language=settings.DEFAULT_LANGUAGE,
+                beam_size=1,
+                vad_filter=True,
+            )
+            first_segment = next(iter(segments), None)
+            if first_segment is None:
+                raise RuntimeError("gpu_smoke_no_segments")
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError("model_unavailable_or_download_failed") from exc
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Check SpeechToInformation Lite runtime readiness.")
+    parser.add_argument("--gpu-smoke", action="store_true", help="Load faster-whisper on CUDA/int8.")
+    parser.add_argument("--gpu-smoke-audio", type=Path, help="Optional short Vietnamese audio for real CUDA inference.")
+    parser.add_argument("--offline-models-only", action="store_true", help="Fail before model load if cache/path is missing.")
+    args = parser.parse_args()
+
     try:
         from src.core.config import settings
         from src.services.transcription.asr_providers import provider_health
@@ -75,6 +158,14 @@ def main() -> int:
 
     llm_configured = bool(settings.ANALYSIS_LLM_API_KEY) or settings.ANALYSIS_LLM_PROVIDER in {"ollama", "llama_cpp_server"}
     status_line("Analysis LLM configured", llm_configured, settings.ANALYSIS_LLM_PROVIDER)
+
+    if args.gpu_smoke:
+        try:
+            run_gpu_smoke(settings, audio_path=args.gpu_smoke_audio, offline_models_only=args.offline_models_only)
+            status_line("GPU ASR smoke", True, "faster-whisper cuda/int8")
+        except Exception as exc:
+            print(f"[ERROR] gpu_smoke_failed:{reason_code(exc)}")
+            return 3
 
     return 0
 

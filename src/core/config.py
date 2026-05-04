@@ -1,8 +1,21 @@
-from typing import List
-from pydantic_settings import BaseSettings
-from pydantic import AnyHttpUrl, validator
+import json
+from typing import Annotated, Any, List
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+
+StringListSetting = Annotated[List[str], NoDecode]
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        case_sensitive=True,
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="allow",
+        protected_namespaces=(),
+    )
+
     ENVIRONMENT: str = "development"
     # Backend
     BACKEND_HOST: str = "0.0.0.0"
@@ -104,7 +117,7 @@ class Settings(BaseSettings):
     COOKIE_PATH: str = "/"
     CSRF_COOKIE_NAME: str = "csrf_token"
     AUTH_COOKIE_NAME: str = "access_token"
-    TRUSTED_PROXY_IPS: List[str] = []
+    TRUSTED_PROXY_IPS: StringListSetting = []
 
     # Rate limits
     RATE_LIMIT_ENABLED: bool = True
@@ -120,12 +133,12 @@ class Settings(BaseSettings):
 
     # Frontend
     FRONTEND_URL: str = "http://localhost:3000"
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
+    CORS_ORIGINS: StringListSetting = ["http://localhost:3000", "http://localhost:8000"]
 
     # API Settings
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "Speech to Information"
-    BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
+    BACKEND_CORS_ORIGINS: StringListSetting = ["http://localhost:3000", "http://localhost:8000"]
 
     # Monitoring
     PROMETHEUS_MULTIPROC_DIR: str = "/tmp/prometheus_multiproc"
@@ -137,20 +150,37 @@ class Settings(BaseSettings):
     WHISPER_BATCH_SIZE: int = 8
     WHISPER_BEAM_SIZE: int = 10  # Increased for better Vietnamese accuracy
 
-    @validator("CORS_ORIGINS", pre=True)
-    def assemble_cors_origins(cls, v: str | List[str]) -> List[str]:
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, (list, str)):
-            return v
-        raise ValueError(v)
+    @field_validator("TRUSTED_PROXY_IPS", "CORS_ORIGINS", "BACKEND_CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_string_list_setting(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            raw_items = value
+        elif isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return []
+            if text.startswith("["):
+                try:
+                    raw_items = json.loads(text)
+                except json.JSONDecodeError as exc:
+                    raise ValueError("must be a JSON list or comma-separated string") from exc
+                if not isinstance(raw_items, list):
+                    raise ValueError("must be a JSON list")
+            else:
+                raw_items = text.split(",")
+        else:
+            raise ValueError("must be a list or string")
 
-    class Config:
-        case_sensitive = True
-        env_file = ".env"
-        env_file_encoding = 'utf-8'
-        extra = "allow"
-        model_config = {'protected_namespaces': ()}
+        items: list[str] = []
+        for item in raw_items:
+            if not isinstance(item, str):
+                raise ValueError("all list items must be strings")
+            stripped = item.strip()
+            if stripped:
+                items.append(stripped)
+        return items
 
 settings = Settings()
 

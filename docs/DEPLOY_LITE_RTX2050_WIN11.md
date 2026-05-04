@@ -74,6 +74,17 @@ WHISPER_BATCH_SIZE=1
 WHISPER_BEAM_SIZE=5
 ```
 
+Verified Python runtime pins for this Lite profile:
+
+- `pydantic==2.12.4`
+- `pydantic-settings==2.11.0`
+- `faster-whisper==1.1.1`
+- `ctranslate2==4.4.0`
+
+CTranslate2 releases newer than this may require CUDA 12 with cuDNN 9. For
+CUDA 12 with cuDNN 8, keep `ctranslate2==4.4.0` unless you re-run the GPU smoke
+check and the Lite benchmark gate on the target machine.
+
 Profiles:
 
 - `rtx2050_safe`: faster-whisper small, CUDA int8, batch 1. Default.
@@ -212,9 +223,16 @@ Pop-Location
 
 ```powershell
 python scripts/check_lite_runtime.py
+python scripts/check_lite_runtime.py --gpu-smoke
+python scripts/check_lite_runtime.py --gpu-smoke --gpu-smoke-audio path\to\10s_vi.wav
+python scripts/check_lite_runtime.py --gpu-smoke --offline-models-only
 ```
 
 The frontend header also shows edition, ASR provider/profile, LLM status, and active job state.
+The first online GPU smoke may download the configured faster-whisper model into
+`WHISPER_MODEL_PATH`. For offline handoff, pre-cache the model first; otherwise
+`--offline-models-only` fails before model load with
+`gpu_smoke_failed:model_unavailable_or_download_failed`.
 
 ## Regression Checks
 
@@ -226,6 +244,9 @@ The frontend header also shows edition, ASR provider/profile, LLM status, and ac
 - Full mode `async_mode=false` still runs the existing synchronous endpoint path.
 - Missing LLM API key falls back to deterministic analysis.
 - whisper.cpp subprocess calls use argv lists, timeout, and temp cleanup.
+- `.env.example` and `.env.lite.example` import cleanly in a fresh subprocess.
+- `docker compose config --quiet` passes with the JSON-list CORS default.
+- `python -m pip check` has no project dependency conflicts in the deployment environment.
 
 ## Benchmark Gate
 
