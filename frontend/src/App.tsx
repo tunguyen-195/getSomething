@@ -12,12 +12,10 @@ import SortIcon from '@mui/icons-material/Sort';
 import TranscriptPanel from './components/TranscriptPanel';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import FolderIcon from '@mui/icons-material/Folder';
-import FileCard from './components/FileCard';
 import TranscribeDialog from './components/TranscribeDialog';
 import SummarizeDialog from './components/SummarizeDialog';
 import CompactUploader from './components/CompactUploader';
 import FileTable from './components/FileTable';
-import VisualizationDialog from './components/VisualizationDialog';
 import AnalysisPanel from './components/AnalysisPanel';
 import DiarizationPanel from './components/DiarizationPanel';
 import { apiFetch, getCurrentUser, login, logout } from './api/client';
@@ -36,12 +34,47 @@ interface Case {
 }
 
 const drawerWidth = 320;
+type AnalysisView = 'overview' | 'visualization' | 'evidence';
+
+interface RuntimeProfile {
+  edition: string;
+  display_name?: string;
+  runtime_profile?: string;
+  processing_runner?: string;
+  active_job?: {
+    active_task_id?: string;
+    active_operation?: string;
+    lease_expires_at?: string;
+  } | null;
+  asr?: {
+    asr_provider?: string;
+    asr_profile?: string;
+    whisper_model?: string;
+    whisper_compute_type?: string;
+    phowhisper_cpp_candidate_valid?: boolean;
+    profiles?: Array<Record<string, unknown>>;
+  };
+  llm?: {
+    provider?: string;
+    model?: string;
+    fallback_model?: string;
+    configured?: boolean;
+  };
+}
 
 async function apiErrorMessage(response: Response): Promise<string> {
   try {
     const body = await response.clone().json();
-    const detail = typeof body?.detail === 'string' ? body.detail : null;
-    return detail ? `HTTP ${response.status}: ${detail}` : `HTTP ${response.status}`;
+    if (typeof body?.detail === 'string') {
+      return `HTTP ${response.status}: ${body.detail}`;
+    }
+    if (body?.detail?.message) {
+      const parts = [body.detail.message];
+      if (body.detail.active_operation) parts.push(`operation=${body.detail.active_operation}`);
+      if (body.detail.active_task_id) parts.push(`task=${body.detail.active_task_id}`);
+      return `HTTP ${response.status}: ${parts.join(' | ')}`;
+    }
+    return `HTTP ${response.status}`;
   } catch {
     return `HTTP ${response.status}`;
   }
@@ -98,9 +131,9 @@ function App() {
   // V2 API - Modular workflow state
   const [transcribeDialogOpen, setTranscribeDialogOpen] = useState(false);
   const [summarizeDialogOpen, setSummarizeDialogOpen] = useState(false);
-  const [visualizeDialogOpen, setVisualizeDialogOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [visualizeTaskId, setVisualizeTaskId] = useState<string | null>(null);
+  const [analysisFocusTaskId, setAnalysisFocusTaskId] = useState<string | null>(null);
+  const [analysisView, setAnalysisView] = useState<AnalysisView>('overview');
   const pollingIntervalsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const [files, setFiles] = useState<any[]>([]);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' as 'success' | 'error' | 'info' | 'warning' });
@@ -109,6 +142,7 @@ function App() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [runtimeProfile, setRuntimeProfile] = useState<RuntimeProfile | null>(null);
 
   // Sorting State
   const [caseSortBy, setCaseSortBy] = useState<'created_at' | 'title'>('created_at');
@@ -116,6 +150,30 @@ function App() {
   const [sortMenuAnchor, setSortMenuAnchor] = useState<null | HTMLElement>(null);
 
   const API_V2_BASE = '/api/v1/audio/v2';
+
+  const fetchRuntimeProfile = async () => {
+    if (!currentUser) {
+      setRuntimeProfile(null);
+      return;
+    }
+    try {
+      const res = await apiFetch('/api/v1/system/runtime-profile', {
+        cache: 'no-store',
+        headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' }
+      });
+      if (!res.ok) {
+        setRuntimeProfile(null);
+        return;
+      }
+      setRuntimeProfile(await res.json());
+    } catch (err) {
+      console.error('Failed to load runtime profile:', err);
+      setRuntimeProfile(null);
+    }
+  };
+
+  const activeJob = runtimeProfile?.active_job || null;
+  const processingBlocked = Boolean(activeJob?.active_task_id);
 
   const mapApiFile = (f: any) => ({
     task_id: f.task_id || f.id,
@@ -128,10 +186,14 @@ function App() {
     has_visualization: f.has_visualization,
     visualization_data: f.visualization_data,
     transcript: f.transcript,
+    transcript_available: Boolean(f.transcript || f.transcript_available),
     summary: f.summary,
+    summary_available: Boolean(f.summary || f.summary_available),
     formatted_transcript: f.formatted_transcript,
     segments: f.segments,
+    segments_available: Boolean(f.segments?.length || f.segments_available),
     context_analysis: f.context_analysis,
+    analysis_available: Boolean(f.visualization_data || f.context_analysis || f.analysis_available),
     created_at: f.created_at,
     download_url: f.download_url,
   });
@@ -199,8 +261,20 @@ function App() {
       setCases([]);
       setFiles([]);
       setSelectedCase(null);
+      setRuntimeProfile(null);
     }
   }, [authChecked, currentUser, caseSortBy, caseOrder]);
+
+  useEffect(() => {
+    if (!authChecked || !currentUser) {
+      return;
+    }
+    void fetchRuntimeProfile();
+    const interval = window.setInterval(() => {
+      void fetchRuntimeProfile();
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [authChecked, currentUser]);
 
   // Load files when case selected
   const fetchFiles = async () => {
@@ -226,7 +300,108 @@ function App() {
 
   useEffect(() => {
     fetchFiles();
+    setAnalysisFocusTaskId(null);
+    setAnalysisView('overview');
   }, [selectedCase]);
+
+  const focusAnalysis = (taskId: string, view: AnalysisView = 'visualization') => {
+    setAnalysisFocusTaskId(taskId);
+    setAnalysisView(view);
+    setTab(4);
+  };
+
+  const loadTranscriptDetail = async (taskId: string) => {
+    try {
+      const response = await apiFetch(`${API_V2_BASE}/transcriptions/${taskId}`, {
+        cache: 'no-store',
+        headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' }
+      });
+      if (!response.ok) throw new Error(await apiErrorMessage(response));
+      const detail = await response.json();
+      setFiles(prev => prev.map(f => (
+        f.task_id === taskId
+          ? {
+            ...f,
+            transcript: detail.transcription || f.transcript,
+            formatted_transcript: detail.formatted_transcript || f.formatted_transcript,
+            segments: detail.segments || f.segments,
+            duration: detail.duration ?? f.duration,
+            num_speakers: detail.num_speakers ?? f.num_speakers,
+            has_diarization: detail.has_diarization ?? f.has_diarization,
+            transcript_available: Boolean(detail.transcription || f.transcript_available),
+            segments_available: Boolean(detail.segments?.length || f.segments_available),
+          }
+          : f
+      )));
+      if (detail.transcription) {
+        setSnackbar({ open: true, message: 'Transcript loaded.', severity: 'success' });
+      }
+      return detail;
+    } catch (error: any) {
+      setSnackbar({ open: true, message: `Failed to load transcript: ${error.message || 'Unknown error'}`, severity: 'error' });
+      return null;
+    }
+  };
+
+  const handleGenerateAnalysis = async (taskId: string) => {
+    const file = files.find(f => f.task_id === taskId);
+    if (!file) return;
+    if (processingBlocked) {
+      setSnackbar({ open: true, message: 'Máy đang xử lý một tác vụ khác. Vui lòng chờ hoàn tất.', severity: 'warning' });
+      return;
+    }
+
+    try {
+      setSnackbar({ open: true, message: '🎨 Generating analysis...', severity: 'info' });
+      setFiles(prev => prev.map(f => (
+        f.task_id === taskId ? { ...f, status: 'visualizing' } : f
+      )));
+
+      const response = await apiFetch(`${API_V2_BASE}/visualize/${taskId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visualization_type: 'all' })
+      });
+      if (!response.ok) throw new Error(await apiErrorMessage(response));
+
+      const result = await response.json();
+      const resolvedTaskId = result.task_id || taskId;
+      if (result.status === 'visualizing' || result.runner_job_id) {
+        setFiles(prev => prev.map(f => (
+          f.task_id === taskId || f.task_id === resolvedTaskId
+            ? { ...f, task_id: resolvedTaskId, status: 'visualizing' }
+            : f
+        )));
+        focusAnalysis(resolvedTaskId, 'visualization');
+        startPolling(resolvedTaskId, 'visualizing');
+        void fetchRuntimeProfile();
+        setSnackbar({ open: true, message: 'Analysis đang chạy trong Lite runner.', severity: 'info' });
+        return;
+      }
+      const visualizationData = result.visualization_data || result.result?.visualization_data;
+
+      setFiles(prev => prev.map(f => (
+        f.task_id === taskId || f.task_id === resolvedTaskId
+          ? {
+            ...f,
+            task_id: resolvedTaskId,
+            status: 'visualized',
+            has_visualization: true,
+            visualization_data: visualizationData || f.visualization_data,
+          }
+          : f
+      )));
+      await fetchFiles();
+      void fetchRuntimeProfile();
+      focusAnalysis(resolvedTaskId, 'visualization');
+      setSnackbar({ open: true, message: '✅ Analysis ready!', severity: 'success' });
+    } catch (error: any) {
+      setFiles(prev => prev.map(f => (
+        f.task_id === taskId ? { ...f, status: file.status } : f
+      )));
+      setSnackbar({ open: true, message: `❌ Error: ${error.message}`, severity: 'error' });
+    }
+  };
 
   const filteredCases = (Array.isArray(cases) ? cases : []).filter(c =>
     c.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -336,6 +511,10 @@ function App() {
   // V2 API handlers
   const handleTranscribe = async (options: any) => {
     if (!selectedTaskId) return;
+    if (processingBlocked) {
+      setSnackbar({ open: true, message: 'Máy đang xử lý một tác vụ khác. Vui lòng chờ hoàn tất.', severity: 'warning' });
+      return;
+    }
     try {
       const response = await apiFetch(`${API_V2_BASE}/transcribe/${selectedTaskId}`, {
         method: 'POST',
@@ -345,24 +524,30 @@ function App() {
           diarization_method: options.diarization_method || 'pyannote',
           language: 'vi',
           fast_mode: options.fast_mode,
+          asr_profile: options.asr_profile,
           async_mode: true
         })
       });
-      if (!response.ok) throw new Error('Failed');
-      const result = await response.json();
+      if (!response.ok) throw new Error(await apiErrorMessage(response));
+      await response.json();
       setFiles(prev => prev.map(f => f.task_id === selectedTaskId ? { ...f, status: 'transcribing' } : f));
       setTranscribeDialogOpen(false);
       setSnackbar({ open: true, message: '🎙️ Transcription started! Please wait...', severity: 'info' });
 
       // Start polling for status updates
       startPolling(selectedTaskId, 'transcribing');
-    } catch (error) {
-      setSnackbar({ open: true, message: 'Failed to start', severity: 'error' });
+      void fetchRuntimeProfile();
+    } catch (error: any) {
+      setSnackbar({ open: true, message: `Failed to start: ${error.message || 'Unknown error'}`, severity: 'error' });
     }
   };
 
   const handleSummarize = async (options: any) => {
     if (!selectedTaskId) return;
+    if (processingBlocked) {
+      setSnackbar({ open: true, message: 'Máy đang xử lý một tác vụ khác. Vui lòng chờ hoàn tất.', severity: 'warning' });
+      return;
+    }
     try {
       const response = await apiFetch(`${API_V2_BASE}/summarize/${selectedTaskId}`, {
         method: 'POST',
@@ -374,15 +559,16 @@ function App() {
           async_mode: true
         })
       });
-      if (!response.ok) throw new Error('Failed');
+      if (!response.ok) throw new Error(await apiErrorMessage(response));
       setFiles(prev => prev.map(f => f.task_id === selectedTaskId ? { ...f, status: 'summarizing' } : f));
       setSummarizeDialogOpen(false);
       setSnackbar({ open: true, message: '📊 Summarization started! Please wait...', severity: 'info' });
 
       // Start polling for status updates
       startPolling(selectedTaskId, 'summarizing');
-    } catch (error) {
-      setSnackbar({ open: true, message: 'Failed to start', severity: 'error' });
+      void fetchRuntimeProfile();
+    } catch (error: any) {
+      setSnackbar({ open: true, message: `Failed to start: ${error.message || 'Unknown error'}`, severity: 'error' });
     }
   };
 
@@ -411,13 +597,14 @@ function App() {
         setFiles(prev => prev.map(f => {
           if (f.task_id === taskId) {
             const updated = { ...f, status: currentStatus };
-            // Update transcript if available
-            if (statusData.transcript) {
-              updated.transcript = statusData.transcript;
+            if (statusData.transcript_available !== undefined) {
+              updated.transcript_available = statusData.transcript_available;
             }
-            // Update summary if available
-            if (statusData.summary) {
-              updated.summary = statusData.summary;
+            if (statusData.summary_available !== undefined) {
+              updated.summary_available = statusData.summary_available;
+            }
+            if (statusData.segments_available !== undefined) {
+              updated.segments_available = statusData.segments_available;
             }
             // Update other fields
             if (statusData.num_speakers !== undefined) {
@@ -428,15 +615,6 @@ function App() {
             }
             if (statusData.has_visualization !== undefined) {
               updated.has_visualization = statusData.has_visualization;
-            }
-            if (statusData.visualization_data) {
-              updated.visualization_data = statusData.visualization_data;
-            }
-            if (statusData.segments) {
-              updated.segments = statusData.segments;
-            }
-            if (statusData.context_analysis) {
-              updated.context_analysis = statusData.context_analysis;
             }
             if (statusData.audio_id) {
               updated.audio_id = statusData.audio_id;
@@ -453,6 +631,7 @@ function App() {
         if (currentStatus === 'transcribed' || currentStatus === 'summarized' || currentStatus === 'visualized' || currentStatus === 'failed') {
           clearInterval(pollInterval);
           pollingIntervalsRef.current.delete(taskId);
+          void fetchRuntimeProfile();
 
           if (currentStatus === 'transcribed') {
             setSnackbar({ open: true, message: '✅ Transcription completed!', severity: 'success' });
@@ -461,7 +640,7 @@ function App() {
             setSnackbar({ open: true, message: '✅ Summarization completed!', severity: 'success' });
             void fetchFiles();
           } else if (currentStatus === 'visualized') {
-            setSnackbar({ open: true, message: '✅ Visualization completed!', severity: 'success' });
+            setSnackbar({ open: true, message: '✅ Analysis completed!', severity: 'success' });
             void fetchFiles();
           } else if (currentStatus === 'failed') {
             setSnackbar({ open: true, message: `❌ Task failed: ${statusData.error || 'Unknown error'}`, severity: 'error' });
@@ -571,6 +750,34 @@ function App() {
             </Typography>
           </Box>
           <Box sx={{ flexGrow: 1 }} />
+          {runtimeProfile && (
+            <Box sx={{ display: { xs: 'none', lg: 'flex' }, alignItems: 'center', gap: 1 }}>
+              <Chip
+                size="small"
+                label={runtimeProfile.display_name || runtimeProfile.edition}
+                color={runtimeProfile.edition === 'lite' ? 'secondary' : 'default'}
+                variant={runtimeProfile.edition === 'lite' ? 'filled' : 'outlined'}
+              />
+              <Chip
+                size="small"
+                label={`ASR ${runtimeProfile.asr?.asr_provider || '-'} / ${runtimeProfile.asr?.asr_profile || '-'}`}
+                variant="outlined"
+              />
+              <Chip
+                size="small"
+                label={`LLM ${runtimeProfile.llm?.configured ? (runtimeProfile.llm?.model || 'configured') : 'disabled'}`}
+                color={runtimeProfile.llm?.configured ? 'success' : 'default'}
+                variant="outlined"
+              />
+              {activeJob && (
+                <Chip
+                  size="small"
+                  label={`Busy: ${activeJob.active_operation || 'job'}`}
+                  color="warning"
+                />
+              )}
+            </Box>
+          )}
           {currentUser && (
             <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
               {currentUser.username}
@@ -764,33 +971,27 @@ function App() {
                 {/* File Table */}
                 <FileTable
                   files={files}
+                  processingBlocked={processingBlocked}
                   onTranscribe={(taskId) => {
+                    if (processingBlocked) {
+                      setSnackbar({ open: true, message: 'Máy đang xử lý một tác vụ khác. Vui lòng chờ hoàn tất.', severity: 'warning' });
+                      return;
+                    }
                     setSelectedTaskId(taskId);
                     setTranscribeDialogOpen(true);
                   }}
                   onSummarize={(taskId) => {
+                    if (processingBlocked) {
+                      setSnackbar({ open: true, message: 'Máy đang xử lý một tác vụ khác. Vui lòng chờ hoàn tất.', severity: 'warning' });
+                      return;
+                    }
                     setSelectedTaskId(taskId);
                     setSummarizeDialogOpen(true);
                   }}
-                  onVisualize={async (taskId) => {
-                    const file = files.find(f => f.task_id === taskId);
-                    if (!file) return;
-                    try {
-                      setSnackbar({ open: true, message: '🎨 Generating visualization...', severity: 'info' });
-                      const response = await apiFetch(`${API_V2_BASE}/visualize/${taskId}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ visualization_type: 'all' })
-                      });
-                      if (!response.ok) throw new Error(await apiErrorMessage(response));
-                      await fetchFiles();
-                      setVisualizeTaskId(taskId);
-                      setVisualizeDialogOpen(true);
-                      setSnackbar({ open: true, message: '✅ Visualization ready!', severity: 'success' });
-                    } catch (error: any) {
-                      setSnackbar({ open: true, message: `❌ Error: ${error.message}`, severity: 'error' });
-                    }
-                  }}
+                  onGenerateAnalysis={handleGenerateAnalysis}
+                  onOpenAnalysis={(taskId) => focusAnalysis(taskId, 'visualization')}
+                  onRegenerateAnalysis={handleGenerateAnalysis}
+                  onLoadTranscript={loadTranscriptDetail}
                   onDelete={async (taskId) => {
                     const file = files.find(f => f.task_id === taskId);
                     if (!file || !window.confirm(`Xóa file "${file.filename}"?`)) return;
@@ -806,17 +1007,17 @@ function App() {
               </Box>
             )}
             {tab === 1 && selectedFileId ? <TranscriptPanel fileId={selectedFileId} /> : tab === 1 ? (
-              files.filter(f => f.transcript).length > 0 ? (
+              files.filter(f => f.transcript || f.transcript_available).length > 0 ? (
                 <Box>
                   <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
                     <Typography variant="h6" fontWeight={700}>📝 Transcript các file</Typography>
                     <Chip
-                      label={`${files.filter(f => f.transcript).length} file(s)`}
+                      label={`${files.filter(f => f.transcript || f.transcript_available).length} file(s)`}
                       size="small"
                       sx={{ bgcolor: '#43a047', color: '#fff' }}
                     />
                   </Box>
-                  {files.filter(f => f.transcript).map((file, idx) => (
+                  {files.filter(f => f.transcript || f.transcript_available).map((file, idx) => (
                     <Accordion key={file.task_id} defaultExpanded={idx === 0} sx={{ mb: 2, borderRadius: '12px !important', border: '1px solid rgba(67, 160, 71, 0.3)', '&:before': { display: 'none' } }}>
                       <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: 'rgba(67, 160, 71, 0.05)', borderRadius: '12px 12px 0 0' }}>
                         <Box display="flex" alignItems="center" gap={2} width="100%">
@@ -831,21 +1032,34 @@ function App() {
                       </AccordionSummary>
                       <AccordionDetails sx={{ pt: 2 }}>
                         <Box display="flex" justifyContent="flex-end" mb={1}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            startIcon={<ContentCopyIcon />}
-                            onClick={() => {
-                              navigator.clipboard.writeText(file.transcript || '');
-                              setSnackbar({ open: true, message: '✅ Transcript copied!', severity: 'success' });
-                            }}
-                            sx={{ borderRadius: '8px', textTransform: 'none', color: '#43a047', borderColor: '#43a047' }}
-                          >
-                            Copy
-                          </Button>
+                          {file.transcript ? (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              startIcon={<ContentCopyIcon />}
+                              onClick={() => {
+                                navigator.clipboard.writeText(file.transcript || '');
+                                setSnackbar({ open: true, message: '✅ Transcript copied!', severity: 'success' });
+                              }}
+                              sx={{ borderRadius: '8px', textTransform: 'none', color: '#43a047', borderColor: '#43a047' }}
+                            >
+                              Copy
+                            </Button>
+                          ) : (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => loadTranscriptDetail(file.task_id)}
+                              sx={{ borderRadius: '8px', textTransform: 'none', color: '#43a047', borderColor: '#43a047' }}
+                            >
+                              Load Transcript
+                            </Button>
+                          )}
                         </Box>
                         <Paper sx={{ p: 2, bgcolor: 'rgba(67, 160, 71, 0.03)', borderRadius: '12px', maxHeight: 400, overflow: 'auto' }}>
-                          <Typography sx={{ whiteSpace: 'pre-line', lineHeight: 1.8 }}>{file.transcript}</Typography>
+                          <Typography sx={{ whiteSpace: 'pre-line', lineHeight: 1.8 }}>
+                            {file.transcript || 'Transcript available. Click Load Transcript to view it.'}
+                          </Typography>
                         </Paper>
                       </AccordionDetails>
                     </Accordion>
@@ -924,7 +1138,14 @@ function App() {
             )}
             {/* Analysis Tab (tab 4) */}
             {tab === 4 && (
-              <AnalysisPanel files={files} caseId={selectedCase.id} mode={mode} />
+              <AnalysisPanel
+                files={files}
+                caseId={selectedCase.id}
+                mode={mode}
+                focusTaskId={analysisFocusTaskId}
+                activeView={analysisView}
+                onActiveViewChange={setAnalysisView}
+              />
             )}
 
           </Paper>
@@ -1003,7 +1224,9 @@ function App() {
         open={transcribeDialogOpen}
         onClose={() => setTranscribeDialogOpen(false)}
         onConfirm={handleTranscribe}
-        filename={selectedTaskId || ''}
+        filename={files.find(f => f.task_id === selectedTaskId)?.filename || selectedTaskId || ''}
+        duration={files.find(f => f.task_id === selectedTaskId)?.duration}
+        runtimeProfile={runtimeProfile}
       />
 
       {/* V2 API - Summarize Dialog */}
@@ -1011,13 +1234,6 @@ function App() {
         open={summarizeDialogOpen}
         onClose={() => setSummarizeDialogOpen(false)}
         onConfirm={handleSummarize}
-      />
-
-      {/* V2 API - Visualization Dialog */}
-      <VisualizationDialog
-        open={visualizeDialogOpen}
-        onClose={() => setVisualizeDialogOpen(false)}
-        taskId={visualizeTaskId}
       />
 
       <Dialog open={loginOpen} disableEscapeKeyDown>

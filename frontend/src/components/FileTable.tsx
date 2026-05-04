@@ -24,6 +24,8 @@ import {
     Transcribe as TranscribeIcon,
     Summarize as SummarizeIcon,
     Analytics as VisualizeIcon,
+    Visibility as ViewIcon,
+    Refresh as RefreshIcon,
     PlayArrow as PlayIcon,
     Delete as DeleteIcon,
     CheckCircle as CheckIcon,
@@ -40,18 +42,25 @@ interface FileData {
     num_speakers?: number;
     has_visualization?: boolean;
     transcript?: string;
+    transcript_available?: boolean;
     summary?: string;
+    summary_available?: boolean;
     created_at?: string;
     download_url?: string;
+    visualization_data?: any;
 }
 
 interface FileTableProps {
     files: FileData[];
     onTranscribe: (taskId: string) => void;
     onSummarize: (taskId: string) => void;
-    onVisualize: (taskId: string) => void;
+    onGenerateAnalysis: (taskId: string) => void;
+    onOpenAnalysis: (taskId: string) => void;
+    onRegenerateAnalysis: (taskId: string) => void;
+    onLoadTranscript?: (taskId: string) => void;
     onDelete: (taskId: string) => void;
     processingTaskId?: string;
+    processingBlocked?: boolean;
 }
 
 const getStatusChip = (status: string) => {
@@ -60,6 +69,7 @@ const getStatusChip = (status: string) => {
             return <Chip label="Uploaded" size="small" color="default" icon={<PendingIcon />} />;
         case 'transcribing':
         case 'summarizing':
+        case 'visualizing':
         case 'processing':
             return <Chip label="Processing" size="small" color="warning" icon={<PendingIcon />} />;
         case 'transcribed':
@@ -81,9 +91,13 @@ const FileTable: React.FC<FileTableProps> = ({
     files,
     onTranscribe,
     onSummarize,
-    onVisualize,
+    onGenerateAnalysis,
+    onOpenAnalysis,
+    onRegenerateAnalysis,
+    onLoadTranscript,
     onDelete,
     processingTaskId,
+    processingBlocked = false,
 }) => {
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [order, setOrder] = useState<Order>('desc');
@@ -135,6 +149,13 @@ const FileTable: React.FC<FileTableProps> = ({
 
     return (
         <TableContainer component={Paper} sx={{ borderRadius: '12px', overflow: 'hidden' }}>
+            {processingBlocked && (
+                <Box sx={{ px: 2, py: 1, bgcolor: 'rgba(245, 124, 0, 0.08)', borderBottom: '1px solid rgba(245, 124, 0, 0.2)' }}>
+                    <Typography variant="body2" color="warning.main" fontWeight={600}>
+                        Lite runner đang xử lý một tác vụ. Các nút xử lý mới đã tạm khóa.
+                    </Typography>
+                </Box>
+            )}
             <Table size="small">
                 <TableHead>
                     <TableRow sx={{ bgcolor: 'rgba(0,0,0,0.02)' }}>
@@ -164,7 +185,12 @@ const FileTable: React.FC<FileTableProps> = ({
                 <TableBody>
                     {sortedFiles.map((file) => {
                         const isExpanded = expandedRows.has(file.task_id);
-                        const isProcessing = processingTaskId === file.task_id;
+                        const rowProcessing = (
+                            processingTaskId === file.task_id
+                            || ['transcribing', 'summarizing', 'visualizing', 'processing'].includes(file.status)
+                        );
+                        const processingDisabled = processingBlocked || rowProcessing;
+                        const hasTranscript = Boolean(file.transcript || file.transcript_available);
 
                         return (
                             <React.Fragment key={file.task_id}>
@@ -203,6 +229,7 @@ const FileTable: React.FC<FileTableProps> = ({
                                                 size="small"
                                                 onClick={(e) => { e.stopPropagation(); onDelete(file.task_id); }}
                                                 color="error"
+                                                disabled={processingBlocked || rowProcessing}
                                             >
                                                 <DeleteIcon fontSize="small" />
                                             </IconButton>
@@ -215,7 +242,7 @@ const FileTable: React.FC<FileTableProps> = ({
                                     <TableCell colSpan={5} sx={{ p: 0 }}>
                                         <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                                             <Box sx={{ p: 2, bgcolor: 'rgba(0,0,0,0.01)' }}>
-                                                {isProcessing && (
+                                                {rowProcessing && (
                                                     <LinearProgress sx={{ mb: 2 }} />
                                                 )}
 
@@ -237,7 +264,7 @@ const FileTable: React.FC<FileTableProps> = ({
                                                         size="small"
                                                         startIcon={<TranscribeIcon />}
                                                         onClick={(e) => { e.stopPropagation(); onTranscribe(file.task_id); }}
-                                                        disabled={isProcessing || file.status === 'transcribing'}
+                                                        disabled={processingDisabled || file.status === 'transcribing'}
                                                         sx={{ textTransform: 'none' }}
                                                     >
                                                         Transcribe
@@ -248,23 +275,61 @@ const FileTable: React.FC<FileTableProps> = ({
                                                         size="small"
                                                         startIcon={<SummarizeIcon />}
                                                         onClick={(e) => { e.stopPropagation(); onSummarize(file.task_id); }}
-                                                        disabled={isProcessing || !file.transcript || file.status === 'summarizing'}
+                                                        disabled={processingDisabled || !hasTranscript || file.status === 'summarizing'}
                                                         sx={{ textTransform: 'none' }}
                                                     >
                                                         Summarize
                                                     </Button>
 
-                                                    <Button
-                                                        variant="outlined"
-                                                        size="small"
-                                                        startIcon={<VisualizeIcon />}
-                                                        onClick={(e) => { e.stopPropagation(); onVisualize(file.task_id); }}
-                                                        disabled={isProcessing || !file.transcript}
-                                                        sx={{ textTransform: 'none' }}
-                                                        color="secondary"
-                                                    >
-                                                        Visualize
-                                                    </Button>
+                                                    {file.has_visualization ? (
+                                                        <>
+                                                            <Button
+                                                                variant="contained"
+                                                                size="small"
+                                                                startIcon={<ViewIcon />}
+                                                                onClick={(e) => { e.stopPropagation(); onOpenAnalysis(file.task_id); }}
+                                                                disabled={rowProcessing}
+                                                                sx={{ textTransform: 'none' }}
+                                                                color="secondary"
+                                                            >
+                                                                Open Analysis
+                                                            </Button>
+                                                            <Button
+                                                                variant="outlined"
+                                                                size="small"
+                                                                startIcon={<RefreshIcon />}
+                                                                onClick={(e) => { e.stopPropagation(); onRegenerateAnalysis(file.task_id); }}
+                                                                disabled={processingDisabled || !hasTranscript}
+                                                                sx={{ textTransform: 'none' }}
+                                                                color="secondary"
+                                                            >
+                                                                Regenerate
+                                                            </Button>
+                                                        </>
+                                                    ) : (
+                                                        <Button
+                                                            variant="outlined"
+                                                            size="small"
+                                                            startIcon={<VisualizeIcon />}
+                                                            onClick={(e) => { e.stopPropagation(); onGenerateAnalysis(file.task_id); }}
+                                                            disabled={processingDisabled || !hasTranscript}
+                                                            sx={{ textTransform: 'none' }}
+                                                            color="secondary"
+                                                        >
+                                                            Generate Analysis
+                                                        </Button>
+                                                    )}
+                                                    {file.transcript_available && !file.transcript && onLoadTranscript && (
+                                                        <Button
+                                                            variant="text"
+                                                            size="small"
+                                                            onClick={(e) => { e.stopPropagation(); onLoadTranscript(file.task_id); }}
+                                                            disabled={rowProcessing}
+                                                            sx={{ textTransform: 'none' }}
+                                                        >
+                                                            Load Transcript
+                                                        </Button>
+                                                    )}
                                                 </Box>
 
                                                 {/* Quick Preview */}

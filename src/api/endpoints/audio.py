@@ -22,7 +22,7 @@ from src.database.models.models import Case, AudioFile, Task, User
 from src.database.config.database import get_db
 from sqlalchemy.orm import Session
 import subprocess
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, Response
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import unquote
@@ -45,8 +45,14 @@ def read_audio(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get all audio files with transcript/summary from Task.result JSON"""
+    """Get audio file list.
+
+    Full mode keeps the legacy payload for compatibility. Lite mode returns
+    metadata only so dashboard/list responses do not carry transcript text,
+    segments, visualization graphs, or context analysis.
+    """
     try:
+        metadata_only = settings.APP_EDITION == "lite" or settings.PROCESSING_RUNNER == "single_job_db_lease"
         query = db.query(AudioFile)
         if case_id:
             assert_case_access(db, current_user, case_id, "read")
@@ -103,7 +109,7 @@ def read_audio(
                     except Exception as e:
                         logger.warning(f"[GET_AUDIO] Failed to parse task result for {af.id}: {e}")
 
-            result.append({
+            item = {
                 "id": af.id,
                 "audio_id": af.id,
                 "task_id": af.task_id,
@@ -115,15 +121,27 @@ def read_audio(
                 "num_speakers": num_speakers,
                 "has_diarization": has_diarization,
                 "has_visualization": has_visualization,
-                "visualization_data": visualization_data,
                 "download_url": f"/api/v1/audio/{af.id}/download",
                 "created_at": af.created_at.isoformat() if af.created_at else None,
-                "transcript": transcript,
-                "summary": summary,
-                "formatted_transcript": formatted_transcript,
-                "segments": segments,
-                "context_analysis": context_analysis,
-            })
+            }
+            if metadata_only:
+                item.update({
+                    "transcript_available": bool(transcript),
+                    "formatted_transcript_available": bool(formatted_transcript),
+                    "segments_available": bool(segments),
+                    "summary_available": bool(summary),
+                    "analysis_available": bool(visualization_data or context_analysis),
+                })
+            else:
+                item.update({
+                    "visualization_data": visualization_data,
+                    "transcript": transcript,
+                    "summary": summary,
+                    "formatted_transcript": formatted_transcript,
+                    "segments": segments,
+                    "context_analysis": context_analysis,
+                })
+            result.append(item)
 
         return result
     except HTTPException:
@@ -135,6 +153,7 @@ def read_audio(
 @router.get("/files/{file_id}/transcript")
 async def get_file_transcript(
     file_id: int,
+    response: Response,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -147,10 +166,11 @@ async def get_file_transcript(
         if not audio_file:
             raise HTTPException(status_code=404, detail="Audio file not found")
         assert_case_access(db, current_user, audio_file.case_id, "read")
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
 
         transcript = None
         summary = None
-        result_data = {}
 
         if audio_file.task_id:
             task = db.query(Task).filter(Task.id == audio_file.task_id).first()
@@ -173,7 +193,6 @@ async def get_file_transcript(
             "task_id": audio_file.task_id,
             "transcript": transcript,
             "summary": summary,
-            "result": result_data  # Include full result for compatibility
         }
     except HTTPException:
         raise

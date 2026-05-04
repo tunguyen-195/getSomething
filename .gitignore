@@ -47,6 +47,7 @@ web_interface.log
 .env.local
 .env.*
 !.env.example
+!.env.lite.example
 
 # Models and generated data
 /models/

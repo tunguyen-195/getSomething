@@ -263,6 +263,11 @@ def is_admin(user: User) -> bool:
     return bool(user.role and user.role.role_name == "admin")
 
 
+def has_role_permission(user: User, permission: str) -> bool:
+    permissions = user.role.permissions if user.role and isinstance(user.role.permissions, dict) else {}
+    return bool(permissions.get("all") or permissions.get(permission))
+
+
 def case_permission(db: Session, user: User, case_id: int) -> str | None:
     if is_admin(user):
         return "admin"

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -24,10 +24,45 @@ interface TranscribeDialogProps {
     enable_diarization: boolean;
     diarization_method: string;
     fast_mode: boolean;
+    asr_profile?: string;
   }) => void;
   filename: string;
   duration?: number;
+  runtimeProfile?: any;
 }
+
+const FALLBACK_ASR_PROFILES = [
+  {
+    value: 'rtx2050_safe',
+    label_vi: 'Nhanh',
+    description: 'faster-whisper small, CUDA int8, batch 1, không diarization.',
+    available: true,
+  },
+  {
+    value: 'balanced',
+    label_vi: 'Cân bằng',
+    description: 'faster-whisper medium, CUDA int8, dùng khi RAM/VRAM ổn định.',
+    available: true,
+  },
+  {
+    value: 'offline_cpp',
+    label_vi: 'Offline CPP',
+    description: 'whisper.cpp CLI với GGML q5_0 đã cấu hình.',
+    available: true,
+  },
+  {
+    value: 'phowhisper_cpp_candidate',
+    label_vi: 'PhoWhisper CPP candidate',
+    description: 'Chỉ dùng khi manifest và smoke test hợp lệ.',
+    available: false,
+  },
+  {
+    value: 'quality_local',
+    label_vi: 'Chất lượng cao',
+    description: 'Model local lớn hơn; cần benchmark trước khi dùng thường xuyên.',
+    available: true,
+  },
+];
 
 const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
   open,
@@ -35,16 +70,50 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
   onConfirm,
   filename,
   duration,
+  runtimeProfile,
 }) => {
   const [enableDiarization, setEnableDiarization] = useState(true);
   const [diarizationMethod, setDiarizationMethod] = useState('pyannote');
   const [fastMode, setFastMode] = useState(true);
+  const [asrProfile, setAsrProfile] = useState(runtimeProfile?.asr?.asr_profile || 'rtx2050_safe');
+
+  const asrProfiles = useMemo(() => {
+    const fromRuntime = runtimeProfile?.asr?.profiles;
+    const profiles = Array.isArray(fromRuntime) && fromRuntime.length > 0 ? fromRuntime : FALLBACK_ASR_PROFILES;
+    const currentProfile = runtimeProfile?.asr?.asr_profile;
+    if (currentProfile && !profiles.some((profile: any) => profile.value === currentProfile)) {
+      return [
+        { value: currentProfile, label_vi: currentProfile, description: 'Cấu hình ASR hiện tại từ server.', available: true },
+        ...profiles,
+      ];
+    }
+    return profiles;
+  }, [runtimeProfile]);
+
+  useEffect(() => {
+    if (!open) return;
+    const nextProfile = runtimeProfile?.asr?.asr_profile || 'rtx2050_safe';
+    setAsrProfile(nextProfile);
+    if (runtimeProfile?.edition === 'lite') {
+      setEnableDiarization(false);
+      setDiarizationMethod('none');
+    }
+  }, [open, runtimeProfile]);
+
+  const handleProfileChange = (value: string) => {
+    setAsrProfile(value);
+    if (['rtx2050_safe', 'rtx2050_fast', 'balanced', 'offline_cpp', 'phowhisper_cpp_candidate'].includes(value)) {
+      setEnableDiarization(false);
+      setDiarizationMethod('none');
+    }
+  };
 
   const handleConfirm = () => {
     onConfirm({
       enable_diarization: enableDiarization,
       diarization_method: diarizationMethod,
       fast_mode: fastMode,
+      asr_profile: asrProfile,
     });
     onClose();
   };
@@ -112,6 +181,49 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
         <Typography variant="subtitle1" fontWeight={700} color="#d32f2f" mb={2}>
           OPTIONS
         </Typography>
+
+        {/* ASR Profile */}
+        <Paper
+          elevation={0}
+          sx={{
+            p: 2,
+            mb: 2,
+            bgcolor: 'rgba(25, 118, 210, 0.05)',
+            borderRadius: '12px',
+            border: '1px solid rgba(25, 118, 210, 0.2)',
+          }}
+        >
+          <Box display="flex" alignItems="center" gap={1} mb={1}>
+            <Speed sx={{ color: '#1976d2' }} />
+            <Typography variant="subtitle2" fontWeight={700}>
+              ASR PROFILE
+            </Typography>
+          </Box>
+          <FormControl fullWidth>
+            <Select
+              value={asrProfile}
+              onChange={(e) => handleProfileChange(e.target.value)}
+              size="small"
+              sx={{ borderRadius: '8px' }}
+            >
+              {asrProfiles.map((profile: any) => (
+                <MenuItem key={profile.value} value={profile.value} disabled={profile.available === false}>
+                  <Box>
+                    <Typography fontWeight={600}>{profile.label_vi || profile.value}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {profile.description}
+                    </Typography>
+                  </Box>
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          {runtimeProfile?.edition === 'lite' && (
+            <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+              Lite mặc định dùng cấu hình an toàn cho RTX2050: int8, batch 1, một job tại một thời điểm.
+            </Typography>
+          )}
+        </Paper>
 
         {/* Speaker Diarization */}
         <Paper

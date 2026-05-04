@@ -154,7 +154,10 @@ def normalize_viz_data(viz_data: dict) -> dict:
 
 def generate_visualization(
     task_id: str,
-    visualization_type: str = "all"
+    visualization_type: str = "all",
+    analysis_mode: str = "general",
+    domain_template_ids: list[int] | None = None,
+    template_version_refs: list[dict] | None = None,
 ) -> dict:
     """
     Generate visualization data from transcript.
@@ -174,7 +177,13 @@ def generate_visualization(
     try:
         from src.services.analysis_intelligence.service import generate_task_graph
 
-        graph = generate_task_graph(task_id, visualization_type)
+        graph = generate_task_graph(
+            task_id,
+            visualization_type,
+            analysis_mode=analysis_mode,
+            domain_template_ids=domain_template_ids,
+            template_version_refs=template_version_refs,
+        )
         viz_data = graph.to_storage_dict()
 
         # Prepare response

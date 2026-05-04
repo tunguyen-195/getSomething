@@ -479,6 +479,69 @@ class Task(BaseModel):
         Index('idx_task_updated_at', 'updated_at'),
     )
 
+
+class RuntimeJobLease(BaseModel):
+    __tablename__ = 'runtime_job_leases'
+
+    lease_key = Column(String(120), nullable=False, unique=True, index=True)
+    active_task_id = Column(String, nullable=True)
+    active_operation = Column(String(30), nullable=True)
+    status = Column(String(30), nullable=False, default="idle")
+    owner_id = Column(String(200), nullable=True)
+    lease_expires_at = Column(DateTime(timezone=True), nullable=True)
+    heartbeat_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "active_operation IS NULL OR active_operation IN ('transcribe', 'summarize', 'visualize')",
+            name="check_runtime_job_operation",
+        ),
+        CheckConstraint(
+            "status IN ('idle', 'active', 'expired', 'released')",
+            name="check_runtime_job_status",
+        ),
+        Index('idx_runtime_job_status', 'status'),
+        Index('idx_runtime_job_expires', 'lease_expires_at'),
+    )
+
+
+class AnalysisDomainTemplate(BaseModel):
+    __tablename__ = 'analysis_domain_templates'
+
+    id = Column(Integer, primary_key=True, index=True)
+    template_key = Column(String(120), nullable=False)
+    version = Column(Integer, nullable=False, default=1)
+    schema_hash = Column(String(64), nullable=False)
+    parent_template_id = Column(Integer, ForeignKey('analysis_domain_templates.id'), nullable=True)
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    language = Column(String(10), nullable=False, default='vi')
+    status = Column(String(30), nullable=False, default='draft')
+    scope = Column(String(30), nullable=False, default='user')
+    owner_user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
+    case_id = Column(Integer, ForeignKey('cases.id'), nullable=True)
+    schema_json = Column(JSONB, nullable=False, default=dict)
+    examples_json = Column(JSONB, nullable=False, default=list)
+    published_at = Column(DateTime(timezone=True), nullable=True)
+    archived_at = Column(DateTime(timezone=True), nullable=True)
+
+    parent_template = relationship("AnalysisDomainTemplate", remote_side=[id])
+    owner_user = relationship("User")
+    case = relationship("Case")
+
+    __table_args__ = (
+        UniqueConstraint('template_key', 'version', name='uq_analysis_template_key_version'),
+        CheckConstraint("version > 0", name="check_analysis_template_version_positive"),
+        CheckConstraint("status IN ('draft', 'published', 'archived')", name="check_analysis_template_status"),
+        CheckConstraint("scope IN ('global', 'user', 'case')", name="check_analysis_template_scope"),
+        Index('idx_analysis_template_key', 'template_key'),
+        Index('idx_analysis_template_status', 'status'),
+        Index('idx_analysis_template_scope', 'scope'),
+        Index('idx_analysis_template_owner', 'owner_user_id'),
+        Index('idx_analysis_template_case', 'case_id'),
+    )
+
+
 class Summary(BaseModel):
     __tablename__ = 'summaries'
     id = Column(Integer, primary_key=True, index=True)

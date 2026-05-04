@@ -73,6 +73,9 @@ def _all_item_lists(graph_data: dict[str, Any]) -> list[list[dict[str, Any]]]:
         graph_data.setdefault("relations", []),
         graph_data.setdefault("events", []),
         graph_data.setdefault("claims", []),
+        graph_data.setdefault("facts", []),
+        graph_data.setdefault("risk_flags", []),
+        graph_data.setdefault("slots", []),
     ]
 
 

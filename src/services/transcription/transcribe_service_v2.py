@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import Dict, Optional
 from fastapi import HTTPException
 
-from .models.whisper_manager import get_whisper_manager
-from .models.pyannote_manager import get_pyannote_manager
 from src.services.task_service import get_task, update_task
 from src.database.models.models import AudioFile
 from src.core.logging import logger
 from src.services.audio_storage import resolve_audio_path
+from src.core.config import settings
+from src.services.transcription.asr_providers import transcribe_with_provider
 
 
 def transcribe_audio_v2(
@@ -22,7 +22,8 @@ def transcribe_audio_v2(
     enable_diarization: bool = True,
     diarization_method: str = "pyannote",
     language: str = "vi",
-    fast_mode: bool = True
+    fast_mode: bool = True,
+    asr_profile: str | None = None,
 ) -> Dict:
     """
     Transcribe audio file using configured engine.
@@ -39,7 +40,7 @@ def transcribe_audio_v2(
 
     try:
         # Get task and audio file
-        task = get_task(task_id)
+        task = get_task(task_id, db=db)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
 
@@ -52,148 +53,59 @@ def transcribe_audio_v2(
             raise HTTPException(status_code=404, detail=f"Audio file not found: {audio_path}")
 
         # Update status to transcribing
-        update_task(task_id, {"status": "transcribing"})
+        update_task(task_id, {"status": "transcribing"}, db=db)
         audio_file.status = "transcribing"
         db.commit()
 
-        # CHERRY CORE INTEGRATION (Offline & Enhanced)
-        # Use Cherry adapters if available
-        USE_CHERRY_CORE = True # Enforced for this version
-
         segments = []
-        full_text_parts = []
-        num_speakers = 1
         diarization_time = 0
-        duration = 0
-        info = None
+        asr_result = transcribe_with_provider(
+            audio_path=str(audio_path),
+            language=language,
+            profile=asr_profile or settings.ASR_PROFILE,
+            enable_diarization=enable_diarization,
+            diarization_method=diarization_method,
+            task_id=task_id,
+        )
+        segments = asr_result.get("segments", [])
+        duration = float(asr_result.get("duration") or 0.0)
+        language = asr_result.get("language") or language
+        num_speakers = 1
 
-        if USE_CHERRY_CORE:
-            try:
-                from src.services.transcription.cherry_transcription_service import get_cherry_transcriber
-                logger.info("[TRANSCRIBE_V2] Using Cherry Core Engine (Offline Mode)")
-                cherry_svc = get_cherry_transcriber()
+        speakers_found = {seg.get("speaker") for seg in segments if seg.get("speaker")}
+        if speakers_found:
+            num_speakers = len(speakers_found)
 
-                # Force Whisper V2 for all languages as requested by user
-                model_type_sel = "whisper"
+        if enable_diarization and num_speakers <= 1 and diarization_method != "none":
+            from .models.pyannote_manager import get_pyannote_manager
 
-                # Use Cherry Transcriber
-                cherry_result = cherry_svc.transcribe(
-                    audio_path=str(audio_path),
-                    language=language,
-                    enable_diarization=enable_diarization,
-                    model_type=model_type_sel
-                )
-
-                # Adapt result to existing variables
-                segments = cherry_result['segments']
-                duration = cherry_result['duration']
-                full_text_parts = [str(s.get('text', '')) for s in segments]
-
-                num_speakers = cherry_result['num_speakers']
-                diarization_time = cherry_result['diarization_time']
-
-                # Set generic info object for logging compatibility
-                class InfoStub:
-                    def __init__(self, lang, dur):
-                        self.language = lang
-                        self.duration = dur
-                info = InfoStub(language, duration)
-
-            except ImportError as e:
-                logger.error(f"[TRANSCRIBE_V2] Cherry Core import failed: {e}. Falling back to legacy.")
-                USE_CHERRY_CORE = False
-            except Exception as e:
-                logger.error(f"[TRANSCRIBE_V2] Cherry Core execution failed: {e}. Falling back to legacy.")
-                USE_CHERRY_CORE = False
-
-        if not USE_CHERRY_CORE:
-            # ORIGINAL LOGIC
-            whisper_mgr = get_whisper_manager()
-            logger.info("[TRANSCRIBE_V2] Legacy Whisper manager ready")
-
-            # Step 1: Transcribe with Whisper
-            whisper_params = {
-                "language": language,
-                "beam_size": 1,
-                "temperature": 0.0,
-                "compression_ratio_threshold": 2.4,
-                "log_prob_threshold": -1.0,
-                "no_speech_threshold": 0.5,
-                "initial_prompt": "Tiếng Việt",
-                "vad_filter": True,
-                "vad_parameters": {
-                    "threshold": 0.4,
-                    "min_speech_duration_ms": 200,
-                    "min_silence_duration_ms": 1500,
-                    "speech_pad_ms": 800,
-                },
-                "word_timestamps": True,
-                "condition_on_previous_text": False,
-            }
-
-            segments_iter, info = whisper_mgr.transcribe(str(audio_path), **whisper_params)
-
-            # Filter logic (simplified for brevity, main anti-hallucination)
-            prompt_texts = ["tiếng việt", "hãy chuyển đổi"]
-            yt_patterns = ["subscribe", "đăng ký kênh", "thanks for watching"]
-
-            for segment in segments_iter:
-                text = segment.text.strip()
-                text_lower = text.lower()
-                is_valid = True
-
-                # Filter prompts
-                for p in prompt_texts:
-                    if p in text_lower and len(text) < 50:
-                        is_valid = False; break
-
-                if is_valid:
-                    # Filter YT
-                    for yt in yt_patterns:
-                        if yt in text_lower and len(text) < 100:
-                             is_valid = False; break
-
-                if is_valid:
-                    seg_dict = {
-                        'start': segment.start,
-                        'end': segment.end,
-                        'text': text,
-                        'speaker': None,
-                        'confidence': getattr(segment, 'avg_logprob', None)
-                    }
-                    segments.append(seg_dict)
-                    full_text_parts.append(text)
-
-            duration = info.duration
-
-            # Step 2: Diarization (Legacy)
-            if enable_diarization:
-                pyannote_mgr = get_pyannote_manager()
-                if pyannote_mgr.is_available():
-                    diar_start = time.time()
-                    diarization_segments = pyannote_mgr.diarize(str(audio_path))
-                    if diarization_segments:
-                        speakers_found = set()
-                        for seg in segments:
-                            # Merge logic (simplified)
-                            start, end = seg['start'], seg['end']
-                            best_overlap, best_spk = 0, None
-                            for dia_seg in diarization_segments:
-                                o_start = max(start, dia_seg["start"])
-                                o_end = min(end, dia_seg["end"])
-                                if o_end > o_start:
-                                    ratio = (o_end - o_start) / (end - start)
-                                    if ratio > best_overlap:
-                                        best_overlap, best_spk = ratio, dia_seg["speaker"]
-                            if best_spk and best_overlap > 0.3:
-                                seg['speaker'] = best_spk
-                                speakers_found.add(best_spk)
-                        num_speakers = len(speakers_found)
-                        diarization_time = time.time() - diar_start
+            pyannote_mgr = get_pyannote_manager()
+            if pyannote_mgr.is_available():
+                diar_start = time.time()
+                diarization_segments = pyannote_mgr.diarize(str(audio_path))
+                if diarization_segments:
+                    speakers_found = set()
+                    for seg in segments:
+                        start, end = seg['start'], seg['end']
+                        best_overlap, best_spk = 0, None
+                        for dia_seg in diarization_segments:
+                            o_start = max(start, dia_seg["start"])
+                            o_end = min(end, dia_seg["end"])
+                            if o_end > o_start:
+                                ratio = (o_end - o_start) / (end - start) if end > start else 0
+                                if ratio > best_overlap:
+                                    best_overlap, best_spk = ratio, dia_seg["speaker"]
+                        if best_spk and best_overlap > 0.3:
+                            seg['speaker'] = best_spk
+                            speakers_found.add(best_spk)
+                    num_speakers = len(speakers_found) if speakers_found else 1
+                    diarization_time = time.time() - diar_start
 
         # Step 3: Format output (Common)
         formatted_transcript = ""
-        full_transcript = " ".join(full_text_parts)
+        full_transcript = asr_result.get("text") or " ".join(
+            str(seg.get("text", "")).strip() for seg in segments if str(seg.get("text", "")).strip()
+        )
 
         if enable_diarization and num_speakers > 1:
             for seg in segments:
@@ -227,9 +139,13 @@ def transcribe_audio_v2(
             "diarization_time": diarization_time,
             "speed_factor": speed_factor,
             "diarization_method": diarization_method if enable_diarization else "none",
-            "language": info.language if info else "vi",
+            "language": language,
             "transcript_file": transcript_file,
-            "fast_mode": fast_mode
+            "fast_mode": fast_mode,
+            "asr_provider": asr_result.get("provider"),
+            "asr_profile": asr_profile or settings.ASR_PROFILE,
+            "model_info": asr_result.get("model_info", {}),
+            "warnings": asr_result.get("warnings", []),
         }
 
         result_dict = response.copy()
@@ -249,7 +165,7 @@ def transcribe_audio_v2(
             "num_speakers": num_speakers,
             "duration": duration,
             "processing_time": total_time
-        })
+        }, db=db)
 
         audio_file.status = "transcribed"
         audio_file.duration = duration
@@ -261,7 +177,7 @@ def transcribe_audio_v2(
     except Exception as e:
         logger.error(f"[TRANSCRIBE_V2] Error: {e}", exc_info=True)
         try:
-            update_task(task_id, {"status": "failed", "error": str(e)})
+            update_task(task_id, {"status": "failed", "error": str(e)}, db=db)
             if 'audio_file' in locals() and audio_file:
                 audio_file.status = "failed"
                 db.commit()

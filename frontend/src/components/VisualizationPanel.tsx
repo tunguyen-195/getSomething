@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Typography,
@@ -23,12 +23,12 @@ import {
   Hub as HubIcon,
   AccessTime as TimeIcon,
 } from '@mui/icons-material';
-import { getLegacyVisualizationData } from '../utils/visualization';
+import { AnalysisGraphV2, LegacyVisualizationData, getLegacyVisualizationData } from '../utils/visualization';
 
-interface VisualizationData {
-  nodes?: Array<{ id: string; label: string; type?: string }>;
-  edges?: Array<{ from: string; to: string; label?: string }>;
-  timeline?: Array<{ time?: string; event: string }>;
+interface VisualizationData extends LegacyVisualizationData {
+  nodes?: Array<Record<string, any>>;
+  edges?: Array<Record<string, any>>;
+  timeline?: Array<Record<string, any>>;
   main_events?: string[];
   entity_types?: string[];
   legacy_view?: VisualizationData;
@@ -38,25 +38,45 @@ interface FileWithVisualization {
   task_id: string;
   filename: string;
   has_visualization?: boolean;
-  visualization_data?: VisualizationData;
+  visualization_data?: VisualizationData | AnalysisGraphV2 | null;
 }
 
 interface VisualizationPanelProps {
   files: FileWithVisualization[];
+  focusTaskId?: string | null;
+  showFileSelector?: boolean;
 }
 
-const VisualizationPanel: React.FC<VisualizationPanelProps> = ({ files }) => {
+const VisualizationPanel: React.FC<VisualizationPanelProps> = ({ files, focusTaskId = null, showFileSelector = true }) => {
   const [activeTab, setActiveTab] = useState(0);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<string | null>(focusTaskId);
 
-  const filesWithViz = files.filter(f => f.has_visualization && f.visualization_data);
+  const filesWithViz = useMemo(
+    () => files.filter(f => f.has_visualization && f.visualization_data),
+    [files],
+  );
+
+  useEffect(() => {
+    if (focusTaskId && filesWithViz.some(f => f.task_id === focusTaskId)) {
+      setSelectedFile(focusTaskId);
+      return;
+    }
+
+    setSelectedFile(prev => {
+      if (prev && filesWithViz.some(f => f.task_id === prev)) {
+        return prev;
+      }
+      return filesWithViz[0]?.task_id || null;
+    });
+  }, [focusTaskId, filesWithViz]);
 
   // Get combined data from all files or selected file
   const getVisualizationData = (): VisualizationData => {
-    if (selectedFile) {
-      const file = filesWithViz.find(f => f.task_id === selectedFile);
-      return getLegacyVisualizationData(file?.visualization_data);
+    const file = filesWithViz.find(f => f.task_id === selectedFile) || filesWithViz[0];
+    if (file) {
+      return getLegacyVisualizationData(file.visualization_data);
     }
+
     // Combine all visualization data
     const combined: VisualizationData = {
       nodes: [],
@@ -152,16 +172,10 @@ const VisualizationPanel: React.FC<VisualizationPanelProps> = ({ files }) => {
       </Box>
 
       {/* File selector (if multiple files) */}
-      {filesWithViz.length > 1 && (
+      {showFileSelector && filesWithViz.length > 1 && (
         <Box mb={3}>
           <Typography variant="subtitle2" mb={1}>Select file:</Typography>
           <Box display="flex" flexWrap="wrap" gap={1}>
-            <Chip
-              label="All files"
-              variant={selectedFile === null ? "filled" : "outlined"}
-              color="primary"
-              onClick={() => setSelectedFile(null)}
-            />
             {filesWithViz.map(f => (
               <Chip
                 key={f.task_id}

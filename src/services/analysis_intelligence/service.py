@@ -7,17 +7,19 @@ from fastapi import HTTPException
 from src.core.config import settings
 from src.services.task_service import get_task
 
-from .extractor import extract_entities
+from .extractor import CORE_EXTRACTOR_VERSION, extract_core_analysis
 from .schemas import AnalysisGraphV2, EvidenceRef, EntityItem, SegmentUnit, sha256_text, stable_id
 from .segment_builder import build_segments, transcript_from_task
 
 
-def _model_info(source_method: str = "regex") -> dict[str, Any]:
+def _model_info(source_method: str = "deterministic_regex", llm_status: str | None = None) -> dict[str, Any]:
+    llm_enabled = bool(getattr(settings, "ANALYSIS_INTELLIGENCE_LLM_ENABLED", False))
     return {
         "engine": "analysis_intelligence",
         "version": "v2",
         "source_method": source_method,
-        "llm_enabled": bool(getattr(settings, "ANALYSIS_INTELLIGENCE_LLM_ENABLED", False)),
+        "llm_enabled": llm_enabled,
+        "llm_status": llm_status or ("disabled" if not llm_enabled else "not_implemented_for_v2_extraction"),
     }
 
 
@@ -25,13 +27,13 @@ def apply_review_preservation(graph: AnalysisGraphV2, previous: dict[str, Any] |
     if not isinstance(previous, dict) or previous.get("schema_version") != graph.schema_version:
         return graph
     previous_items: dict[str, dict[str, Any]] = {}
-    for key in ("entities", "relations", "events", "claims"):
+    for key in ("entities", "relations", "events", "claims", "facts", "risk_flags", "slots"):
         for item in previous.get(key, []) or []:
             if isinstance(item, dict) and item.get("id"):
                 previous_items[item["id"]] = item
 
     changed = graph.to_storage_dict()
-    for key in ("entities", "relations", "events", "claims"):
+    for key in ("entities", "relations", "events", "claims", "facts", "risk_flags", "slots"):
         for item in changed.get(key, []) or []:
             previous_item = previous_items.get(item.get("id"))
             if not previous_item:
@@ -52,7 +54,13 @@ def apply_review_preservation(graph: AnalysisGraphV2, previous: dict[str, Any] |
     return AnalysisGraphV2(**changed)
 
 
-def generate_task_graph(task_id: str, visualization_type: str = "all") -> AnalysisGraphV2:
+def generate_task_graph(
+    task_id: str,
+    visualization_type: str = "all",
+    analysis_mode: str = "general",
+    domain_template_ids: list[int] | None = None,
+    template_version_refs: list[dict[str, Any]] | None = None,
+) -> AnalysisGraphV2:
     if not getattr(settings, "ANALYSIS_INTELLIGENCE_V2_ENABLED", True):
         raise HTTPException(status_code=503, detail="Analysis intelligence V2 is disabled")
 
@@ -67,18 +75,38 @@ def generate_task_graph(task_id: str, visualization_type: str = "all") -> Analys
         )
     result = task.get("result") if isinstance(task.get("result"), dict) else {}
     segments = build_segments(task)
-    entities = extract_entities(segments)
+    core = extract_core_analysis(segments)
     previous = result.get("visualization_data") if isinstance(result, dict) else None
+    warnings: list[str] = []
+    normalized_mode = analysis_mode if analysis_mode in {"general", "selected"} else "general"
+    if analysis_mode not in {"general", "selected"}:
+        warnings.append("analysis_mode không hợp lệ, đã fallback về general")
+    selected_template_ids = (domain_template_ids or []) if normalized_mode == "selected" else []
+    template_refs = (template_version_refs or []) if normalized_mode == "selected" else []
+    if normalized_mode == "selected" and not selected_template_ids:
+        warnings.append("Chưa chọn mẫu phân tích; kết quả chỉ gồm phân tích tổng quát deterministic.")
+    if selected_template_ids and not getattr(settings, "ANALYSIS_INTELLIGENCE_LLM_ENABLED", False):
+        warnings.append("LLM analysis đang tắt; mẫu phân tích được ghi nhận nhưng chưa chạy slot extraction LLM.")
+    if selected_template_ids and getattr(settings, "ANALYSIS_INTELLIGENCE_LLM_ENABLED", False):
+        warnings.append("LLM provider đã cấu hình nhưng V2 slot extraction LLM chưa được bật trong build này; kết quả vẫn là deterministic.")
+
     graph = AnalysisGraphV2(
         task_id=task_id,
         audio_id=result.get("audio_id") if isinstance(result, dict) else None,
         source_file=task.get("filename"),
         model_info=_model_info(),
+        analysis_mode=normalized_mode,  # type: ignore[arg-type]
+        extractor_versions={"core": CORE_EXTRACTOR_VERSION},
+        selected_template_ids=selected_template_ids,
+        template_version_refs=template_refs,
+        warnings=warnings,
         segments=segments,
-        entities=entities,
+        entities=core.entities,
         relations=[],
         events=[],
         claims=[],
+        facts=core.facts,
+        risk_flags=core.risk_flags,
     )
     return apply_review_preservation(graph, previous)
 
@@ -97,13 +125,26 @@ def generate_text_graph(
         text=clean_text,
         source_text_sha256=sha256_text(clean_text),
     )
-    entities = extract_entities([segment])
+    core = extract_core_analysis([segment])
+    entities = core.entities
     for entity in entities:
         entity.source_method = source_method
         entity.requires_review = True
         if entity.review_status == "machine_suggested":
             entity.review_status = "needs_review"
         for ref in entity.evidence_refs:
+            ref.source_kind = source_kind  # type: ignore[assignment]
+            ref.audio_id = None
+            ref.segment_id = None
+            ref.start_time = None
+            ref.end_time = None
+            ref.speaker_id = None
+    for item in [*core.facts, *core.risk_flags]:
+        item.source_method = source_method
+        item.requires_review = True
+        if item.review_status == "machine_suggested":
+            item.review_status = "needs_review"
+        for ref in item.evidence_refs:
             ref.source_kind = source_kind  # type: ignore[assignment]
             ref.audio_id = None
             ref.segment_id = None
@@ -117,4 +158,6 @@ def generate_text_graph(
         relations=[],
         events=[],
         claims=[],
+        facts=core.facts,
+        risk_flags=core.risk_flags,
     )

@@ -1,6 +1,6 @@
 """
-LLM Manager - Singleton Pattern for Ollama
-Lazy loading, optional usage (không gọi mặc định)
+LLM Manager - Singleton Pattern for configured LLM providers.
+Lazy loading, optional usage (không gọi mặc định).
 """
 import logging
 import requests
@@ -27,16 +27,71 @@ class LLMManager:
 
     def __init__(self):
         if not self._initialized:
-            self._api_url = "http://localhost:11434/api/generate"
-            # Default to gpt-oss:latest if available, otherwise fallback to gemma2:9b
-            self._default_model = settings.DEFAULT_AI_MODEL if hasattr(settings, 'DEFAULT_AI_MODEL') else "gpt-oss:latest"
+            self._provider = (settings.ANALYSIS_LLM_PROVIDER or "ollama").lower()
+            self._base_url = (settings.ANALYSIS_LLM_BASE_URL or "http://localhost:11434").rstrip("/")
+            self._api_url = f"{self._base_url}/api/generate"
+            self._default_model = settings.ANALYSIS_LLM_MODEL or "gpt-oss:latest"
             self._initialized = True
-            logger.info(f"[LLM_MANAGER] Initialized (lazy mode)")
+            logger.info("[LLM_MANAGER] Initialized | provider=%s | model=%s", self._provider, self._default_model)
+
+    def _is_chat_provider(self) -> bool:
+        return self._provider in {"openai", "openai_compatible", "llama_cpp_server"}
+
+    def _auth_headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if settings.ANALYSIS_LLM_API_KEY:
+            headers["Authorization"] = f"Bearer {settings.ANALYSIS_LLM_API_KEY}"
+        return headers
+
+    def _chat_url(self) -> str:
+        return f"{self._base_url}/chat/completions"
+
+    def _bounded_prompt(self, prompt: str) -> str:
+        max_chars = settings.ANALYSIS_LLM_MAX_INPUT_CHARS
+        if max_chars and len(prompt) > max_chars:
+            logger.warning(
+                "[LLM_MANAGER] Prompt truncated by ANALYSIS_LLM_MAX_INPUT_CHARS | original_chars=%s | max_chars=%s",
+                len(prompt),
+                max_chars,
+            )
+            return prompt[:max_chars]
+        return prompt
+
+    def _bounded_max_tokens(self, requested: int) -> int:
+        configured = settings.ANALYSIS_LLM_MAX_OUTPUT_TOKENS
+        if configured and requested > configured:
+            return configured
+        return requested
 
     def check_availability(self) -> bool:
-        """Check if Ollama is running and available"""
+        """Check if the configured provider is available."""
+        if self._is_chat_provider():
+            if self._provider in {"openai", "openai_compatible"} and not settings.ANALYSIS_LLM_API_KEY:
+                logger.warning("[LLM_MANAGER] API key is missing for provider=%s", self._provider)
+                return False
+            try:
+                response = requests.get(
+                    f"{self._base_url}/models",
+                    headers=self._auth_headers(),
+                    timeout=min(10, settings.ANALYSIS_LLM_TIMEOUT_SECONDS),
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    models = data.get("data", []) if isinstance(data, dict) else []
+                    self._available_models = [
+                        str(item.get("id"))
+                        for item in models
+                        if isinstance(item, dict) and item.get("id")
+                    ]
+                    return True
+                logger.warning("[LLM_MANAGER] Provider availability failed | status=%s", response.status_code)
+            except Exception as e:
+                logger.warning("[LLM_MANAGER] Provider not available | provider=%s | error=%s", self._provider, e)
+            return False
+
+        # Ollama native API.
         try:
-            response = requests.get("http://localhost:11434/api/tags", timeout=2)
+            response = requests.get(f"{self._base_url}/api/tags", timeout=2)
             if response.status_code == 200:
                 data = response.json()
                 self._available_models = [m['name'] for m in data.get('models', [])]
@@ -57,6 +112,12 @@ class LLMManager:
         Select best available model
         Priority: preferred > gpt-oss:20b > gpt-oss:latest > gemma2:9b > deepseek-r1:7b > first available
         """
+        if self._is_chat_provider():
+            if preferred:
+                return preferred
+            if self._default_model:
+                return self._default_model
+
         models = self.get_available_models()
 
         if not models:
@@ -106,12 +167,22 @@ class LLMManager:
             Generated text
         """
         if not self.check_availability():
-            raise Exception("Ollama is not available")
+            raise Exception(f"LLM provider is not available: {self._provider}")
 
         if model is None:
             model = self.select_best_model()
 
-        logger.info(f"[LLM_MANAGER] Generating with model: {model}")
+        prompt = self._bounded_prompt(prompt)
+        max_tokens = self._bounded_max_tokens(max_tokens)
+        logger.info("[LLM_MANAGER] Generating | provider=%s | model=%s", self._provider, model)
+
+        if self._is_chat_provider():
+            return self._generate_chat_completion(
+                prompt=prompt,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
 
         try:
             payload = {
@@ -175,10 +246,49 @@ class LLMManager:
             raise Exception(f"LLM request timeout after {read_timeout}s. The prompt may be too long or Ollama is slow.")
         except requests.exceptions.ConnectionError as e:
             logger.error(f"[LLM_MANAGER] Connection error: {e}")
-            raise Exception("Cannot connect to Ollama. Please ensure Ollama is running on localhost:11434")
+            raise Exception(f"Cannot connect to LLM provider: {self._provider}")
         except Exception as e:
             logger.error(f"[LLM_MANAGER] Generation failed: {e}", exc_info=True)
             raise
+
+    def _generate_chat_completion(
+        self,
+        *,
+        prompt: str,
+        model: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        timeout = settings.ANALYSIS_LLM_TIMEOUT_SECONDS
+        try:
+            response = requests.post(
+                self._chat_url(),
+                json=payload,
+                headers=self._auth_headers(),
+                timeout=(10, timeout),
+            )
+            if response.status_code != 200:
+                raise Exception(f"LLM API error: {response.status_code} - {response.text[:300]}")
+            data = response.json()
+            choices = data.get("choices") or []
+            if not choices:
+                return ""
+            message = choices[0].get("message") if isinstance(choices[0], dict) else None
+            if isinstance(message, dict):
+                return str(message.get("content") or "")
+            return str(choices[0].get("text") or "")
+        except requests.exceptions.Timeout as e:
+            logger.error("[LLM_MANAGER] Chat completion timeout: %s", e)
+            raise Exception(f"LLM request timeout after {timeout}s")
+        except requests.exceptions.ConnectionError as e:
+            logger.error("[LLM_MANAGER] Chat completion connection error: %s", e)
+            raise Exception(f"Cannot connect to LLM provider: {self._provider}")
 
     def analyze_context(self, text: str, model: str = None) -> Dict:
         """

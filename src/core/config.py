@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     ENABLE_API_DOCS: bool = True
     VERSION: str = "0.1.0"
     DESCRIPTION: str = "Speech to Information API"
+    APP_EDITION: str = "full"
+    APP_DISPLAY_NAME: str = "Speech to Information"
+    RUNTIME_PROFILE: str = "full"
+    PROCESSING_RUNNER: str = "celery"
+    MAX_ACTIVE_JOBS: int = 1
+    LITE_JOB_LEASE_TTL_SECONDS: int = 900
+    LITE_JOB_HEARTBEAT_SECONDS: int = 15
+    UVICORN_RELOAD: bool = False
 
     # Database
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/speech_to_info"
@@ -39,10 +47,21 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
 
     # Model
+    ASR_PROVIDER: str = "cherry_whisper_v2"
+    ASR_PROFILE: str = "full"
+    ENABLE_DIARIZATION_DEFAULT: bool = True
     WHISPER_MODEL: str = "large-v3-turbo"  # Upgraded from large-v2 (6-7x faster, better accuracy)
     WHISPER_USE_LOCAL: bool = True  # Use local cached model for offline mode
     WHISPER_MODEL_PATH: str = "models/whisper"  # Local model cache directory
     WHISPER_FAST_MODE: bool = True  # Skip heavy LLM post-processing (31x speed vs 3x)
+    WHISPER_CPP_BIN: str = "tools/whisper.cpp/whisper-cli.exe"
+    WHISPER_CPP_MODEL: str = "models/asr/whisper_cpp/ggml-small-q5_0.bin"
+    WHISPER_CPP_THREADS: int = 6
+    WHISPER_CPP_LANGUAGE: str = "vi"
+    WHISPER_CPP_TIMEOUT_SECONDS: int = 3600
+    PHOWHISPER_CPP_MODEL: str = "models/asr/phowhisper_cpp/ggml-phowhisper-large-q5_0.bin"
+    PHOWHISPER_CPP_SHA256: str = "1ECFF4DB87EF84AD1356D2955D2ECEA03E6C240B46FE1CA87F07EA8390E3109C"
+    PHOWHISPER_CPP_SIZE_BYTES: int = 1080732108
     HF_TOKEN: str = ""  # HuggingFace token for gated models (pyannote)
     PYANNOTE_MODEL_ID: str = "pyannote/speaker-diarization-community-1"
     PYANNOTE_FALLBACK_MODEL_ID: str = "pyannote/speaker-diarization-3.1"
@@ -55,6 +74,15 @@ class Settings(BaseSettings):
     ANALYSIS_INTELLIGENCE_V2_ENABLED: bool = True
     ANALYSIS_INTELLIGENCE_LLM_ENABLED: bool = False
     ANALYSIS_CLIP_MAX_DURATION_SECONDS: int = 60
+    ANALYSIS_LLM_PROVIDER: str = "ollama"  # ollama, openai_compatible, custom_http
+    ANALYSIS_LLM_BASE_URL: str = "http://localhost:11434"
+    ANALYSIS_LLM_MODEL: str = "gpt-oss"
+    ANALYSIS_LLM_FALLBACK_MODEL: str = "gpt-4.1-mini"
+    ANALYSIS_LLM_API_KEY: str = ""
+    ANALYSIS_LLM_TIMEOUT_SECONDS: int = 60
+    ANALYSIS_LLM_MAX_INPUT_CHARS: int = 24000
+    ANALYSIS_LLM_MAX_OUTPUT_TOKENS: int = 2000
+    ANALYSIS_LLM_DAILY_BUDGET_USD: str = ""
 
     # Language & AI Model Settings
     DEFAULT_LANGUAGE: str = "vi"  # Tiếng Việt

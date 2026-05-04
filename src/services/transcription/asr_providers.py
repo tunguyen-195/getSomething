@@ -1,0 +1,611 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
+import tempfile
+import time
+from pathlib import Path
+from typing import Any
+
+from src.core.config import settings
+from src.core.logging import logger
+
+
+class ASRProviderError(RuntimeError):
+    pass
+
+
+_PHOWHISPER_VALIDATION_CACHE: dict[str, Any] = {}
+
+
+ASR_PROFILE_PRESETS: dict[str, dict[str, Any]] = {
+    "rtx2050_safe": {
+        "label_vi": "Nhanh",
+        "provider": "faster_whisper_ct2",
+        "model": "small",
+        "device": "cuda",
+        "compute_type": "int8",
+        "beam_size": 5,
+        "enable_diarization": False,
+        "description": "RTX2050 safe default: small/cuda/int8/batch 1.",
+    },
+    "rtx2050_fast": {
+        "label_vi": "Nhanh benchmark",
+        "provider": "faster_whisper_ct2",
+        "model": "small",
+        "device": "cuda",
+        "compute_type": "int8_float16",
+        "beam_size": 5,
+        "enable_diarization": False,
+        "description": "Only promote after no-OOM benchmark on the target RTX2050 machine.",
+    },
+    "balanced": {
+        "label_vi": "Cân bằng",
+        "provider": "faster_whisper_ct2",
+        "model": "medium",
+        "device": "cuda",
+        "compute_type": "int8",
+        "beam_size": 5,
+        "enable_diarization": False,
+        "description": "Medium/cuda/int8 for better recall when VRAM/RAM is stable.",
+    },
+    "cpu_safe": {
+        "label_vi": "CPU an toàn",
+        "provider": "faster_whisper_ct2",
+        "model": "small",
+        "device": "cpu",
+        "compute_type": "int8",
+        "beam_size": 5,
+        "enable_diarization": False,
+        "description": "CPU fallback profile.",
+    },
+    "offline_cpp": {
+        "label_vi": "Offline CPP",
+        "provider": "whisper_cpp_cli",
+        "model": "whisper_cpp",
+        "description": "whisper.cpp CLI provider using configured GGML model.",
+    },
+    "phowhisper_cpp_candidate": {
+        "label_vi": "PhoWhisper CPP candidate",
+        "provider": "phowhisper_cpp_cli",
+        "model": "phowhisper-large-q5_0",
+        "description": "Hidden unless source manifest and smoke test are valid.",
+    },
+    "quality_local": {
+        "label_vi": "Chất lượng cao",
+        "provider": "faster_whisper_ct2",
+        "model": "large-v3-turbo",
+        "device": "cuda",
+        "compute_type": "int8",
+        "beam_size": 5,
+        "enable_diarization": False,
+        "description": "Higher quality local ASR profile; benchmark before using as default.",
+    },
+}
+
+
+def _warnings(*items: str | None) -> list[str]:
+    return [item for item in items if item]
+
+
+def _segment_words(segment: Any) -> list[dict[str, Any]]:
+    words = getattr(segment, "words", None) or []
+    output = []
+    for word in words:
+        output.append(
+            {
+                "word": getattr(word, "word", ""),
+                "start": getattr(word, "start", None),
+                "end": getattr(word, "end", None),
+                "probability": getattr(word, "probability", None),
+            }
+        )
+    return output
+
+
+def _from_segments(segments: list[dict[str, Any]], *, duration: float, language: str, provider: str, model_info: dict[str, Any], warnings: list[str], processing_time: float) -> dict[str, Any]:
+    text = " ".join(str(seg.get("text", "")).strip() for seg in segments if str(seg.get("text", "")).strip()).strip()
+    return {
+        "text": text,
+        "segments": segments,
+        "duration": duration,
+        "language": language,
+        "provider": provider,
+        "model_info": model_info,
+        "warnings": warnings,
+        "processing_time": processing_time,
+    }
+
+
+def _is_oom(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "out of memory" in text or "cuda" in text and "memory" in text
+
+
+def resolve_asr_runtime(profile: str | None) -> dict[str, Any]:
+    profile_name = profile or settings.ASR_PROFILE
+    preset = ASR_PROFILE_PRESETS.get(profile_name, {})
+    return {
+        "profile": profile_name,
+        "provider": preset.get("provider") or settings.ASR_PROVIDER,
+        "model": preset.get("model") or settings.WHISPER_MODEL,
+        "device": preset.get("device") or settings.WHISPER_DEVICE,
+        "compute_type": preset.get("compute_type") or settings.WHISPER_COMPUTE_TYPE,
+        "beam_size": int(preset.get("beam_size") or settings.WHISPER_BEAM_SIZE),
+        "enable_diarization": preset.get("enable_diarization"),
+        "description": preset.get("description"),
+    }
+
+
+def _faster_whisper_result(
+    audio_path: str,
+    *,
+    language: str,
+    runtime: dict[str, Any],
+    warning_prefix: str | None = None,
+    force_cpu: bool = False,
+) -> dict[str, Any]:
+    start = time.time()
+    from faster_whisper import WhisperModel
+    from src.services.transcription.models.whisper_manager import get_whisper_manager
+
+    model_name = runtime["model"]
+    model_cache_dir = Path(settings.WHISPER_MODEL_PATH)
+    model_cache_dir.mkdir(parents=True, exist_ok=True)
+    runtime_device = runtime["device"]
+    runtime_compute_type = runtime["compute_type"]
+
+    if runtime_device == "cuda":
+        try:
+            import torch
+
+            if not torch.cuda.is_available():
+                runtime_device = "cpu"
+                runtime_compute_type = "int8"
+                warning_prefix = warning_prefix or "cuda_unavailable_retry_cpu_int8"
+        except Exception:
+            runtime_device = "cpu"
+            runtime_compute_type = "int8"
+            warning_prefix = warning_prefix or "cuda_probe_failed_retry_cpu_int8"
+
+    if force_cpu:
+        model = WhisperModel(
+            model_name,
+            device="cpu",
+            compute_type="int8",
+            download_root=str(model_cache_dir.absolute()),
+        )
+        transcribe = model.transcribe
+        device = "cpu"
+        compute_type = "int8"
+    elif (
+        model_name != settings.WHISPER_MODEL
+        or runtime_device != settings.WHISPER_DEVICE
+        or runtime_compute_type != settings.WHISPER_COMPUTE_TYPE
+    ):
+        model = WhisperModel(
+            model_name,
+            device=runtime_device,
+            compute_type=runtime_compute_type,
+            download_root=str(model_cache_dir.absolute()),
+        )
+        transcribe = model.transcribe
+        device = runtime_device
+        compute_type = runtime_compute_type
+    else:
+        manager = get_whisper_manager()
+        transcribe = manager.transcribe
+        device = settings.WHISPER_DEVICE
+        compute_type = settings.WHISPER_COMPUTE_TYPE
+
+    segments_iter, info = transcribe(
+        audio_path,
+        language=language,
+        beam_size=runtime["beam_size"],
+        vad_filter=True,
+        temperature=0.0,
+        compression_ratio_threshold=2.4,
+        log_prob_threshold=-1.0,
+        no_speech_threshold=0.5,
+        initial_prompt="Tiếng Việt",
+        vad_parameters={
+            "threshold": 0.4,
+            "min_speech_duration_ms": 200,
+            "min_silence_duration_ms": 1500,
+            "speech_pad_ms": 800,
+        },
+        word_timestamps=True,
+        condition_on_previous_text=False,
+    )
+
+    segments = []
+    for segment in segments_iter:
+        text = str(getattr(segment, "text", "")).strip()
+        if not text:
+            continue
+        lower = text.lower()
+        if any(prompt in lower and len(text) < 50 for prompt in ["tiếng việt", "hãy chuyển đổi"]):
+            continue
+        if any(pattern in lower and len(text) < 100 for pattern in ["subscribe", "đăng ký kênh", "thanks for watching"]):
+            continue
+        segments.append(
+            {
+                "start": getattr(segment, "start", 0.0),
+                "end": getattr(segment, "end", 0.0),
+                "text": text,
+                "speaker": None,
+                "confidence": getattr(segment, "avg_logprob", None),
+                "words": _segment_words(segment),
+            }
+        )
+
+    return _from_segments(
+        segments,
+        duration=float(getattr(info, "duration", 0.0) or 0.0),
+        language=getattr(info, "language", language) or language,
+        provider="faster_whisper_ct2",
+        model_info={
+            "model": model_name,
+            "device": device,
+            "compute_type": compute_type,
+            "profile": runtime["profile"],
+        },
+        warnings=_warnings(warning_prefix),
+        processing_time=time.time() - start,
+    )
+
+
+def transcribe_faster_whisper_ct2(audio_path: str, *, language: str, runtime: dict[str, Any], **_: Any) -> dict[str, Any]:
+    try:
+        return _faster_whisper_result(audio_path, language=language, runtime=runtime)
+    except Exception as exc:
+        if not _is_oom(exc):
+            raise
+        logger.warning("[ASR] CUDA OOM or memory failure; retrying faster-whisper on CPU/int8")
+        try:
+            from src.services.transcription.models.whisper_manager import get_whisper_manager
+
+            get_whisper_manager().unload()
+        except Exception:
+            pass
+        return _faster_whisper_result(
+            audio_path,
+            language=language,
+            runtime=runtime,
+            warning_prefix="cuda_oom_retry_cpu_int8",
+            force_cpu=True,
+        )
+
+
+def transcribe_cherry_whisper_v2(audio_path: str, *, language: str, enable_diarization: bool, diarization_method: str, **_: Any) -> dict[str, Any]:
+    start = time.time()
+    from src.services.transcription.cherry_transcription_service import get_cherry_transcriber
+
+    result = get_cherry_transcriber().transcribe(
+        audio_path=audio_path,
+        language=language,
+        enable_diarization=enable_diarization,
+        model_type="whisper",
+    )
+    segments = result.get("segments", [])
+    return _from_segments(
+        segments,
+        duration=float(result.get("duration") or 0.0),
+        language=result.get("language") or language,
+        provider="cherry_whisper_v2",
+        model_info={"model": result.get("model_used", "whisper")},
+        warnings=[] if diarization_method != "none" else ["diarization_disabled"],
+        processing_time=time.time() - start,
+    )
+
+
+def transcribe_phowhisper_torch(audio_path: str, *, language: str, enable_diarization: bool, diarization_method: str, **_: Any) -> dict[str, Any]:
+    start = time.time()
+    from src.services.transcription.cherry_transcription_service import get_cherry_transcriber
+
+    result = get_cherry_transcriber().transcribe(
+        audio_path=audio_path,
+        language=language,
+        enable_diarization=enable_diarization,
+        model_type="phowhisper",
+    )
+    segments = result.get("segments", [])
+    return _from_segments(
+        segments,
+        duration=float(result.get("duration") or 0.0),
+        language=result.get("language") or language,
+        provider="phowhisper_torch",
+        model_info={"model": result.get("model_used", "phowhisper")},
+        warnings=[] if diarization_method != "none" else ["diarization_disabled"],
+        processing_time=time.time() - start,
+    )
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest().upper()
+
+
+def _reason_code(exc: Exception) -> str:
+    text = str(exc).strip().lower()
+    allowed = "".join(ch if ch.isalnum() else "_" for ch in text)
+    compact = "_".join(part for part in allowed.split("_") if part)
+    if not compact:
+        compact = exc.__class__.__name__.lower()
+    return compact[:120]
+
+
+def _validate_phowhisper_cpp_model(model_path: Path) -> list[str]:
+    warnings = []
+    if not model_path.exists():
+        raise ASRProviderError("PhoWhisper.cpp model is missing")
+    size = model_path.stat().st_size
+    if size != settings.PHOWHISPER_CPP_SIZE_BYTES:
+        raise ASRProviderError("PhoWhisper.cpp model size mismatch")
+    if _sha256(model_path) != settings.PHOWHISPER_CPP_SHA256.upper():
+        raise ASRProviderError("PhoWhisper.cpp model SHA256 mismatch")
+    manifest_path = model_path.with_suffix(model_path.suffix + ".manifest.json")
+    if not manifest_path.exists():
+        raise ASRProviderError("PhoWhisper.cpp validation manifest is missing")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ASRProviderError("PhoWhisper.cpp validation manifest is invalid JSON") from exc
+
+    required_strings = [
+        "source_url",
+        "source_license",
+        "whisper_cpp_binary_sha256",
+        "whisper_cpp_version",
+        "model_architecture",
+    ]
+    for key in required_strings:
+        if not isinstance(manifest.get(key), str) or not manifest[key].strip():
+            raise ASRProviderError(f"PhoWhisper.cpp validation manifest missing {key}")
+    if manifest.get("whisper_cpp_compatible") is not True:
+        raise ASRProviderError("PhoWhisper.cpp compatibility has not been confirmed")
+
+    bin_path = Path(settings.WHISPER_CPP_BIN)
+    if not bin_path.exists():
+        raise ASRProviderError("whisper.cpp binary is missing")
+    if _sha256(bin_path) != manifest["whisper_cpp_binary_sha256"].upper():
+        raise ASRProviderError("whisper.cpp binary SHA256 mismatch")
+
+    smoke_test = manifest.get("smoke_test")
+    if not isinstance(smoke_test, dict):
+        raise ASRProviderError("PhoWhisper.cpp validation manifest missing smoke_test")
+    if smoke_test.get("status") != "pass":
+        raise ASRProviderError("PhoWhisper.cpp smoke test has not passed")
+    if smoke_test.get("json_parse_pass") is not True:
+        raise ASRProviderError("PhoWhisper.cpp JSON parse smoke test has not passed")
+    duration = smoke_test.get("duration_seconds")
+    if not isinstance(duration, (int, float)) or duration < 10 or duration > 30:
+        raise ASRProviderError("PhoWhisper.cpp smoke test must use a 10-30 second Vietnamese sample")
+    if not str(smoke_test.get("language", "")).lower().startswith("vi"):
+        raise ASRProviderError("PhoWhisper.cpp smoke test must use Vietnamese audio")
+
+    benchmark = manifest.get("benchmark")
+    if not isinstance(benchmark, dict) or benchmark.get("status") != "pass":
+        raise ASRProviderError("PhoWhisper.cpp benchmark gate has not passed")
+    if benchmark.get("baseline") != "faster_whisper_ct2_small_int8":
+        raise ASRProviderError("PhoWhisper.cpp benchmark baseline must be faster_whisper_ct2_small_int8")
+    if benchmark.get("keyword_recall_pass") is not True:
+        raise ASRProviderError("PhoWhisper.cpp keyword recall benchmark has not passed")
+    if not isinstance(benchmark.get("max_relative_wer_regression"), (int, float)):
+        raise ASRProviderError("PhoWhisper.cpp benchmark missing max_relative_wer_regression")
+    return warnings
+
+
+def _validate_phowhisper_cpp_model_cached(model_path: Path) -> list[str]:
+    if not model_path.exists():
+        raise ASRProviderError("PhoWhisper.cpp model is missing")
+    stat = model_path.stat()
+    cache_key = f"{model_path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}"
+    cached = _PHOWHISPER_VALIDATION_CACHE.get(cache_key)
+    if cached is not None:
+        return list(cached)
+    warnings = _validate_phowhisper_cpp_model(model_path)
+    _PHOWHISPER_VALIDATION_CACHE.clear()
+    _PHOWHISPER_VALIDATION_CACHE[cache_key] = list(warnings)
+    return warnings
+
+
+def _run_ffmpeg_to_wav(input_path: str, output_path: Path) -> None:
+    command = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        input_path,
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        "-acodec",
+        "pcm_s16le",
+        str(output_path),
+    ]
+    subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _parse_whisper_cpp_output(temp_dir: Path, wav_path: Path, stdout: str) -> tuple[str, list[dict[str, Any]], list[str]]:
+    warnings = []
+    json_candidates = [
+        temp_dir / f"{wav_path.name}.json",
+        temp_dir / f"{wav_path.stem}.json",
+        wav_path.with_suffix(wav_path.suffix + ".json"),
+        wav_path.with_suffix(".json"),
+    ]
+    for candidate in json_candidates:
+        if not candidate.exists():
+            continue
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+            segments_payload = payload.get("transcription") or payload.get("segments") or []
+            segments = []
+            for item in segments_payload:
+                offsets = item.get("offsets") or {}
+                start = item.get("start") or offsets.get("from") or 0
+                end = item.get("end") or offsets.get("to") or start
+                if isinstance(start, int):
+                    start = start / 1000
+                if isinstance(end, int):
+                    end = end / 1000
+                segments.append(
+                    {
+                        "start": float(start or 0),
+                        "end": float(end or 0),
+                        "text": str(item.get("text", "")).strip(),
+                        "speaker": None,
+                        "confidence": None,
+                    }
+                )
+            text = " ".join(seg["text"] for seg in segments if seg["text"]).strip()
+            return text, segments, warnings
+        except Exception:
+            warnings.append("whisper_cpp_json_parse_failed")
+
+    text_lines = []
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("whisper_") and not stripped.startswith("system_info"):
+            text_lines.append(stripped)
+    text = " ".join(text_lines).strip()
+    return text, [{"start": 0.0, "end": 0.0, "text": text, "speaker": None, "confidence": None}] if text else [], warnings + ["whisper_cpp_text_only"]
+
+
+def transcribe_whisper_cpp_cli(audio_path: str, *, language: str, provider: str = "whisper_cpp_cli", runtime: dict[str, Any], **_: Any) -> dict[str, Any]:
+    start = time.time()
+    bin_path = Path(settings.WHISPER_CPP_BIN)
+    model_path = Path(settings.WHISPER_CPP_MODEL)
+    warnings = []
+    if provider == "phowhisper_cpp_cli":
+        model_path = Path(settings.PHOWHISPER_CPP_MODEL)
+        warnings.extend(_validate_phowhisper_cpp_model_cached(model_path))
+    if not bin_path.exists():
+        raise ASRProviderError("whisper.cpp binary is missing")
+    if not model_path.exists():
+        raise ASRProviderError("whisper.cpp model is missing")
+
+    with tempfile.TemporaryDirectory(prefix="sti-whispercpp-") as temp_name:
+        temp_dir = Path(temp_name)
+        wav_path = temp_dir / "input.wav"
+        _run_ffmpeg_to_wav(audio_path, wav_path)
+        command = [
+            str(bin_path),
+            "-m",
+            str(model_path),
+            "-f",
+            str(wav_path),
+            "-l",
+            language or settings.WHISPER_CPP_LANGUAGE,
+            "-t",
+            str(settings.WHISPER_CPP_THREADS),
+            "-oj",
+        ]
+        completed = subprocess.run(
+            command,
+            cwd=str(temp_dir),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=settings.WHISPER_CPP_TIMEOUT_SECONDS,
+            shell=False,
+        )
+        text, segments, parse_warnings = _parse_whisper_cpp_output(temp_dir, wav_path, completed.stdout)
+        warnings.extend(parse_warnings)
+
+    return _from_segments(
+        segments,
+        duration=segments[-1]["end"] if segments else 0.0,
+        language=language,
+        provider=provider,
+        model_info={
+            "model": str(model_path),
+            "binary": str(bin_path),
+            "threads": settings.WHISPER_CPP_THREADS,
+            "profile": runtime["profile"],
+        },
+        warnings=warnings,
+        processing_time=time.time() - start,
+    )
+
+
+PROVIDERS = {
+    "cherry_whisper_v2": transcribe_cherry_whisper_v2,
+    "faster_whisper_ct2": transcribe_faster_whisper_ct2,
+    "whisper_cpp_cli": transcribe_whisper_cpp_cli,
+    "phowhisper_cpp_cli": lambda audio_path, **kwargs: transcribe_whisper_cpp_cli(
+        audio_path,
+        provider="phowhisper_cpp_cli",
+        **kwargs,
+    ),
+    "phowhisper_torch": transcribe_phowhisper_torch,
+}
+
+
+def transcribe_with_provider(
+    *,
+    audio_path: str,
+    language: str,
+    profile: str,
+    enable_diarization: bool,
+    diarization_method: str,
+    task_id: str,
+) -> dict[str, Any]:
+    runtime = resolve_asr_runtime(profile)
+    provider_name = runtime["provider"]
+    provider = PROVIDERS.get(provider_name)
+    if provider is None:
+        raise ASRProviderError(f"Unsupported ASR provider: {provider_name}")
+    if provider_name == "phowhisper_cpp_cli":
+        health = provider_health()
+        if not health.get("phowhisper_cpp_candidate_valid"):
+            raise ASRProviderError("PhoWhisper.cpp candidate is not valid; run source manifest and smoke test first")
+    return provider(
+        audio_path,
+        language=language,
+        profile=runtime["profile"],
+        runtime=runtime,
+        enable_diarization=enable_diarization,
+        diarization_method=diarization_method,
+        task_id=task_id,
+    )
+
+
+def provider_health() -> dict[str, Any]:
+    phowhisper_model = Path(settings.PHOWHISPER_CPP_MODEL)
+    whisper_cpp_bin = Path(settings.WHISPER_CPP_BIN)
+    phowhisper_valid = False
+    phowhisper_warnings: list[str] = []
+    if phowhisper_model.exists():
+        try:
+            phowhisper_warnings = _validate_phowhisper_cpp_model_cached(phowhisper_model)
+            phowhisper_valid = not phowhisper_warnings
+        except Exception as exc:
+            phowhisper_warnings = [_reason_code(exc)]
+    return {
+        "asr_provider": settings.ASR_PROVIDER,
+        "asr_profile": settings.ASR_PROFILE,
+        "whisper_model": settings.WHISPER_MODEL,
+        "whisper_device": settings.WHISPER_DEVICE,
+        "whisper_compute_type": settings.WHISPER_COMPUTE_TYPE,
+        "whisper_cpp_binary_available": whisper_cpp_bin.exists(),
+        "whisper_cpp_model_available": Path(settings.WHISPER_CPP_MODEL).exists(),
+        "phowhisper_cpp_model_available": phowhisper_model.exists(),
+        "phowhisper_cpp_candidate_valid": phowhisper_valid,
+        "phowhisper_cpp_warnings": phowhisper_warnings,
+        "profiles": [
+            {
+                "value": key,
+                "label_vi": preset["label_vi"],
+                "provider": preset["provider"],
+                "description": preset["description"],
+                "available": key != "phowhisper_cpp_candidate" or phowhisper_valid,
+            }
+            for key, preset in ASR_PROFILE_PRESETS.items()
+        ],
+    }

@@ -1,10 +1,17 @@
+import json
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from src.core.config import settings
+from src.database.config.database import SessionLocal
+from src.database.models.models import ActivityLog
+from src.main import app
+from src.services.analysis_intelligence.extractor import extract_core_analysis
 from src.services.analysis_intelligence.schemas import (
     AnalysisGraphV2,
     EntityItem,
@@ -94,6 +101,86 @@ def test_context_analysis_parse_failure_log_is_redacted():
     source = Path("src/speech_to_text/transcriber.py").read_text(encoding="utf-8")
     assert "context_analysis={context_analysis}" not in source
     assert "raw_len" in source
+
+
+def test_vietnamese_core_extractor_captures_hotel_booking_facts():
+    text = (
+        "Chị là Nguyễn Thị Quyên. Số điện thoại của chị là 0978 711 253. "
+        "Địa chỉ email của chị là quyên24a.gmail.com. "
+        "Căn cước công dân của chị là 0912 1212 09012. "
+        "Chị ở ngày 15 tháng 2 đến ngày 16 tháng 2. "
+        "Chị muốn đặt 2 phòng cho 4 người, 2 nam và 2 nữ. "
+        "Chị đi với mục đích công tác. Giá phòng là 3 triệu và tổng số tiền là 6 triệu đồng. "
+        "Thế để chị chuyển khoản em nhé. Khách sạn sẽ gửi tới email của chị số tài khoản "
+        "và điều khoản đặt phòng. Bữa sáng đã bao gồm trong giá phòng. fitness center free."
+    )
+    segment = SegmentUnit(
+        id="seg_sample",
+        source_kind="transcript_text",
+        text=text,
+        source_text_sha256=sha256_text(text),
+    )
+
+    core = extract_core_analysis([segment])
+    facts_by_type = {}
+    for fact in core.facts:
+        facts_by_type.setdefault(fact.type, []).append(fact)
+
+    assert any(fact.normalized_value == "0978711253" for fact in facts_by_type["phone"])
+    assert any(fact.normalized_value == "quyên24a.gmail.com" for fact in facts_by_type["email_candidate"])
+    assert any(fact.normalized_value == "0912121209012" for fact in facts_by_type["id_number_candidate"])
+    assert any(fact.normalized_value["start"]["day"] == 15 and fact.normalized_value["end"]["day"] == 16 for fact in facts_by_type["date_range"])
+    assert any(fact.normalized_value == {"quantity": 2, "unit": "phòng"} for fact in facts_by_type["quantity"])
+    assert any(fact.normalized_value == {"quantity": 4, "unit": "người"} for fact in facts_by_type["quantity"])
+    assert any(fact.normalized_value == {"quantity": 2, "unit": "nam"} for fact in facts_by_type["quantity"])
+    assert any(fact.normalized_value == {"quantity": 2, "unit": "nữ"} for fact in facts_by_type["quantity"])
+    assert any(fact.normalized_value["amount_vnd"] == 3_000_000 for fact in facts_by_type["money"])
+    assert any(fact.normalized_value["amount_vnd"] == 6_000_000 for fact in facts_by_type["money"])
+    assert any(fact.type == "payment_method" and fact.normalized_value == "chuyển khoản" for fact in core.facts)
+    assert any(fact.type == "purpose" for fact in core.facts)
+    assert any(fact.type == "action" and "số tài khoản" in fact.value.lower() for fact in core.facts)
+    assert any(fact.type == "policy" for fact in core.facts)
+    assert any(fact.type == "offer" and "Bữa sáng" in fact.value for fact in core.facts)
+    assert any(fact.type == "offer" and "fitness" in fact.value.lower() for fact in core.facts)
+    assert all(fact.evidence_refs for fact in core.facts)
+    assert any(risk.type == "noisy_email_candidate" for risk in core.risk_flags)
+
+
+def test_vietnamese_core_extractor_avoids_sample_false_positives_and_duplicates():
+    text = (
+        "Chị Quyên vui lòng cho em xin họ tên đầy đủ của mình Số điện thoại, địa chỉ email "
+        "và số căn cứ công dân của mình. Chị là Nguyễn Thị Quyên. "
+        "Số điện thoại của chị là 0978 711 253. Địa chỉ email của chị là quyên24a.gmail.com. "
+        "Còn căn cứ công dân của chị là 0912 1212 09012. "
+        "Chị ở ngày 15 tháng 2 đến ngày 16 tháng 2 em ạ. "
+        "Dạ thưa chị, vào ngày 15 tháng 2 đến ngày 16 tháng 2 thì bên em vẫn còn phòng. "
+        "Chị muốn đặt phòng ở bên khách sạn mình ý vào thời gian nào ạ? "
+        "Cảm ơn chị đã lựa chọn khách sạn G.R.P.Marius Hotel Hà Nội."
+    )
+    segment = SegmentUnit(
+        id="seg_full_sample",
+        source_kind="transcript_text",
+        text=text,
+        source_text_sha256=sha256_text(text),
+    )
+
+    core = extract_core_analysis([segment])
+    id_values = {fact.normalized_value for fact in core.facts if fact.type == "id_number_candidate"}
+    org_labels = {entity.label for entity in core.entities if entity.type == "organization"}
+    fact_keys = [
+        (fact.type, json.dumps(fact.normalized_value, ensure_ascii=False, sort_keys=True, default=str))
+        for fact in core.facts
+    ]
+    date_ranges = [fact for fact in core.facts if fact.type == "date_range"]
+
+    assert "0978711253" not in id_values
+    assert "0912121209012" in id_values
+    assert not any("mình" in label.lower() or "thời gian" in label.lower() for label in org_labels)
+    assert "G.R.P.Marius Hotel Hà Nội" in org_labels
+    assert len(fact_keys) == len(set(fact_keys))
+    assert len(date_ranges) == 1
+    assert len(date_ranges[0].evidence_refs) == 2
+    assert not [fact for fact in core.facts if fact.type == "date"]
 
 
 def test_evidence_source_kind_rules_and_review_defaults():
@@ -288,6 +375,107 @@ def test_visualize_endpoint_accepts_audio_id_for_frontend_fallback(auth_enabled)
     body = response.json()
     assert body["task_id"] == task_id
     assert body["visualization_data"]["schema_version"] == "analysis_intelligence.v2"
+    assert body["visualization_data"]["selected_template_ids"] == []
+
+    general_with_ids = client.post(
+        f"/api/v1/audio/v2/visualize/{audio_id}",
+        json={"visualization_type": "all", "analysis_mode": "general", "domain_template_ids": [999999]},
+        headers=_csrf_header(client),
+    )
+    assert general_with_ids.status_code == 200, general_with_ids.text
+    assert general_with_ids.json()["visualization_data"]["selected_template_ids"] == []
+
+
+def test_analysis_template_registry_versioning_auth_and_audit(auth_enabled):
+    user_id, username, password = _create_user()
+    client = _login_client(username, password)
+    headers = _csrf_header(client)
+    template_key = f"hotel_booking_{uuid.uuid4().hex[:8]}"
+    payload = {
+        "template_key": template_key,
+        "name": "Đặt phòng khách sạn",
+        "description": "Mẫu trích xuất thông tin đặt phòng",
+        "language": "vi",
+        "scope": "user",
+        "schema_json": {
+            "domain_key": template_key,
+            "label_vi": "Đặt phòng khách sạn",
+            "description": "Thông tin đặt phòng",
+            "language": "vi",
+            "slots": [
+                {
+                    "name": "customer_name",
+                    "label_vi": "Tên khách hàng",
+                    "type": "person",
+                    "required": True,
+                    "synonyms": ["tên khách", "họ tên"],
+                    "description": "Tên người đặt phòng",
+                },
+                {
+                    "name": "room_count",
+                    "label_vi": "Số phòng",
+                    "type": "quantity",
+                    "required": True,
+                    "synonyms": ["số phòng"],
+                    "description": "Số lượng phòng cần đặt",
+                },
+            ],
+        },
+        "examples_json": [
+            {
+                "name": "positive",
+                "transcript": "Chị Nguyễn Thị Quyên muốn đặt 2 phòng.",
+                "expected_slots": {"customer_name": "Nguyễn Thị Quyên", "room_count": 2},
+            }
+        ],
+    }
+
+    forbidden_global = client.post(
+        "/api/v1/analysis/templates",
+        json={**payload, "scope": "global"},
+        headers=headers,
+    )
+    assert forbidden_global.status_code == 403
+
+    unauth_validate = TestClient(app).post("/api/v1/analysis/templates/validate", json=payload)
+    assert unauth_validate.status_code == 401
+    authed_validate = client.post("/api/v1/analysis/templates/validate", json=payload, headers=headers)
+    assert authed_validate.status_code == 200, authed_validate.text
+
+    created = client.post("/api/v1/analysis/templates", json=payload, headers=headers)
+    assert created.status_code == 200, created.text
+    template = created.json()
+    assert template["version"] == 1
+    assert template["status"] == "draft"
+
+    published = client.post(f"/api/v1/analysis/templates/{template['id']}/publish", headers=headers)
+    assert published.status_code == 200, published.text
+    assert published.json()["status"] == "published"
+
+    edited = client.patch(
+        f"/api/v1/analysis/templates/{template['id']}",
+        json={**payload, "name": "Đặt phòng khách sạn v2"},
+        headers=headers,
+    )
+    assert edited.status_code == 200, edited.text
+    edited_body = edited.json()
+    assert edited_body["version"] == 2
+    assert edited_body["status"] == "draft"
+    assert edited_body["parent_template_id"] == template["id"]
+
+    db = SessionLocal()
+    try:
+        details = [
+            row.action_detail
+            for row in db.query(ActivityLog).filter(ActivityLog.user_id == user_id).all()
+            if (row.action_detail or {}).get("resource") == "analysis_domain_template"
+        ]
+    finally:
+        db.close()
+
+    assert {detail["action"] for detail in details} >= {"create", "publish", "edit"}
+    assert all("schema_json" not in detail and "examples_json" not in detail for detail in details)
+    assert all("template_key" in detail and "version" in detail for detail in details)
 
 
 def test_visualize_authorizes_legacy_task_by_linked_audio_case(auth_enabled):
