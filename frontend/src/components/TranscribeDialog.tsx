@@ -42,7 +42,8 @@ const FALLBACK_ASR_PROFILES = [
     value: 'balanced',
     label_vi: 'Cân bằng',
     description: 'faster-whisper medium, CUDA int8, dùng khi RAM/VRAM ổn định.',
-    available: true,
+    available: false,
+    availability_reason: 'model_artifact_not_manifested',
   },
   {
     value: 'offline_cpp',
@@ -60,7 +61,8 @@ const FALLBACK_ASR_PROFILES = [
     value: 'quality_local',
     label_vi: 'Chất lượng cao',
     description: 'Model local lớn hơn; cần benchmark trước khi dùng thường xuyên.',
-    available: true,
+    available: false,
+    availability_reason: 'model_artifact_not_manifested',
   },
 ];
 
@@ -89,16 +91,24 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
     }
     return profiles;
   }, [runtimeProfile]);
+  const selectedProfile = asrProfiles.find((profile: any) => profile.value === asrProfile);
+  const selectedProfileAvailable = selectedProfile?.available !== false;
 
   useEffect(() => {
     if (!open) return;
     const nextProfile = runtimeProfile?.asr?.asr_profile || 'rtx2050_safe';
-    setAsrProfile(nextProfile);
+    const matchingProfile = asrProfiles.find((profile: any) => profile.value === nextProfile);
+    if (matchingProfile?.available === false) {
+      const firstAvailable = asrProfiles.find((profile: any) => profile.available !== false);
+      setAsrProfile(firstAvailable?.value || nextProfile);
+    } else {
+      setAsrProfile(nextProfile);
+    }
     if (runtimeProfile?.edition === 'lite') {
       setEnableDiarization(false);
       setDiarizationMethod('none');
     }
-  }, [open, runtimeProfile]);
+  }, [open, runtimeProfile, asrProfiles]);
 
   const handleProfileChange = (value: string) => {
     setAsrProfile(value);
@@ -213,6 +223,11 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
                     <Typography variant="caption" color="text.secondary">
                       {profile.description}
                     </Typography>
+                    {profile.available === false && profile.availability_reason && (
+                      <Typography variant="caption" color="error" display="block">
+                        {profile.availability_reason}
+                      </Typography>
+                    )}
                   </Box>
                 </MenuItem>
               ))}
@@ -380,6 +395,7 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
         </Button>
         <Button
           onClick={handleConfirm}
+          disabled={!selectedProfileAvailable}
           variant="contained"
           startIcon={<RecordVoiceOver />}
           sx={{

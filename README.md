@@ -8,24 +8,26 @@ phan tich ngu canh va truc quan hoa ket qua dieu tra.
 Huong dan day du de clone va chay tren may moi nam tai:
 
 - [docs/NEW_MACHINE_SETUP.md](docs/NEW_MACHINE_SETUP.md)
+- [docs/MODEL_SETUP.md](docs/MODEL_SETUP.md)
+- [docs/DEPLOY_LITE_RTX2050_WIN11.md](docs/DEPLOY_LITE_RTX2050_WIN11.md)
 
 Doc nay bao gom:
 
-- Cach chay nhanh bang Docker Compose.
-- Cach chay local tren Windows.
+- Cach chay nhanh Lite RTX2050.
+- Cach chay local tren Windows theo profile Lite RTX2050 pull-ready.
 - Cach tao `.env`, database, Redis, frontend.
 - Cach bat/tat auth, tai khoan admin ban dau.
-- Cach verify build/test sau khi cai.
-- Luu y model/audio/runtime data khong commit len Git.
+- Cach verify build/test/model sau khi cai.
+- Luu y model/audio/runtime data khong commit len Git; model khong tai duoc thi copy thu cong tu bundle noi bo va verify.
 
-## Cach chay nhanh bang Docker
+## Cach chay nhanh Lite RTX2050
 
 ```powershell
 git clone https://github.com/tunguyen-195/getSomething.git
 cd getSomething
 # Chi dung khi test PR hien tai. Sau khi merge, dung main va bo qua dong nay.
 git checkout feature/architecture-refactor-pr
-copy .env.example .env
+copy .env.lite.example .env
 ```
 
 Sua `.env` toi thieu:
@@ -42,7 +44,24 @@ Generate `SECRET_KEY`:
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Khoi dong:
+Chuan bi model public Lite:
+
+```powershell
+python scripts\precache_lite_models.py --model small
+python scripts\verify_models.py --profile lite_rtx2050
+```
+
+`verify_models.py` uses pinned revision/hash metadata from
+`docs/model_artifacts.required.json`; strict hash verification may take a few
+seconds while reading `model.bin`.
+
+Khoi dong local Lite:
+
+```powershell
+.\START_LITE_RTX2050.bat
+```
+
+Docker Compose la path advanced cho full/Celery/Redis hoac de test container:
 
 ```powershell
 docker compose up --build
@@ -61,15 +80,15 @@ Can cai truoc:
 - Python 3.10 hoac 3.11
 - Node.js 18+
 - PostgreSQL 13+
-- Redis hoac Memurai
 - FFmpeg/ffprobe trong `PATH`
+- Redis hoac Memurai chi can cho full/Celery; Lite RTX2050 khong can Redis/Celery.
 
 ```powershell
 git clone https://github.com/tunguyen-195/getSomething.git
 cd getSomething
 # Chi dung khi test PR hien tai. Sau khi merge, dung main va bo qua dong nay.
 git checkout feature/architecture-refactor-pr
-copy .env.example .env
+copy .env.lite.example .env
 python -m venv venv
 .\venv\Scripts\activate
 pip install -r requirements-torch-cu121.txt --index-url https://download.pytorch.org/whl/cu121
@@ -78,22 +97,38 @@ cd frontend
 npm install
 cd ..
 python -m src.database.scripts.init_db
+python scripts\precache_lite_models.py --model small
+python scripts\verify_models.py --profile lite_rtx2050
 ```
 
-Chay cac service:
+Chay cac service Lite:
 
 ```powershell
-.\START_ALL_SERVICES.bat
+.\START_LITE_RTX2050.bat
 ```
 
-Hoac chay tung service:
+`START_ALL_SERVICES.bat` van ton tai de tuong thich nguoc va se goi Lite starter. Hoac chay tung service:
 
 ```powershell
-.\venv\Scripts\python.exe -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
-.\venv\Scripts\python.exe -m celery -A src.worker.worker worker --pool=solo --loglevel=info
+.\venv\Scripts\python.exe -m uvicorn src.main:app --host 0.0.0.0 --port 8000
 cd frontend
 npm run dev
 ```
+
+Verify Lite GPU/model:
+
+```powershell
+python scripts\check_lite_runtime.py --gpu-smoke --offline-models-only
+```
+
+Full Cherry/PhoWhisper offline khong phai pull-ready default. Neu can full/offline, copy cac artifact khong tai duoc theo
+[docs/MODEL_SETUP.md](docs/MODEL_SETUP.md) roi chay:
+
+```powershell
+python scripts\verify_models.py --profile full_offline
+```
+
+Khong commit model weights, public model cache, hoac bundle copy thu cong vao Git.
 
 ## Auth va tai khoan admin
 

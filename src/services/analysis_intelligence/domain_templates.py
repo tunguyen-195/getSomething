@@ -333,3 +333,23 @@ def resolve_published_template_refs(db: Session, user: User, template_ids: list[
             }
         )
     return refs
+
+
+def resolve_published_templates_for_analysis(db: Session, user: User, template_ids: list[int]) -> list[dict[str, Any]]:
+    templates: list[dict[str, Any]] = []
+    for template_id in template_ids:
+        template = get_template(db, user, template_id, action="read")
+        if template.status != "published":
+            raise HTTPException(status_code=400, detail=f"Template {template_id} is not published")
+        templates.append(
+            {
+                "id": template.id,
+                "template_key": template.template_key,
+                "version": template.version,
+                "schema_hash": template.schema_hash,
+                "name": template.name,
+                "language": template.language,
+                "schema_json": template.schema_json,
+            }
+        )
+    return templates

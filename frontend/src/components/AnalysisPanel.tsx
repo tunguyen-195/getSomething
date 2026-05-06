@@ -77,8 +77,14 @@ const iconForKeyType = (type: string): React.ReactNode => {
     switch (type.toLowerCase()) {
         case 'phone': return <PhoneIcon />;
         case 'email': return <EmailIcon />;
+        case 'person':
+        case 'person_name': return <PersonIcon />;
+        case 'organization': return <TopicIcon />;
+        case 'location':
+        case 'address': return <PlaceIcon />;
         case 'money': return <MoneyIcon />;
         case 'date':
+        case 'date_time':
         case 'time': return <DateIcon />;
         default: return <TopicIcon />;
     }
@@ -88,8 +94,14 @@ const colorForKeyType = (type: string): string => {
     switch (type.toLowerCase()) {
         case 'phone': return '#2196f3';
         case 'email': return '#4caf50';
+        case 'person':
+        case 'person_name': return '#1976d2';
+        case 'organization': return '#607d8b';
+        case 'location':
+        case 'address': return '#2e7d32';
         case 'money': return '#ff9800';
         case 'date':
+        case 'date_time':
         case 'time': return '#9c27b0';
         default: return '#757575';
     }
@@ -111,6 +123,36 @@ const formatEvidenceTime = (ref: EvidenceRef): string => {
     return 'Không có timestamp';
 };
 
+const formatSemanticTimelineTime = (semanticTime?: any): string | undefined => {
+    if (!semanticTime || typeof semanticTime !== 'object') return undefined;
+    if (semanticTime.kind === 'compound' && Array.isArray(semanticTime.items)) {
+        const labels = semanticTime.items
+            .map((item: any) => formatSemanticTimelineTime(item))
+            .filter(Boolean);
+        const unique = Array.from(new Set(labels));
+        if (unique.length > 0) return unique.join(', ');
+    }
+    if (semanticTime.kind === 'date_range') {
+        const start = stringifyAnalysisValue(semanticTime.start);
+        const end = stringifyAnalysisValue(semanticTime.end);
+        if (start && end) return `${start} - ${end}`;
+    }
+    if (semanticTime.kind === 'date') {
+        const value = stringifyAnalysisValue(semanticTime.value);
+        if (value) return value;
+    }
+    if (semanticTime.kind === 'time' && semanticTime.value) {
+        return String(semanticTime.value);
+    }
+    return undefined;
+};
+
+const formatTimelineTime = (item: Record<string, any>): string | undefined => {
+    const semantic = formatSemanticTimelineTime(item.semantic_time);
+    if (semantic) return semantic;
+    return item.time !== undefined ? String(item.time) : undefined;
+};
+
 const reviewColor = (status?: string): 'default' | 'success' | 'warning' | 'error' | 'info' => {
     switch (status) {
         case 'confirmed': return 'success';
@@ -119,6 +161,20 @@ const reviewColor = (status?: string): 'default' | 'success' | 'warning' | 'erro
         case 'machine_suggested': return 'info';
         default: return 'default';
     }
+};
+
+const isEffectivelyVisibleEvidenceItem = (item: EvidenceItem, graph?: AnalysisGraphV2 | null): boolean => {
+    if (item.review_status === 'rejected') return false;
+    const blockedIds = graph?.visibility?.blocked_item_ids || [];
+    return !blockedIds.includes(item.id);
+};
+
+const isPlaceKeyInfo = (item: { type: string; value: string; context?: string }): boolean => {
+    const type = item.type.toLowerCase();
+    if (['place', 'location', 'address'].includes(type)) return true;
+    if (type !== 'organization') return false;
+    const text = `${item.value} ${item.context || ''}`.toLowerCase();
+    return /khách\s*sạn|hotel|bệnh\s*viện|trường|venue|địa điểm/.test(text);
 };
 
 const EmptyState: React.FC<{ message: string }> = ({ message }) => (
@@ -174,7 +230,7 @@ const EvidenceItemList: React.FC<{ title: string; items?: EvidenceItem[] }> = ({
                     {items.map(item => (
                         <ListItem key={item.id} sx={{ display: 'block', px: 0, py: 1.25 }}>
                             <Box display="flex" flexWrap="wrap" alignItems="center" gap={1} mb={1}>
-                                <Typography fontWeight={700}>{item.label_vi || item.label}</Typography>
+                                <Typography fontWeight={700}>{item.title_vi || item.label_vi || item.label || item.type}</Typography>
                                 <Chip label={item.slot_type || item.type} size="small" variant="outlined" />
                                 <Chip label={confidenceLabel(item.confidence)} size="small" color="info" variant="outlined" />
                                 <Chip label={item.review_status || 'unknown'} size="small" color={reviewColor(item.review_status)} />
@@ -184,6 +240,11 @@ const EvidenceItemList: React.FC<{ title: string; items?: EvidenceItem[] }> = ({
                             {item.confidence_reason && (
                                 <Typography variant="body2" color="text.secondary" mb={1}>
                                     {item.confidence_reason}
+                                </Typography>
+                            )}
+                            {item.description_vi && (
+                                <Typography variant="body2" color="text.secondary" mb={1}>
+                                    {item.description_vi}
                                 </Typography>
                             )}
                             <EvidenceRefs refs={item.evidence_refs} />
@@ -207,13 +268,14 @@ const EvidenceView: React.FC<{ file?: FileWithData }> = ({ file }) => {
         return <EmptyState message="File này chỉ có visualization legacy, chưa có V2 evidence." />;
     }
 
-    const activeEntities = (graph.entities || []).filter(item => item.review_status !== 'rejected');
-    const activeRelations = (graph.relations || []).filter(item => item.review_status !== 'rejected');
-    const activeEvents = (graph.events || []).filter(item => item.review_status !== 'rejected');
-    const activeClaims = (graph.claims || []).filter(item => item.review_status !== 'rejected');
-    const activeFacts = (graph.facts || []).filter(item => item.review_status !== 'rejected');
-    const activeSlots = (graph.slots || []).filter(item => item.review_status !== 'rejected');
-    const activeRisks = (graph.risk_flags || []).filter(item => item.review_status !== 'rejected');
+    const activeEntities = (graph.entities || []).filter(item => isEffectivelyVisibleEvidenceItem(item, graph));
+    const activeRelations = (graph.relations || []).filter(item => isEffectivelyVisibleEvidenceItem(item, graph));
+    const activeEvents = (graph.events || []).filter(item => isEffectivelyVisibleEvidenceItem(item, graph));
+    const activeClaims = (graph.claims || []).filter(item => isEffectivelyVisibleEvidenceItem(item, graph));
+    const activeFacts = (graph.facts || []).filter(item => isEffectivelyVisibleEvidenceItem(item, graph));
+    const activeSlots = (graph.slots || []).filter(item => isEffectivelyVisibleEvidenceItem(item, graph));
+    const activeRisks = (graph.risk_flags || []).filter(item => isEffectivelyVisibleEvidenceItem(item, graph));
+    const activeInsights = (graph.insight_items || []).filter(item => isEffectivelyVisibleEvidenceItem(item, graph));
 
     return (
         <Box>
@@ -230,6 +292,7 @@ const EvidenceView: React.FC<{ file?: FileWithData }> = ({ file }) => {
             </Paper>
             <EvidenceItemList title="Thông tin trích xuất" items={activeFacts} />
             <EvidenceItemList title="Slots" items={activeSlots} />
+            <EvidenceItemList title="Insights" items={activeInsights} />
             <EvidenceItemList title="Cờ rủi ro" items={activeRisks} />
             <EvidenceItemList title="Thực thể" items={activeEntities} />
             <EvidenceItemList title="Quan hệ" items={activeRelations} />
@@ -347,23 +410,19 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
         filesWithData.forEach(f => {
             const graph = getCanonicalAnalysisGraph(f.visualization_data);
             const viz = getLegacyVisualizationData(f.visualization_data as LegacyVisualizationData | null);
+            const keyEntities = getKeyEntities(f.visualization_data);
 
-            if (graph) {
-                (graph.entities || [])
-                    .filter(item => item.review_status !== 'rejected')
-                    .forEach(item => {
-                        const type = String(item.type || '').toLowerCase();
-                        const label = String(item.value || item.label || '');
-                        if (!label) return;
-                        if (type === 'person') people.add(label);
-                        if (['place', 'location', 'address'].includes(type)) places.add(label);
-                        if (type === 'phone') phones.add(label);
-                    });
-            } else {
+            if (graph || keyEntities.length > 0) {
+                keyEntities.forEach(item => {
+                    if (item.type === 'person' || item.type === 'person_name') people.add(item.value);
+                    if (isPlaceKeyInfo(item)) places.add(item.value);
+                    if (item.type === 'phone') phones.add(item.value);
+                });
+            } else if (!graph) {
                 viz.nodes?.forEach(n => {
                     const type = String(n.type || '').toLowerCase();
                     if (type === 'person') people.add(String(n.label || ''));
-                    if (['place', 'location'].includes(type)) places.add(String(n.label || ''));
+                    if (['place', 'location', 'address'].includes(type)) places.add(String(n.label || ''));
                     if (type === 'phone') phones.add(String(n.label || ''));
                 });
             }
@@ -373,14 +432,14 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
                 const eventText = String(t.event || t.label || '');
                 if (eventText) {
                     timeline.push({
-                        time: t.time !== undefined ? String(t.time) : undefined,
+                        time: formatTimelineTime(t),
                         event: eventText,
                         file: f.filename,
                     });
                 }
             });
 
-            getKeyEntities(f.visualization_data).forEach(entity => {
+            keyEntities.forEach(entity => {
                 allKeyInfo.push({
                     type: entity.type,
                     value: entity.value,

@@ -229,10 +229,20 @@ python scripts/check_lite_runtime.py --gpu-smoke --offline-models-only
 ```
 
 The frontend header also shows edition, ASR provider/profile, LLM status, and active job state.
-The first online GPU smoke may download the configured faster-whisper model into
-`WHISPER_MODEL_PATH`. For offline handoff, pre-cache the model first; otherwise
-`--offline-models-only` fails before model load with
-`gpu_smoke_failed:model_unavailable_or_download_failed`.
+Runtime no longer downloads faster-whisper implicitly. Pre-cache the pinned Lite
+model first, then verify it before GPU smoke:
+
+```powershell
+python scripts/precache_lite_models.py --model small
+python scripts/verify_models.py --profile lite_rtx2050
+```
+
+For offline handoff, copy a prepared manual model bundle or a prepared
+`models/whisper` cache first; otherwise `--offline-models-only` fails before model load with
+`gpu_smoke_failed:model_cache_missing_or_unverified`.
+
+The full model matrix and manual-copy policy are documented in
+`docs/MODEL_SETUP.md` and `docs/model_artifacts.required.json`.
 
 ## Regression Checks
 

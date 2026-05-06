@@ -158,6 +158,7 @@ def generate_visualization(
     analysis_mode: str = "general",
     domain_template_ids: list[int] | None = None,
     template_version_refs: list[dict] | None = None,
+    analysis_templates: list[dict] | None = None,
 ) -> dict:
     """
     Generate visualization data from transcript.
@@ -183,6 +184,7 @@ def generate_visualization(
             analysis_mode=analysis_mode,
             domain_template_ids=domain_template_ids,
             template_version_refs=template_version_refs,
+            analysis_templates=analysis_templates,
         )
         viz_data = graph.to_storage_dict()
 
@@ -202,7 +204,11 @@ def generate_visualization(
             update_task(task_id, {"visualization_data": response, "has_visualization": True})
             logger.info("[VISUALIZATION_SERVICE] Saved evidence-grounded visualization_data")
         except Exception as e:
-            logger.warning(f"[VISUALIZATION_SERVICE] Failed to save visualization to result: {e}")
+            logger.warning(
+                "[VISUALIZATION_SERVICE] Failed to save visualization to result | task_id=%s | error_class=%s",
+                task_id,
+                e.__class__.__name__,
+            )
 
 
         logger.info(
@@ -217,5 +223,9 @@ def generate_visualization(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[VISUALIZATION_SERVICE] Error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[VISUALIZATION_SERVICE] Error | task_id=%s | error_class=%s",
+            task_id,
+            e.__class__.__name__,
+        )
+        raise HTTPException(status_code=500, detail="analysis_generation_failed")

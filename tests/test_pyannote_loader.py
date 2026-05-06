@@ -46,6 +46,48 @@ def test_load_pyannote_pipeline_does_not_download_when_disabled(monkeypatch, tmp
     assert module.load_pyannote_pipeline() is None
 
 
+def test_load_pyannote_pipeline_does_not_runtime_download_when_enabled(monkeypatch, tmp_path):
+    module = importlib.import_module("src.services.transcription.models.pyannote_loader")
+    monkeypatch.setenv("PYANNOTE_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("PYANNOTE_AUTO_DOWNLOAD", "true")
+    monkeypatch.setenv("HF_TOKEN", "fake-token")
+
+    class FakeHub:
+        @staticmethod
+        def snapshot_download(*args, **kwargs):
+            raise AssertionError("runtime snapshot_download should not be called")
+
+    monkeypatch.setitem(sys.modules, "huggingface_hub", FakeHub)
+
+    assert module.load_pyannote_pipeline() is None
+
+
+def test_pyannote_model_override_must_be_manifested(monkeypatch, tmp_path):
+    module = importlib.import_module("src.services.transcription.models.pyannote_loader")
+    monkeypatch.setenv("PYANNOTE_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("PYANNOTE_MODEL_ID", "pyannote/speaker-diarization-3.1")
+    monkeypatch.setenv("PYANNOTE_AUTO_DOWNLOAD", "true")
+    monkeypatch.setenv("HF_TOKEN", "fake-token")
+
+    class FakeHub:
+        @staticmethod
+        def snapshot_download(*args, **kwargs):
+            raise AssertionError("unmanifested Pyannote override should not download")
+
+    monkeypatch.setitem(sys.modules, "huggingface_hub", FakeHub)
+
+    assert module.load_pyannote_pipeline() is None
+
+
+def test_pyannote_downloader_rejects_unmanifested_fallback(monkeypatch):
+    script = importlib.import_module("download_pyannote_model")
+    monkeypatch.setenv("HF_TOKEN", "fake-token")
+    monkeypatch.setenv("PYANNOTE_MODEL_ID", "pyannote/speaker-diarization-3.1")
+    monkeypatch.setattr(sys, "argv", ["download_pyannote_model.py", "--no-dotenv"])
+
+    assert script.main() == 2
+
+
 def test_normalize_diarization_output_prefers_exclusive_output():
     module = importlib.import_module("src.services.transcription.models.pyannote_loader")
 

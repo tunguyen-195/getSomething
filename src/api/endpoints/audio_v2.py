@@ -63,6 +63,10 @@ def _set_private_response_headers(response: Response) -> None:
     response.headers["Pragma"] = "no-cache"
 
 
+def _private_error_headers() -> dict[str, str]:
+    return {"Cache-Control": "no-store", "Pragma": "no-cache"}
+
+
 def _task_audio_id(task) -> int | None:
     return task.audio_files[0].id if getattr(task, "audio_files", None) else None
 
@@ -98,6 +102,25 @@ def _log_graph_update(
         task_id=task.id,
         detail=detail,
     )
+
+
+def _log_graph_write_error(action: str, task_id: str, error: Exception) -> None:
+    logger.error(
+        "[API_V2] Analysis graph write failed | action=%s | task_id=%s | error_class=%s",
+        action,
+        task_id,
+        error.__class__.__name__,
+    )
+
+
+def _log_sensitive_endpoint_error(action: str, task_id: str, error: Exception) -> None:
+    logger.error(
+        "[API_V2] Sensitive endpoint failed | action=%s | task_id=%s | error_class=%s",
+        action,
+        task_id,
+        error.__class__.__name__,
+    )
+
 
 @router.post("/upload")
 async def upload_audio_v2(
@@ -329,8 +352,12 @@ async def get_transcription_detail_v2(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("[API_V2] Get transcription detail error | task_id=%s | error=%s", task_id, e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to load transcription detail")
+        _log_sensitive_endpoint_error("get_transcription_detail", task_id, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to load transcription detail",
+            headers=_private_error_headers(),
+        )
 
 
 @router.get("/summaries/{task_id}")
@@ -366,13 +393,12 @@ async def get_summary_detail_v2(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            "[API_V2] Get summary detail error | task_id=%s | error_class=%s",
-            task_id,
-            e.__class__.__name__,
-            exc_info=True,
+        _log_sensitive_endpoint_error("get_summary_detail", task_id, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to load summary detail",
+            headers=_private_error_headers(),
         )
-        raise HTTPException(status_code=500, detail="Failed to load summary detail")
 
 
 @router.get("/analyses/{task_id}")
@@ -385,9 +411,9 @@ async def get_analysis_detail_v2(
     """
     Return analysis graph detail for an authorized task.
 
-    This endpoint does not return transcripts, segments, summaries, or full
-    Task.result. Evidence refs may include short text spans from the graph, so
-    callers must treat this as a detail endpoint.
+    This is a sensitive detail endpoint: visualization_data may include
+    analysis graph segments.text and evidence spans. It is not used for
+    list/status/dashboard polling and must keep private no-store headers.
     """
     try:
         from src.services.task_service import get_task
@@ -411,13 +437,12 @@ async def get_analysis_detail_v2(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            "[API_V2] Get analysis detail error | task_id=%s | error_class=%s",
-            task_id,
-            e.__class__.__name__,
-            exc_info=True,
+        _log_sensitive_endpoint_error("get_analysis_detail", task_id, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to load analysis detail",
+            headers=_private_error_headers(),
         )
-        raise HTTPException(status_code=500, detail="Failed to load analysis detail")
 
 
 def _run_summarize_lite(
@@ -462,12 +487,14 @@ def _run_summarize_lite(
 @router.post("/visualize/{task_id}")
 async def visualize_v2(
     task_id: str,
+    response: Response,
     visualization_type: str = Body("all", embed=True),
     analysis_mode: Literal["general", "selected"] = Body("general"),
     domain_template_ids: list[int] | None = Body(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _set_private_response_headers(response)
     resolved_task_id: str | None = None
     try:
         from src.services.task_service import get_task, resolve_task_id, update_task
@@ -488,10 +515,15 @@ async def visualize_v2(
             requested_template_ids = []
 
         template_version_refs = []
+        analysis_templates = []
         if analysis_mode == "selected" and requested_template_ids:
-            from src.services.analysis_intelligence.domain_templates import resolve_published_template_refs
+            from src.services.analysis_intelligence.domain_templates import (
+                resolve_published_template_refs,
+                resolve_published_templates_for_analysis,
+            )
 
             template_version_refs = resolve_published_template_refs(db, current_user, requested_template_ids)
+            analysis_templates = resolve_published_templates_for_analysis(db, current_user, requested_template_ids)
 
         if lite_runner_enabled():
             job = start_lite_job(
@@ -505,6 +537,7 @@ async def visualize_v2(
                     "analysis_mode": analysis_mode,
                     "requested_template_ids": requested_template_ids,
                     "template_version_refs": template_version_refs,
+                    "analysis_templates": analysis_templates,
                 },
                 queued_status="visualizing",
             )
@@ -524,6 +557,7 @@ async def visualize_v2(
             analysis_mode=analysis_mode,
             domain_template_ids=requested_template_ids,
             template_version_refs=template_version_refs,
+            analysis_templates=analysis_templates,
         )
         payload = extract_visualization_payload(result)
         update_task(
@@ -543,14 +577,18 @@ async def visualize_v2(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[API_V2] Visualize error: {e}", exc_info=True)
+        _log_sensitive_endpoint_error("visualize", resolved_task_id or task_id, e)
         try:
             from src.services.task_service import update_task
-            update_task(resolved_task_id or task_id, {"status": "failed", "error": str(e)}, db=db)
+            update_task(resolved_task_id or task_id, {"status": "failed", "error": "analysis_generation_failed"}, db=db)
             db.commit()
         except Exception:
             db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail="analysis_generation_failed",
+            headers=_private_error_headers(),
+        )
 
 
 def _run_visualize_lite(
@@ -560,6 +598,7 @@ def _run_visualize_lite(
     analysis_mode: str,
     requested_template_ids: list[int],
     template_version_refs: list[dict[str, Any]],
+    analysis_templates: list[dict[str, Any]],
     db: Session,
 ) -> None:
     from src.services.task_service import update_task
@@ -573,6 +612,7 @@ def _run_visualize_lite(
         analysis_mode=analysis_mode,
         domain_template_ids=requested_template_ids,
         template_version_refs=template_version_refs,
+        analysis_templates=analysis_templates,
     )
     payload = extract_visualization_payload(result)
     update_task(
@@ -589,9 +629,11 @@ async def review_visualization_item(
     item_id: str,
     patch: ReviewPatch,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _set_private_response_headers(response)
     try:
         from src.services.analysis_intelligence.storage import review_item
 
@@ -621,8 +663,12 @@ async def review_visualization_item(
         raise
     except Exception as e:
         db.rollback()
-        logger.error(f"[API_V2] Review item error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to update analysis review status")
+        _log_graph_write_error("review_item", task_id, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update analysis review status",
+            headers=_private_error_headers(),
+        )
 
 
 @router.patch("/visualize/{task_id}/entities/{entity_id}")
@@ -631,9 +677,11 @@ async def update_visualization_entity(
     entity_id: str,
     patch: EntityPatch,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _set_private_response_headers(response)
     try:
         from src.services.analysis_intelligence.storage import update_entity
 
@@ -664,8 +712,12 @@ async def update_visualization_entity(
         raise
     except Exception as e:
         db.rollback()
-        logger.error(f"[API_V2] Update entity error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to update analysis entity")
+        _log_graph_write_error("update_entity", task_id, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update analysis entity",
+            headers=_private_error_headers(),
+        )
 
 
 @router.post("/visualize/{task_id}/entities/merge")
@@ -673,9 +725,11 @@ async def merge_visualization_entities(
     task_id: str,
     payload: EntityMergeRequest,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _set_private_response_headers(response)
     try:
         from src.services.analysis_intelligence.storage import merge_entities
 
@@ -705,8 +759,12 @@ async def merge_visualization_entities(
         raise
     except Exception as e:
         db.rollback()
-        logger.error(f"[API_V2] Merge entities error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to merge analysis entities")
+        _log_graph_write_error("merge_entities", task_id, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to merge analysis entities",
+            headers=_private_error_headers(),
+        )
 
 
 @router.post("/visualize/{task_id}/entities/{entity_id}/split")
@@ -715,9 +773,11 @@ async def split_visualization_entity(
     entity_id: str,
     payload: EntitySplitRequest,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _set_private_response_headers(response)
     try:
         from src.services.analysis_intelligence.storage import split_entity
 
@@ -747,5 +807,9 @@ async def split_visualization_entity(
         raise
     except Exception as e:
         db.rollback()
-        logger.error(f"[API_V2] Split entity error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to split analysis entity")
+        _log_graph_write_error("split_entity", task_id, e)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to split analysis entity",
+            headers=_private_error_headers(),
+        )

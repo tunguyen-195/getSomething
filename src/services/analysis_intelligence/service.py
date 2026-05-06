@@ -8,8 +8,11 @@ from src.core.config import settings
 from src.services.task_service import get_task
 
 from .extractor import CORE_EXTRACTOR_VERSION, extract_core_analysis
+from .event_synthesizer import synthesize_events
+from .insight_engine import generate_insights
 from .schemas import AnalysisGraphV2, EvidenceRef, EntityItem, SegmentUnit, sha256_text, stable_id
 from .segment_builder import build_segments, transcript_from_task
+from .slot_filler import fill_slots_from_templates
 
 
 def _model_info(source_method: str = "deterministic_regex", llm_status: str | None = None) -> dict[str, Any]:
@@ -27,13 +30,24 @@ def apply_review_preservation(graph: AnalysisGraphV2, previous: dict[str, Any] |
     if not isinstance(previous, dict) or previous.get("schema_version") != graph.schema_version:
         return graph
     previous_items: dict[str, dict[str, Any]] = {}
-    for key in ("entities", "relations", "events", "claims", "facts", "risk_flags", "slots"):
+    item_keys = (
+        "entities",
+        "relations",
+        "events",
+        "claims",
+        "facts",
+        "risk_flags",
+        "slots",
+        "domain_frames",
+        "insight_items",
+    )
+    for key in item_keys:
         for item in previous.get(key, []) or []:
             if isinstance(item, dict) and item.get("id"):
                 previous_items[item["id"]] = item
 
     changed = graph.to_storage_dict()
-    for key in ("entities", "relations", "events", "claims", "facts", "risk_flags", "slots"):
+    for key in item_keys:
         for item in changed.get(key, []) or []:
             previous_item = previous_items.get(item.get("id"))
             if not previous_item:
@@ -47,6 +61,10 @@ def apply_review_preservation(graph: AnalysisGraphV2, previous: dict[str, Any] |
                     "original_label",
                     "original_type",
                     "source_item_ids",
+                    "source_fact_ids",
+                    "supporting_item_ids",
+                    "domain_frame_id",
+                    "template_slot_name",
                 ):
                     if field in previous_item:
                         item[field] = previous_item[field]
@@ -60,6 +78,7 @@ def generate_task_graph(
     analysis_mode: str = "general",
     domain_template_ids: list[int] | None = None,
     template_version_refs: list[dict[str, Any]] | None = None,
+    analysis_templates: list[dict[str, Any]] | None = None,
 ) -> AnalysisGraphV2:
     if not getattr(settings, "ANALYSIS_INTELLIGENCE_V2_ENABLED", True):
         raise HTTPException(status_code=503, detail="Analysis intelligence V2 is disabled")
@@ -76,6 +95,9 @@ def generate_task_graph(
     result = task.get("result") if isinstance(task.get("result"), dict) else {}
     segments = build_segments(task)
     core = extract_core_analysis(segments)
+    events = synthesize_events(core.facts, core.entities)
+    slot_result = fill_slots_from_templates(core.facts, analysis_templates)
+    insight_items = generate_insights(events, core.risk_flags, slot_result.insight_items)
     previous = result.get("visualization_data") if isinstance(result, dict) else None
     warnings: list[str] = []
     normalized_mode = analysis_mode if analysis_mode in {"general", "selected"} else "general"
@@ -103,10 +125,13 @@ def generate_task_graph(
         segments=segments,
         entities=core.entities,
         relations=[],
-        events=[],
+        events=events,
         claims=[],
         facts=core.facts,
         risk_flags=core.risk_flags,
+        slots=slot_result.slots,
+        domain_frames=slot_result.domain_frames,
+        insight_items=insight_items,
     )
     return apply_review_preservation(graph, previous)
 
@@ -151,13 +176,28 @@ def generate_text_graph(
             ref.start_time = None
             ref.end_time = None
             ref.speaker_id = None
+    events = synthesize_events(core.facts, entities)
+    for event in events:
+        event.source_method = source_method
+        event.requires_review = True
+        if event.review_status == "machine_suggested":
+            event.review_status = "needs_review"
+        for ref in event.evidence_refs:
+            ref.source_kind = source_kind  # type: ignore[assignment]
+            ref.audio_id = None
+            ref.segment_id = None
+            ref.start_time = None
+            ref.end_time = None
+            ref.speaker_id = None
+    insight_items = generate_insights(events, core.risk_flags)
     return AnalysisGraphV2(
         model_info=_model_info(source_method=source_method),
         segments=[segment],
         entities=entities,
         relations=[],
-        events=[],
+        events=events,
         claims=[],
         facts=core.facts,
         risk_flags=core.risk_flags,
+        insight_items=insight_items,
     )

@@ -201,8 +201,8 @@ VAD được dùng để lấy timestamp có tiếng nói, cắt im lặng trư�
 - Chỉ load model khi gọi `model`.
 - Đọc cấu hình `WHISPER_MODEL`, `WHISPER_DEVICE`, `WHISPER_COMPUTE_TYPE`.
 - Nếu cấu hình CUDA nhưng GPU không khả dụng, fallback CPU + int8.
-- Dùng `models/whisper` làm cache root.
-- Gọi `faster_whisper.WhisperModel(..., download_root=...)`.
+- Dùng `models/whisper` làm cache root theo manifest artifact.
+- Verify artifact trước rồi gọi `faster_whisper.WhisperModel(<verified local snapshot path>, ...)`.
 
 Giá trị kỹ thuật: giảm thời gian startup API, tránh load nhiều model lớn trong một process, hỗ trợ cache local và vận hành offline/bán offline.
 

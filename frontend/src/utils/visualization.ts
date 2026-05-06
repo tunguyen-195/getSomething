@@ -63,6 +63,14 @@ export type AnalysisGraphV2 = {
   facts?: EvidenceItem[];
   risk_flags?: EvidenceItem[];
   slots?: EvidenceItem[];
+  insight_items?: EvidenceItem[];
+  insights?: string[];
+  key_items?: Array<Record<string, any>>;
+  visibility?: {
+    visible_item_ids?: string[];
+    blocked_item_ids?: string[];
+    blocked_reasons?: Record<string, string[]>;
+  };
   display_sections_vi?: Array<{
     id: string;
     title_vi: string;
@@ -134,10 +142,16 @@ const KEY_ENTITY_TYPES = new Set([
   'money_range',
   'date',
   'date_range',
+  'date_time',
   'time',
   'quantity',
   'payment_method',
   'purpose',
+  'person',
+  'person_name',
+  'organization',
+  'location',
+  'address',
 ]);
 
 export const getKeyEntities = (data?: AnalysisGraphV2 | LegacyVisualizationData | null): KeyEntity[] => {
@@ -146,6 +160,23 @@ export const getKeyEntities = (data?: AnalysisGraphV2 | LegacyVisualizationData 
   }
 
   if (isAnalysisGraphV2(data)) {
+    const blockedIds = new Set(data.visibility?.blocked_item_ids || []);
+    const canonical = Array.isArray(data.key_items) && data.key_items.length > 0
+      ? data.key_items
+      : (Array.isArray(data.legacy_view?.extracted_entities) ? data.legacy_view.extracted_entities : []);
+    if (canonical.length > 0) {
+      return canonical
+        .filter(item => item.review_status !== 'rejected')
+        .filter(item => !blockedIds.has(String(item.id || '')))
+        .filter(item => KEY_ENTITY_TYPES.has(String(item.type || '').toLowerCase()))
+        .map(item => ({
+          type: String(item.type || 'entity'),
+          value: stringifyAnalysisValue(item.value || item.normalized_value || item.label_vi || item.label),
+          context: item.context || item.source_item_type,
+        }))
+        .filter(item => item.value);
+    }
+
     const canonicalItems = [
       ...(data.entities || []),
       ...(data.facts || []),
@@ -153,6 +184,7 @@ export const getKeyEntities = (data?: AnalysisGraphV2 | LegacyVisualizationData 
     ];
     return canonicalItems
       .filter(item => item.review_status !== 'rejected')
+      .filter(item => !blockedIds.has(item.id))
       .filter(item => KEY_ENTITY_TYPES.has(String(item.type || '').toLowerCase()))
       .map(item => ({
         type: String(item.type || 'entity'),

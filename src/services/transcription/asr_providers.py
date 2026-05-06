@@ -10,6 +10,13 @@ from typing import Any
 
 from src.core.config import settings
 from src.core.logging import logger
+from src.services.model_artifacts import (
+    ModelArtifactError,
+    normalize_model_name,
+    require_faster_whisper_runtime_ready,
+    verify_artifact_id_for_health,
+    verify_faster_whisper_runtime_health,
+)
 
 
 class ASRProviderError(RuntimeError):
@@ -123,6 +130,16 @@ def _is_oom(exc: Exception) -> bool:
     return "out of memory" in text or "cuda" in text and "memory" in text
 
 
+def _load_verified_faster_whisper_model(model_name: str, *, device: str, compute_type: str):
+    verified_model_path = require_faster_whisper_runtime_ready(
+        model_name,
+        cache_root=settings.WHISPER_MODEL_PATH,
+    )
+    from faster_whisper import WhisperModel
+
+    return WhisperModel(str(verified_model_path), device=device, compute_type=compute_type)
+
+
 def resolve_asr_runtime(profile: str | None) -> dict[str, Any]:
     profile_name = profile or settings.ASR_PROFILE
     preset = ASR_PROFILE_PRESETS.get(profile_name, {})
@@ -147,12 +164,8 @@ def _faster_whisper_result(
     force_cpu: bool = False,
 ) -> dict[str, Any]:
     start = time.time()
-    from faster_whisper import WhisperModel
-    from src.services.transcription.models.whisper_manager import get_whisper_manager
 
     model_name = runtime["model"]
-    model_cache_dir = Path(settings.WHISPER_MODEL_PATH)
-    model_cache_dir.mkdir(parents=True, exist_ok=True)
     runtime_device = runtime["device"]
     runtime_compute_type = runtime["compute_type"]
 
@@ -170,11 +183,10 @@ def _faster_whisper_result(
             warning_prefix = warning_prefix or "cuda_probe_failed_retry_cpu_int8"
 
     if force_cpu:
-        model = WhisperModel(
+        model = _load_verified_faster_whisper_model(
             model_name,
             device="cpu",
             compute_type="int8",
-            download_root=str(model_cache_dir.absolute()),
         )
         transcribe = model.transcribe
         device = "cpu"
@@ -184,16 +196,17 @@ def _faster_whisper_result(
         or runtime_device != settings.WHISPER_DEVICE
         or runtime_compute_type != settings.WHISPER_COMPUTE_TYPE
     ):
-        model = WhisperModel(
+        model = _load_verified_faster_whisper_model(
             model_name,
             device=runtime_device,
             compute_type=runtime_compute_type,
-            download_root=str(model_cache_dir.absolute()),
         )
         transcribe = model.transcribe
         device = runtime_device
         compute_type = runtime_compute_type
     else:
+        from src.services.transcription.models.whisper_manager import get_whisper_manager
+
         manager = get_whisper_manager()
         transcribe = manager.transcribe
         device = settings.WHISPER_DEVICE
@@ -259,6 +272,8 @@ def _faster_whisper_result(
 def transcribe_faster_whisper_ct2(audio_path: str, *, language: str, runtime: dict[str, Any], **_: Any) -> dict[str, Any]:
     try:
         return _faster_whisper_result(audio_path, language=language, runtime=runtime)
+    except ModelArtifactError:
+        raise
     except Exception as exc:
         if not _is_oom(exc):
             raise
@@ -337,6 +352,46 @@ def _reason_code(exc: Exception) -> str:
     if not compact:
         compact = exc.__class__.__name__.lower()
     return compact[:120]
+
+
+def _artifact_result_reason(artifact_id: str) -> str | None:
+    result = verify_artifact_id_for_health(artifact_id)
+    if result.ok:
+        return None
+    return result.errors[0] if result.errors else "model_cache_missing_or_unverified"
+
+
+def _profile_availability(
+    key: str,
+    preset: dict[str, Any],
+    *,
+    phowhisper_valid: bool,
+    faster_whisper_health: dict[str, tuple[bool, str | None]],
+) -> tuple[bool, str | None]:
+    provider = preset.get("provider")
+    if provider == "faster_whisper_ct2":
+        model_name = str(preset.get("model") or settings.WHISPER_MODEL)
+        health_key = f"{normalize_model_name(model_name)}:{settings.WHISPER_MODEL_PATH}"
+        if health_key not in faster_whisper_health:
+            result = verify_faster_whisper_runtime_health(
+                model_name,
+                cache_root=settings.WHISPER_MODEL_PATH,
+            )
+            reason = None if result.ok else (result.errors[0] if result.errors else "model_cache_missing_or_unverified")
+            faster_whisper_health[health_key] = (result.ok, reason)
+        return faster_whisper_health[health_key]
+    if provider == "whisper_cpp_cli":
+        reason = _artifact_result_reason("whisper_cpp_small_q5")
+        if reason:
+            return False, reason
+        if not Path(settings.WHISPER_CPP_BIN).exists():
+            return False, "whisper_cpp_binary_missing"
+        return True, None
+    if provider == "phowhisper_cpp_cli":
+        if phowhisper_valid:
+            return True, None
+        return False, "phowhisper_cpp_candidate_invalid"
+    return True, None
 
 
 def _validate_phowhisper_cpp_model(model_path: Path) -> list[str]:
@@ -587,6 +642,26 @@ def provider_health() -> dict[str, Any]:
             phowhisper_valid = not phowhisper_warnings
         except Exception as exc:
             phowhisper_warnings = [_reason_code(exc)]
+    profiles = []
+    faster_whisper_health: dict[str, tuple[bool, str | None]] = {}
+    for key, preset in ASR_PROFILE_PRESETS.items():
+        available, reason = _profile_availability(
+            key,
+            preset,
+            phowhisper_valid=phowhisper_valid,
+            faster_whisper_health=faster_whisper_health,
+        )
+        profiles.append(
+            {
+                "value": key,
+                "label_vi": preset["label_vi"],
+                "provider": preset["provider"],
+                "description": preset["description"],
+                "available": available,
+                "availability_reason": reason,
+            }
+        )
+
     return {
         "asr_provider": settings.ASR_PROVIDER,
         "asr_profile": settings.ASR_PROFILE,
@@ -598,14 +673,5 @@ def provider_health() -> dict[str, Any]:
         "phowhisper_cpp_model_available": phowhisper_model.exists(),
         "phowhisper_cpp_candidate_valid": phowhisper_valid,
         "phowhisper_cpp_warnings": phowhisper_warnings,
-        "profiles": [
-            {
-                "value": key,
-                "label_vi": preset["label_vi"],
-                "provider": preset["provider"],
-                "description": preset["description"],
-                "available": key != "phowhisper_cpp_candidate" or phowhisper_valid,
-            }
-            for key, preset in ASR_PROFILE_PRESETS.items()
-        ],
+        "profiles": profiles,
     }

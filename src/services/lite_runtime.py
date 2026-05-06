@@ -228,11 +228,10 @@ def start_lite_job(
                 task_id,
                 operation,
                 exc.__class__.__name__,
-                exc_info=True,
             )
             try:
                 job_db.rollback()
-                update_task(task_id, {"status": "failed", "error": str(exc)}, db=job_db)
+                update_task(task_id, {"status": "failed", "error": "background_job_failed"}, db=job_db)
                 job_db.commit()
             except Exception:
                 job_db.rollback()

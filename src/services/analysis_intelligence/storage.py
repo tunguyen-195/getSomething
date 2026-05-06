@@ -59,6 +59,7 @@ def _revision_guard(graph: AnalysisGraphV2, expected_revision: int | None) -> No
     if expected_revision is not None and expected_revision != graph.graph_revision:
         raise HTTPException(
             status_code=409,
+            headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
             detail={
                 "message": "Analysis graph revision conflict",
                 "current_revision": graph.graph_revision,
@@ -76,6 +77,8 @@ def _all_item_lists(graph_data: dict[str, Any]) -> list[list[dict[str, Any]]]:
         graph_data.setdefault("facts", []),
         graph_data.setdefault("risk_flags", []),
         graph_data.setdefault("slots", []),
+        graph_data.setdefault("domain_frames", []),
+        graph_data.setdefault("insight_items", []),
     ]
 
 

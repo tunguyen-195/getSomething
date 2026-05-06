@@ -56,13 +56,6 @@ def _pipeline_from_pretrained(checkpoint_path: str | Path, hf_token: str | None 
     return Pipeline.from_pretrained(str(checkpoint_path), **kwargs)
 
 
-def _download_snapshot(model_id: str, hf_token: str, local_dir: Path) -> None:
-    from huggingface_hub import snapshot_download
-
-    local_dir.parent.mkdir(parents=True, exist_ok=True)
-    snapshot_download(repo_id=model_id, token=hf_token, local_dir=str(local_dir))
-
-
 def _move_to_device(pipeline: Any, device: Any = None) -> Any:
     try:
         import torch
@@ -83,10 +76,10 @@ def load_pyannote_pipeline(
     cache_dir: str | Path | None = None,
     auto_download: bool | None = None,
 ):
-    """Load a Pyannote pipeline from local snapshots, optionally downloading.
+    """Load a Pyannote pipeline from a verified local artifact.
 
-    Runtime auto-download is opt-in via PYANNOTE_AUTO_DOWNLOAD=true. Production
-    deployments should pre-download with download_pyannote_model.py.
+    Runtime auto-download is intentionally disabled. Prepare the gated model with
+    download_pyannote_model.py so revision and file hashes are checked before use.
     """
     primary = str(_env_or_setting("PYANNOTE_MODEL_ID", DEFAULT_MODEL_ID))
     fallback = str(_env_or_setting("PYANNOTE_FALLBACK_MODEL_ID", DEFAULT_FALLBACK_MODEL_ID))
@@ -99,19 +92,16 @@ def load_pyannote_pipeline(
     if fallback and fallback != primary:
         model_ids.append(fallback)
 
+    if auto_download:
+        logger.warning("Pyannote runtime auto-download is disabled; run download_pyannote_model.py first")
+
     for model_id in model_ids:
-        local_dir = model_local_dir(model_id, cache_dir)
-        config_file = local_dir / "config.yaml"
+        try:
+            from src.services.model_artifacts import ModelArtifactError, require_pyannote_runtime_ready
 
-        if not config_file.exists() and auto_download and hf_token:
-            try:
-                logger.info("Downloading Pyannote model %s to %s", model_id, local_dir)
-                _download_snapshot(model_id, hf_token, local_dir)
-            except Exception as exc:
-                logger.warning("Pyannote download failed for %s: %s", model_id, exc)
-
-        if not config_file.exists():
-            logger.info("Pyannote local snapshot missing for %s at %s", model_id, local_dir)
+            local_dir = require_pyannote_runtime_ready(model_id, cache_root=cache_dir)
+        except ModelArtifactError as exc:
+            logger.warning("Pyannote unavailable for %s: %s", model_id, exc.reason_code)
             continue
 
         try:
@@ -119,7 +109,7 @@ def load_pyannote_pipeline(
             logger.info("Loaded Pyannote model %s from %s", model_id, local_dir)
             return _move_to_device(pipeline, device=device)
         except Exception as exc:
-            logger.warning("Pyannote local load failed for %s: %s", model_id, exc)
+            logger.warning("Pyannote local load failed for %s: %s", model_id, exc.__class__.__name__)
 
     logger.warning("Pyannote unavailable; continuing without diarization")
     return None

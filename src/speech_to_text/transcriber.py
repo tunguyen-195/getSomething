@@ -27,6 +27,7 @@ import librosa
 from src.audio_processing.processor import AudioProcessor
 from src.core.config import settings
 from src.audio_processing.vad.silero_adapter import SileroVADAdapter
+from src.services.model_artifacts import require_faster_whisper_runtime_ready
 
 @dataclass
 class AudioSegment:
@@ -450,19 +451,16 @@ class Transcriber:
                     logger.info(f"[AUTO-BATCH] batch_size tự động điều chỉnh theo VRAM: {batch_size}")
             except Exception as e:
                 logger.warning(f"[AUTO-BATCH] Không thể kiểm tra VRAM, dùng batch_size mặc định: {batch_size}. Lỗi: {e}")
-        # Support both local path và automatic download/cache
-        use_local = getattr(settings, 'WHISPER_USE_LOCAL', True)
-        download_root = getattr(settings, 'WHISPER_MODEL_PATH', 'models/whisper') if use_local else None
-
-        if use_local:
-            logger.info(f"[OFFLINE MODE] Using local model cache: {download_root}")
-
-        # Load model - will use cache if available, download if needed
-        self.model = WhisperModel(
+        verified_model_path = require_faster_whisper_runtime_ready(
             model_name,
+            cache_root=getattr(settings, 'WHISPER_MODEL_PATH', 'models/whisper'),
+        )
+        logger.info("[OFFLINE MODE] Using verified local model artifact")
+
+        self.model = WhisperModel(
+            str(verified_model_path),
             device=device,
             compute_type=compute_type,
-            download_root=download_root
         )
         logger.info(f"[MODEL] Loaded {model_name} successfully")
         self.device = device

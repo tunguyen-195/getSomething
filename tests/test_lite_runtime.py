@@ -1,3 +1,7 @@
+import logging
+import sys
+from types import SimpleNamespace
+
 import pytest
 from fastapi import Response
 from sqlalchemy import create_engine
@@ -65,6 +69,139 @@ def test_rtx2050_safe_profile_uses_int8_batch_safe_provider(monkeypatch):
     assert runtime["compute_type"] == "int8"
     assert runtime["beam_size"] == 5
     assert runtime["enable_diarization"] is False
+
+
+def test_faster_whisper_runtime_passes_verified_local_path_to_model(monkeypatch, tmp_path):
+    from src.services.transcription import asr_providers
+
+    calls = []
+    verified_path = tmp_path / "models" / "whisper" / "models--Systran--faster-whisper-small" / "snapshots" / "rev"
+    verified_path.mkdir(parents=True)
+
+    class FakeSegment:
+        start = 0.0
+        end = 1.0
+        text = "xin chao"
+        avg_logprob = -0.1
+        words = []
+
+    class FakeInfo:
+        duration = 1.0
+        language = "vi"
+
+    class FakeWhisperModel:
+        def __init__(self, *args, **kwargs):
+            calls.append((args, kwargs))
+
+        def transcribe(self, *args, **kwargs):
+            return iter([FakeSegment()]), FakeInfo()
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=FakeWhisperModel))
+    monkeypatch.setattr(asr_providers, "require_faster_whisper_runtime_ready", lambda *args, **kwargs: verified_path)
+    monkeypatch.setattr(settings, "WHISPER_MODEL", "configured-different-model")
+    monkeypatch.setattr(settings, "WHISPER_DEVICE", "cpu")
+    monkeypatch.setattr(settings, "WHISPER_COMPUTE_TYPE", "int8")
+
+    result = asr_providers._faster_whisper_result(
+        "audio.wav",
+        language="vi",
+        runtime={
+            "profile": "test",
+            "model": "small",
+            "device": "cpu",
+            "compute_type": "int8",
+            "beam_size": 1,
+        },
+    )
+
+    assert result["text"] == "xin chao"
+    assert calls
+    args, kwargs = calls[0]
+    assert args == (str(verified_path),)
+    assert args[0] != "small"
+    assert "download_root" not in kwargs
+
+
+def test_unmanifested_faster_whisper_model_fails_before_model_load(monkeypatch):
+    from src.services.model_artifacts import ModelArtifactError
+    from src.services.transcription import asr_providers
+
+    calls = []
+
+    class FakeWhisperModel:
+        def __init__(self, *args, **kwargs):
+            calls.append((args, kwargs))
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=FakeWhisperModel))
+    monkeypatch.setattr(settings, "WHISPER_MODEL", "small")
+    monkeypatch.setattr(settings, "WHISPER_DEVICE", "cpu")
+    monkeypatch.setattr(settings, "WHISPER_COMPUTE_TYPE", "int8")
+
+    with pytest.raises(ModelArtifactError) as exc:
+        asr_providers._faster_whisper_result(
+            "audio.wav",
+            language="vi",
+            runtime={
+                "profile": "test",
+                "model": "medium",
+                "device": "cpu",
+                "compute_type": "int8",
+                "beam_size": 1,
+            },
+        )
+
+    assert exc.value.reason_code == "model_artifact_not_manifested"
+    assert calls == []
+
+
+def test_model_artifact_error_is_not_retried_as_oom(monkeypatch):
+    from src.services.model_artifacts import ModelArtifactError
+    from src.services.transcription import asr_providers
+
+    def fail_artifact(*args, **kwargs):
+        raise ModelArtifactError("model_cache_missing_or_unverified", "setup")
+
+    monkeypatch.setattr(asr_providers, "_faster_whisper_result", fail_artifact)
+
+    with pytest.raises(ModelArtifactError) as exc:
+        asr_providers.transcribe_faster_whisper_ct2(
+            "audio.wav",
+            language="vi",
+            runtime={"profile": "test"},
+        )
+
+    assert exc.value.reason_code == "model_cache_missing_or_unverified"
+
+
+def test_provider_health_marks_unmanifested_faster_whisper_profiles_unavailable(monkeypatch):
+    from pathlib import Path
+
+    from src.services.model_artifacts import ArtifactVerification
+    from src.services.transcription import asr_providers
+
+    calls = []
+
+    def fake_health(model_name: str, **kwargs):
+        calls.append(model_name)
+        if model_name == "small":
+            return ArtifactVerification(True, "faster_whisper_small", Path("verified-small"))
+        return ArtifactVerification(False, model_name, errors=["model_artifact_not_manifested"])
+
+    monkeypatch.setattr(asr_providers, "verify_faster_whisper_runtime_health", fake_health)
+    monkeypatch.setattr(asr_providers, "_artifact_result_reason", lambda artifact_id: "artifact_integrity_metadata_missing")
+
+    profiles = {profile["value"]: profile for profile in asr_providers.provider_health()["profiles"]}
+
+    assert calls.count("small") == 1
+    assert profiles["rtx2050_safe"]["available"] is True
+    assert profiles["rtx2050_fast"]["available"] is True
+    assert profiles["cpu_safe"]["available"] is True
+    assert profiles["balanced"]["available"] is False
+    assert profiles["balanced"]["availability_reason"] == "model_artifact_not_manifested"
+    assert profiles["quality_local"]["available"] is False
+    assert profiles["quality_local"]["availability_reason"] == "model_artifact_not_manifested"
+    assert profiles["offline_cpp"]["available"] is False
+    assert profiles["offline_cpp"]["availability_reason"] == "artifact_integrity_metadata_missing"
 
 
 def test_phowhisper_cpp_candidate_is_blocked_until_validated(monkeypatch):
@@ -138,7 +275,7 @@ def test_lite_background_job_sets_initial_status_before_thread_and_preserves_ter
     request_db.close()
 
 
-def test_lite_background_job_persists_failed_status(monkeypatch):
+def test_lite_background_job_persists_failed_status(monkeypatch, caplog):
     Session = _lite_test_session()
     monkeypatch.setattr(lite_runtime, "SessionLocal", Session)
     monkeypatch.setattr(settings, "LITE_JOB_HEARTBEAT_SECONDS", 0.05)
@@ -147,9 +284,11 @@ def test_lite_background_job_persists_failed_status(monkeypatch):
     request_db = Session()
     request_db.add(Task(id="task-fail", filename="fail.wav", status="uploaded", result={}))
     request_db.commit()
+    sensitive = "SECRET_TRANSCRIPT graph={'segments':[{'text':'private evidence'}]}"
+    caplog.set_level(logging.ERROR)
 
     def fail_fast(task_id: str, *, db):
-        raise RuntimeError("boom")
+        raise RuntimeError(sensitive)
 
     lite_runtime.start_lite_job(
         db=request_db,
@@ -164,11 +303,14 @@ def test_lite_background_job_persists_failed_status(monkeypatch):
         db = Session()
         try:
             task = db.query(Task).filter(Task.id == "task-fail").first()
-            return task.status == "failed" and task.error == "boom"
+            return task.status == "failed" and task.error == "background_job_failed"
         finally:
             db.close()
 
     assert _wait_for(failed_status)
+    assert sensitive not in caplog.text
+    assert "private evidence" not in caplog.text
+    assert "error_class=RuntimeError" in caplog.text
     request_db.close()
 
 

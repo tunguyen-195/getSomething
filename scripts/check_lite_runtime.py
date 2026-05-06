@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.services.model_artifacts import ModelArtifactError, require_faster_whisper_runtime_ready  # noqa: E402
+
 
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -75,19 +77,19 @@ def run_gpu_smoke(settings, *, audio_path: Path | None, offline_models_only: boo
     if "int8" not in supported:
         raise RuntimeError("ctranslate2_cuda_int8_unavailable")
 
-    model_cache_dir = (ROOT / settings.WHISPER_MODEL_PATH).resolve()
-    if offline_models_only and not model_available_locally(settings.WHISPER_MODEL, model_cache_dir):
-        raise RuntimeError("model_unavailable_or_download_failed")
+    verified_model_path = require_faster_whisper_runtime_ready(
+        settings.WHISPER_MODEL,
+        root=ROOT,
+        cache_root=settings.WHISPER_MODEL_PATH,
+    )
 
     try:
         from faster_whisper import WhisperModel
 
         model = WhisperModel(
-            settings.WHISPER_MODEL,
+            str(verified_model_path),
             device="cuda",
             compute_type="int8",
-            download_root=str(model_cache_dir),
-            local_files_only=offline_models_only,
         )
         if audio_path:
             segments, _info = model.transcribe(
@@ -166,6 +168,9 @@ def main() -> int:
         try:
             run_gpu_smoke(settings, audio_path=args.gpu_smoke_audio, offline_models_only=args.offline_models_only)
             status_line("GPU ASR smoke", True, "faster-whisper cuda/int8")
+        except ModelArtifactError as exc:
+            print(f"[ERROR] gpu_smoke_failed:{exc.reason_code}")
+            return 3
         except Exception as exc:
             print(f"[ERROR] gpu_smoke_failed:{reason_code(exc)}")
             return 3

@@ -1,4 +1,5 @@
 import uuid
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
@@ -526,6 +527,8 @@ def test_visualization_payload_is_unwrapped_across_writers(auth_enabled, monkeyp
         "timeline": result["visualization_data"]["timeline"],
         "main_events": result["visualization_data"]["main_events"],
         "entity_types": result["visualization_data"]["entity_types"],
+        "insights": result["visualization_data"]["insights"],
+        "extracted_entities": result["visualization_data"]["key_items"],
     }
 
     monkeypatch.setattr("src.api.endpoints.audio.generate_visualization", lambda *_args, **_kwargs: wrapper)
@@ -558,6 +561,126 @@ def test_visualization_payload_is_unwrapped_across_writers(auth_enabled, monkeyp
         assert stored == payload
     finally:
         db.close()
+
+
+def test_analysis_graph_write_errors_do_not_log_sensitive_exception_text(auth_enabled, monkeypatch, caplog):
+    user_id, username, password = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_task_for_user(user_id, case_id)
+    _create_audio_for_task(user_id, case_id, task_id, status="transcribed")
+    sensitive = "SECRET_TRANSCRIPT graph={'segments':[{'text':'private evidence'}]}"
+
+    def raise_sensitive_error(*_args, **_kwargs):
+        raise RuntimeError(sensitive)
+
+    monkeypatch.setattr("src.services.analysis_intelligence.storage.review_item", raise_sensitive_error)
+    monkeypatch.setattr("src.services.analysis_intelligence.storage.update_entity", raise_sensitive_error)
+    monkeypatch.setattr("src.services.analysis_intelligence.storage.merge_entities", raise_sensitive_error)
+    monkeypatch.setattr("src.services.analysis_intelligence.storage.split_entity", raise_sensitive_error)
+    caplog.set_level(logging.ERROR)
+
+    client = _login_client(username, password)
+    headers = _csrf_header(client)
+    review_response = client.patch(
+        f"/api/v1/audio/v2/visualize/{task_id}/items/fact_1/review",
+        json={"expected_revision": 1, "review_status": "rejected"},
+        headers=headers,
+    )
+    update_response = client.patch(
+        f"/api/v1/audio/v2/visualize/{task_id}/entities/entity_1",
+        json={"expected_revision": 1, "label": "safe label"},
+        headers=headers,
+    )
+    merge_response = client.post(
+        f"/api/v1/audio/v2/visualize/{task_id}/entities/merge",
+        json={"expected_revision": 1, "source_entity_ids": ["entity_1", "entity_2"]},
+        headers=headers,
+    )
+    split_response = client.post(
+        f"/api/v1/audio/v2/visualize/{task_id}/entities/entity_1/split",
+        json={"expected_revision": 1, "replacement_entities": [{"label": "A", "type": "person"}]},
+        headers=headers,
+    )
+
+    assert review_response.status_code == 500
+    assert update_response.status_code == 500
+    assert merge_response.status_code == 500
+    assert split_response.status_code == 500
+    assert review_response.headers["cache-control"] == "no-store"
+    assert review_response.headers["pragma"] == "no-cache"
+    assert update_response.headers["cache-control"] == "no-store"
+    assert update_response.headers["pragma"] == "no-cache"
+    assert merge_response.headers["cache-control"] == "no-store"
+    assert merge_response.headers["pragma"] == "no-cache"
+    assert split_response.headers["cache-control"] == "no-store"
+    assert split_response.headers["pragma"] == "no-cache"
+    assert review_response.json()["detail"] == "Failed to update analysis review status"
+    assert update_response.json()["detail"] == "Failed to update analysis entity"
+    assert merge_response.json()["detail"] == "Failed to merge analysis entities"
+    assert split_response.json()["detail"] == "Failed to split analysis entity"
+    assert sensitive not in caplog.text
+    assert "private evidence" not in caplog.text
+    assert "error_class=RuntimeError" in caplog.text
+    assert "action=review_item" in caplog.text
+    assert "action=update_entity" in caplog.text
+    assert "action=merge_entities" in caplog.text
+    assert "action=split_entity" in caplog.text
+
+
+def test_analysis_visualize_errors_do_not_log_sensitive_exception_text(auth_enabled, monkeypatch, caplog):
+    user_id, username, password = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_task_for_user(user_id, case_id)
+    _create_audio_for_task(user_id, case_id, task_id, status="transcribed")
+    sensitive = "SECRET_TRANSCRIPT graph={'segments':[{'text':'private evidence'}]}"
+
+    def raise_sensitive_error(*_args, **_kwargs):
+        raise RuntimeError(sensitive)
+
+    monkeypatch.setattr("src.services.visualization_service.generate_visualization", raise_sensitive_error)
+    caplog.set_level(logging.ERROR)
+
+    client = _login_client(username, password)
+    response = client.post(
+        f"/api/v1/audio/v2/visualize/{task_id}",
+        json={"visualization_type": "all"},
+        headers=_csrf_header(client),
+    )
+
+    assert response.status_code == 500
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["pragma"] == "no-cache"
+    assert response.json()["detail"] == "analysis_generation_failed"
+    assert sensitive not in response.text
+    assert sensitive not in caplog.text
+    assert "private evidence" not in caplog.text
+    assert "error_class=RuntimeError" in caplog.text
+    assert "action=visualize" in caplog.text
+
+
+def test_visualization_service_errors_do_not_log_sensitive_exception_text(auth_enabled, monkeypatch, caplog):
+    user_id, _, _ = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_task_for_user(user_id, case_id)
+    _create_audio_for_task(user_id, case_id, task_id, status="transcribed")
+    sensitive = "SECRET_TRANSCRIPT graph={'segments':[{'text':'private evidence'}]}"
+
+    def raise_sensitive_error(*_args, **_kwargs):
+        raise RuntimeError(sensitive)
+
+    monkeypatch.setattr("src.services.analysis_intelligence.service.generate_task_graph", raise_sensitive_error)
+    caplog.set_level(logging.ERROR)
+
+    from src.services.visualization_service import generate_visualization
+
+    with pytest.raises(HTTPException) as exc_info:
+        generate_visualization(task_id)
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == "analysis_generation_failed"
+    assert sensitive not in caplog.text
+    assert "private evidence" not in caplog.text
+    assert "error_class=RuntimeError" in caplog.text
 
 
 def test_summary_analyze_blocks_cross_user_orphan_task(auth_enabled):

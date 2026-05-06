@@ -2,6 +2,13 @@
 
 Tai lieu nay dung de cai du an tren mot may moi hoan toan tu Git.
 
+Pull-ready target hien tai la **Lite RTX2050**. Profile nay dung `faster_whisper_ct2`
+`small/cuda/int8` va `PROCESSING_RUNNER=single_job_db_lease`, khong bat buoc Redis,
+Celery, Cherry full offline, PhoWhisper offline, hay Pyannote.
+
+Full/offline Cherry/PhoWhisper la optional profile rieng. Cai model theo
+[MODEL_SETUP.md](MODEL_SETUP.md) neu can.
+
 ## 1. Yeu cau chung
 
 Bat buoc:
@@ -14,7 +21,7 @@ Bat buoc:
 Neu chay local khong Docker:
 
 - PostgreSQL 13+
-- Redis hoac Memurai
+- Redis hoac Memurai chi can cho full/Celery. Lite RTX2050 khong can Redis/Celery.
 
 Neu chay Docker:
 
@@ -42,7 +49,7 @@ Mot clone sach nen khong co file modified/untracked.
 ## 3. Tao file cau hinh
 
 ```powershell
-copy .env.example .env
+copy .env.lite.example .env
 ```
 
 Sua `.env` toi thieu:
@@ -57,6 +64,19 @@ ENABLE_API_DOCS=true
 SECRET_KEY=<strong-random-secret>
 INITIAL_ADMIN_PASSWORD=<admin-password>
 POSTGRES_PASSWORD=<postgres-password>
+```
+
+Giu cac gia tri Lite quan trong:
+
+```env
+APP_EDITION=lite
+PROCESSING_RUNNER=single_job_db_lease
+ASR_PROVIDER=faster_whisper_ct2
+ASR_PROFILE=rtx2050_safe
+WHISPER_MODEL=small
+WHISPER_MODEL_PATH=models/whisper
+WHISPER_DEVICE=cuda
+WHISPER_COMPUTE_TYPE=int8
 ```
 
 Tao secret:
@@ -119,16 +139,12 @@ npm install
 cd ..
 ```
 
-### 5.3. Chuan bi PostgreSQL va Redis
+### 5.3. Chuan bi PostgreSQL
 
 Dat `DATABASE_URL` trong `.env` theo DB local, vi du:
 
 ```env
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/speech_to_information
-REDIS_HOST=localhost
-REDIS_PORT=6379
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/0
 ```
 
 Tao database neu chua co:
@@ -153,22 +169,35 @@ INIT_DB_ON_STARTUP=true
 
 Production nen dat `INIT_DB_ON_STARTUP=false` va chay migration/init bang quy trinh deploy rieng.
 
-### 5.5. Start service
+### 5.5. Tai/cache model Lite
+
+Tai public faster-whisper small vao cache local:
+
+```powershell
+python scripts\precache_lite_models.py --model small
+python scripts\verify_models.py --profile lite_rtx2050
+```
+
+`verify_models.py` is offline-first and checks pinned file metadata from
+`docs/model_artifacts.required.json`. Strict hash verification may take a few
+seconds while reading `model.bin`.
+
+Neu may offline, copy cache public `models/whisper` da chuan bi san vao repo root, roi verify lai.
+
+### 5.6. Start service
 
 Cach nhanh:
 
 ```powershell
-.\START_ALL_SERVICES.bat
+.\START_LITE_RTX2050.bat
 ```
+
+`START_ALL_SERVICES.bat` van ton tai de tuong thich nguoc va se goi Lite starter.
 
 Cach thu cong, moi lenh mot terminal:
 
 ```powershell
-.\venv\Scripts\python.exe -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-```powershell
-.\venv\Scripts\python.exe -m celery -A src.worker.worker worker --pool=solo --loglevel=info
+.\venv\Scripts\python.exe -m uvicorn src.main:app --host 0.0.0.0 --port 8000
 ```
 
 ```powershell
@@ -178,7 +207,7 @@ npm run dev
 
 ## 6. Models va du lieu runtime
 
-Repo khong commit model nang, audio upload, log, cache hoac generated data.
+Repo khong commit model nang, public model cache, audio upload, log, cache hoac generated data.
 
 Thu muc runtime:
 
@@ -188,7 +217,22 @@ Thu muc runtime:
 - `logs/`
 - `data/`
 
-Neu workflow can model offline, copy model vao `models/` tren may moi va cau hinh path trong `.env`.
+Model contract chinh thuc nam o:
+
+- [MODEL_SETUP.md](MODEL_SETUP.md)
+- [model_artifacts.required.json](model_artifacts.required.json)
+
+Pull-ready Lite bat buoc co `faster_whisper_small`. Full/offline Cherry/PhoWhisper can copy thu cong cac artifact khong
+tai duoc theo manifest rieng va khong block Lite setup.
+
+Verify:
+
+```powershell
+python scripts\verify_models.py --profile lite_rtx2050
+python scripts\check_lite_runtime.py --gpu-smoke --offline-models-only
+```
+
+Neu workflow can full/offline model, copy manual bundle vao `models/` tren may moi va cau hinh path trong `.env`.
 
 ### 6.1. Optional Pyannote diarization
 
@@ -263,9 +307,17 @@ npm run build
 cd ..
 ```
 
-Cherry import smoke:
+Lite runtime smoke:
 
 ```powershell
+python scripts\verify_models.py --profile lite_rtx2050
+python scripts\check_lite_runtime.py --gpu-smoke --offline-models-only
+```
+
+Cherry import smoke chi dung sau khi cai private full/offline bundle:
+
+```powershell
+python scripts\verify_models.py --profile full_offline
 python -c "from src.services.cherry_summarizer import check_cherry_core_available; from src.services.transcription.cherry_transcription_service import get_cherry_transcriber; from src.audio_processing.vad.silero_adapter import SileroVADAdapter; print('ok')"
 ```
 

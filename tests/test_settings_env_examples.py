@@ -121,6 +121,20 @@ def test_lite_runtime_gpu_smoke_failure_returns_dedicated_code(monkeypatch, caps
     assert "gpu_smoke_failed:model_unavailable_or_download_failed" in capsys.readouterr().out
 
 
+def test_lite_runtime_gpu_smoke_reports_model_artifact_reason(monkeypatch, capsys):
+    import scripts.check_lite_runtime as check_lite_runtime
+    from src.services.model_artifacts import ModelArtifactError
+
+    def fake_gpu_smoke(settings, *, audio_path, offline_models_only):
+        raise ModelArtifactError("model_cache_missing_or_unverified", "setup")
+
+    monkeypatch.setattr(check_lite_runtime, "run_gpu_smoke", fake_gpu_smoke)
+    monkeypatch.setattr(sys, "argv", ["check_lite_runtime.py", "--gpu-smoke"])
+
+    assert check_lite_runtime.main() == 3
+    assert "gpu_smoke_failed:model_cache_missing_or_unverified" in capsys.readouterr().out
+
+
 def test_lite_runtime_gpu_smoke_missing_audio_fails_before_gpu_imports():
     import scripts.check_lite_runtime as check_lite_runtime
 

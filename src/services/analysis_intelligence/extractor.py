@@ -35,7 +35,13 @@ DATE_RE = re.compile(
     r"(?:\s*(?:năm|/)\s*(?P<year>\d{2,4}))?\b"
 )
 TIME_RE = re.compile(
-    r"(?i)\b(\d{1,2}[:h]\d{2}|\d{1,2}\s*giờ(?:\s*\d{1,2}\s*phút)?|sáng|chiều|tối|đêm|hôm nay|ngày mai|hôm qua)\b"
+    r"(?i)\b("
+    r"\d{1,2}[:h]\d{2}"
+    r"|\d{1,2}\s*giờ(?:\s*\d{1,2}\s*phút)?"
+    r"|hôm nay|ngày mai|hôm qua"
+    r"|(?:buổi|vào|lúc|khoảng|tầm)\s+(?:sáng|chiều|tối|đêm)"
+    r"|(?:sáng|chiều|tối|đêm)\s+(?:nay|mai|hôm qua)"
+    r")\b"
 )
 MONEY_WORD_RE = re.compile(
     r"(?i)(?<!\w)(\d+(?:[.,]\d+)?\s*(?:triệu|trieu|tỷ|ty)"
@@ -48,9 +54,41 @@ PERSON_NAME_RE = re.compile(
     r"(?i)\b(?:chị|anh|em|tôi)\s+(?:tên\s+là|là)\s+"
     r"([A-ZÀ-ỸĐ][A-Za-zÀ-ỹĐđ]*(?:\s+[A-ZÀ-ỸĐ][A-Za-zÀ-ỹĐđ]*){0,5})"
 )
+LOCATION_SEED_PATTERN = (
+    r"Hà\s*Nội|Đà\s*Nẵng|TP\.?\s*HCM|TP\.?\s*Hồ\s*Chí\s*Minh|Hồ\s*Chí\s*Minh|"
+    r"Mỹ\s*Đình|Hoàn\s*Kiếm|Hàng\s*Bài|Đống\s*Đa|phố\s*Huế|Nguyễn\s*Chí\s*Thanh|Bạch\s*Mai"
+)
+LOCATION_STOP_PATTERN = (
+    r"[,.;:!?\n]|$|"
+    r"\b(?:công\s*ty|khách\s*sạn|bệnh\s*viện|trường|địa\s*chỉ|gọi|ngày|lúc|vào|"
+    r"để|cho|liên\s*hệ|ở|tại|đến|tới)\b"
+)
+LOCATION_COMPONENT_PATTERN = (
+    r"(?:phố|đường|phường|xã|quận|huyện)\s+"
+    r"[A-Za-zÀ-ỹĐđ0-9 '-]+?"
+)
+VI_UPPERCASE_CHARS = "A-ZĐÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴ"
+ORG_NAME_TOKEN_PATTERN = (
+    r"(?!(?:ở|tại|đến|tới|địa|gọi|ngày|lúc|vào|để|cho|liên)\b)"
+    rf"[{VI_UPPERCASE_CHARS}][A-Za-zÀ-ỹĐđ0-9&-]*(?:\.[A-Za-zÀ-ỹĐđ0-9&-]+)*"
+)
+ADDRESS_RE = re.compile(
+    rf"(?i)\b(?P<address>(?:địa\s*chỉ\s*(?:là|:)?\s*)?(?:số\s*)?\d+[A-Za-zÀ-ỹĐđ0-9/.-]*\s+"
+    rf"(?:phố|đường)\s+[A-Za-zÀ-ỹĐđ0-9 '-]+?"
+    rf"(?:,\s*(?:phường|xã|quận|huyện|thành\s*phố|tp\.?|tỉnh)\s+[A-Za-zÀ-ỹĐđ0-9 '-]+?)*"
+    rf"(?:,\s*(?:{LOCATION_SEED_PATTERN}))?)(?=\s*(?:{LOCATION_STOP_PATTERN}))"
+)
+LOCATION_CONTEXT_RE = re.compile(
+    rf"(?i)\b(?:tại|ở|đến|tới|khu\s*vực)\s+"
+    rf"(?P<location>(?:{LOCATION_SEED_PATTERN}|{LOCATION_COMPONENT_PATTERN}))(?=\s*(?:{LOCATION_STOP_PATTERN}))"
+)
+LOCATION_COMPONENT_RE = re.compile(
+    rf"(?i)\b(?P<location>(?:{LOCATION_COMPONENT_PATTERN}|(?:{LOCATION_SEED_PATTERN})))(?=\s*(?:{LOCATION_STOP_PATTERN}))"
+)
 ORG_RE = re.compile(
-    r"\b(?i:khách\s*sạn|công\s*ty|doanh\s*nghiệp|bệnh\s*viện|trường)\s+"
-    r"([A-ZÀ-ỸĐ][A-Za-zÀ-ỹĐđ0-9.&-]*(?:\s+[A-ZÀ-ỸĐ][A-Za-zÀ-ỹĐđ0-9.&-]*){0,6})"
+    r"\b(?P<kind>(?i:khách\s*sạn|công\s*ty|doanh\s*nghiệp|bệnh\s*viện|trường))\s+"
+    rf"(?P<name>{ORG_NAME_TOKEN_PATTERN}(?:\s+{ORG_NAME_TOKEN_PATTERN}){{0,6}})"
+    rf"(?=\s*(?:{LOCATION_STOP_PATTERN}))"
 )
 
 PAYMENT_PATTERNS = [
@@ -262,13 +300,24 @@ def _date_value(day: str, month: str, year: str | None = None) -> dict[str, int 
 
 
 def _clean_name(value: str) -> str:
-    stop_words = {"số", "địa", "còn", "chị", "anh", "em", "dạ", "phòng", "với", "và"}
+    stop_words = {"số", "địa", "còn", "chị", "anh", "em", "dạ", "phòng", "với", "và", "ở", "tại", "đến", "tới"}
     parts: list[str] = []
     for token in _normalize_space(value).split():
         if token.lower() in stop_words:
             break
         parts.append(token)
     return " ".join(parts).strip(" ,.;:")
+
+
+def _clean_address(value: str) -> str:
+    cleaned = re.sub(r"(?i)^địa\s*chỉ\s*(?:là|:)?\s*", "", _normalize_space(value))
+    return cleaned.strip(" ,.;:")
+
+
+def _clean_location(value: str) -> str:
+    cleaned = _normalize_space(value)
+    cleaned = re.sub(r"(?i)\s+(?:ngày|lúc|vào|để|cho|gọi|liên\s*hệ)\b.*$", "", cleaned)
+    return cleaned.strip(" ,.;:")
 
 
 def _clean_email_candidate(value: str) -> str:
@@ -365,6 +414,75 @@ def _extract_money_matches(
                 evidence,
                 0.82,
                 "Hai số tiền xuất hiện gần nhau với từ nối khoảng giá",
+            )
+
+
+def _extract_location_matches(
+    segment: SegmentUnit,
+    entities: OrderedDict[str, EntityItem],
+    facts: OrderedDict[str, FactItem],
+) -> None:
+    address_spans: list[tuple[int, int]] = []
+    location_spans: set[tuple[int, int]] = set()
+
+    for match in ADDRESS_RE.finditer(segment.text):
+        value = _clean_address(match.group("address"))
+        if len(value) < 5:
+            continue
+        evidence = _evidence(segment, match, "address")
+        address_spans.append(match.span("address"))
+        _add_entity(
+            entities,
+            "address",
+            value,
+            value.lower(),
+            evidence,
+            0.78,
+            "Địa chỉ có số nhà và phố/đường hoặc đơn vị hành chính",
+            requires_review=evidence.source_kind == "transcript_text",
+        )
+        _add_fact(
+            facts,
+            "address",
+            "Địa chỉ",
+            value,
+            value,
+            evidence,
+            0.78,
+            "Địa chỉ được trích xuất bằng luật địa chỉ tiếng Việt",
+            requires_review=evidence.source_kind == "transcript_text",
+        )
+
+    for regex in (LOCATION_CONTEXT_RE, LOCATION_COMPONENT_RE):
+        for match in regex.finditer(segment.text):
+            span = match.span("location")
+            if _span_inside(span, address_spans) or span in location_spans:
+                continue
+            value = _clean_location(match.group("location"))
+            if len(value) < 3:
+                continue
+            evidence = _evidence(segment, match, "location")
+            location_spans.add(span)
+            _add_entity(
+                entities,
+                "location",
+                value,
+                value.lower(),
+                evidence,
+                0.72,
+                "Địa danh/đơn vị hành chính xuất hiện trong ngữ cảnh địa điểm",
+                requires_review=evidence.source_kind == "transcript_text",
+            )
+            _add_fact(
+                facts,
+                "location",
+                "Địa điểm",
+                value,
+                value,
+                evidence,
+                0.72,
+                "Địa danh/đơn vị hành chính được trích xuất bằng luật địa điểm tiếng Việt",
+                requires_review=evidence.source_kind == "transcript_text",
             )
 
 
@@ -582,12 +700,36 @@ def extract_core_analysis(segments: Iterable[SegmentUnit]) -> CoreExtractionResu
             )
 
         for match in ORG_RE.finditer(text):
-            org = _clean_name(match.group(1))
+            org = _clean_name(match.group("name"))
             if len(org) < 3 or org.lower() in {"mình", "em", "chị"}:
                 continue
-            evidence = _evidence(segment, match, 1)
+            evidence = _evidence(segment, match, "name")
             _add_entity(entities, "organization", org, org.lower(), evidence, 0.66, "Tên tổ chức xuất hiện sau từ khóa tổ chức")
             _add_fact(facts, "organization", "Tổ chức/địa điểm", org, org, evidence, 0.66, "Tên tổ chức xuất hiện sau từ khóa tổ chức")
+            if re.search(r"(?i)khách\s*sạn|bệnh\s*viện|trường", match.group("kind")):
+                _add_entity(
+                    entities,
+                    "location",
+                    org,
+                    org.lower(),
+                    evidence,
+                    0.58,
+                    "Venue có thể vừa là tổ chức vừa là địa điểm",
+                    requires_review=True,
+                )
+                _add_fact(
+                    facts,
+                    "location",
+                    "Địa điểm",
+                    org,
+                    org,
+                    evidence,
+                    0.58,
+                    "Venue được trích xuất từ từ khóa khách sạn/bệnh viện/trường",
+                    requires_review=True,
+                )
+
+        _extract_location_matches(segment, entities, facts)
 
         lower_text = text.lower()
         for keyword, label, fact_type in PAYMENT_PATTERNS:
