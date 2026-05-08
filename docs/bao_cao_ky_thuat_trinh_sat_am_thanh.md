@@ -4,11 +4,11 @@
 
 **Nghiên cứu các kỹ thuật trích xuất, định danh và trực quan hóa thông tin hỗ trợ trinh sát từ nguồn âm thanh số trong hệ thống SpeechToInformation**
 
-> Tài liệu này được mẫu hóa theo phong cách báo cáo đề tài nghiên cứu khoa học sinh viên trong các cơ sở đào tạo lực lượng Công an nhân dân. Đây không phải biểu mẫu nội bộ chính thức. Nội dung kỹ thuật được giới hạn trong phạm vi xử lý, phân tích và khai thác audio đã được thu thập hợp pháp, có phân quyền theo vụ việc/case, phục vụ xác minh và điều tra; không hướng dẫn thu thập trái phép hay giám sát ngoài thẩm quyền.
+> Tài liệu này được trình bày theo phong cách báo cáo đề tài nghiên cứu khoa học sinh viên. Nội dung kỹ thuật được giới hạn trong phạm vi xử lý, phân tích và khai thác audio đã được thu thập hợp pháp, có phân quyền theo vụ việc/case, phục vụ xác minh và điều tra; không hướng dẫn thu thập trái phép hay giám sát ngoài thẩm quyền.
 
 Ngày cập nhật: 03/05/2026
 
-Nguồn rà soát chính: `D:\Workspace\SpeechToInfomation-pr`
+Nguồn rà soát chính: mã nguồn dự án SpeechToInformation trên branch `feature/architecture-refactor-pr`
 
 ---
 
@@ -325,7 +325,7 @@ Giá trị: PhoWhisper có lợi thế với tiếng Việt, nhưng trong flow h
 - Deloop word/phrase repeated.
 - Kiểm tra segment quá ngắn hoặc toàn ký tự vô nghĩa.
 
-Báo cáo cần ghi rõ: file này có comment dựa trên nghiên cứu 2025 về Whisper hallucination, nhưng việc áp dụng vào pipeline cần được kiểm thử trên dữ liệu nội bộ, vì bộ hallucination theo danh sách có thể vô tình xóa lời nói thật nếu ngữ cảnh trùng khớp.
+Báo cáo cần ghi rõ: file này có comment dựa trên nghiên cứu 2025 về Whisper hallucination, nhưng việc áp dụng vào pipeline cần được kiểm thử trên bộ dữ liệu đánh giá của đề tài, vì bộ hallucination theo danh sách có thể vô tình xóa lời nói thật nếu ngữ cảnh trùng khớp.
 
 ## 4.8. Speaker diarization bằng Pyannote
 
@@ -663,7 +663,7 @@ Audit:
 4. **Relation/event extraction còn trống**: deterministic extractor chủ yếu emit entities/facts/risk_flags, tránh false positive nhưng làm graph quan hệ ít nội dung.
 5. **Speaker attribution phụ thuộc ASR segment**: overlap heuristic > 0.3 có thể sai với segment dài hoặc overlap speech.
 6. **Audio enhancement placeholder**: LLaSE/SepALM/WavLM/SpecAugment chưa là tính năng thực.
-7. **Chưa có benchmark nội bộ đủ lớn**: mới có fixture/test transcript mẫu; cần bộ dữ liệu đã gán nhãn cho nhiều domain.
+7. **Chưa có benchmark đủ lớn**: mới có fixture/test transcript mẫu; cần bộ dữ liệu đã gán nhãn cho nhiều domain.
 8. **ASR forensic limitation**: với audio kém chất lượng, output không đủ tin cậy để tự động kết luận.
 
 ## 5.3. Rủi ro nghiệp vụ và biện pháp giảm thiểu
@@ -721,7 +721,7 @@ Audit:
 
 ### 5.4.1. ASR
 
-- WER/CER trên tập audio tiếng Việt nội bộ.
+- WER/CER trên tập audio tiếng Việt đã gán nhãn.
 - Tỷ lệ bỏ sót số điện thoại/số tiền/ngày tháng.
 - Tỷ lệ hallucination trên đoạn im lặng/noise.
 - Tốc độ xử lý: real-time factor.
@@ -839,7 +839,7 @@ Tuy nhiên, nếu đặt mục tiêu "trinh sát âm thanh" theo nghĩa nghiệp
 
 Kiến nghị tiếp tục phát triển theo ba trục:
 
-1. **Độ tin cậy khoa học**: benchmark ASR/diarization/extraction với ground truth nội bộ.
+1. **Độ tin cậy khoa học**: benchmark ASR/diarization/extraction với ground truth của bộ đánh giá.
 2. **Truy vết bằng chứng**: mọi item hiển thị phải về được audio/text span, model version và review status.
 3. **An toàn nghiệp vụ**: auth/audit/log redaction, manual review bắt buộc với PII và critical relation.
 

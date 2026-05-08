@@ -30,7 +30,7 @@ Các hệ thống ASR/LLM hiện đại không được phép coi là bằng ch�
 
 ## 3. Phạm vi và phương pháp
 
-Phạm vi review chính là worktree `D:\Workspace\SpeechToInfomation-pr`, branch `feature/architecture-refactor-pr`, vì đây là nơi có implementation Analysis V2 mới nhất. Worktree gốc `D:\Workspace\SpeechToInfomation` có thêm một số adapter/báo cáo cũ, nhưng không phải nguồn chính cho kết quả Analysis V2 hiện tại.
+Phạm vi review chính là mã nguồn dự án SpeechToInformation trên branch `feature/architecture-refactor-pr`, tập trung vào implementation Analysis V2 mới nhất. Các adapter/báo cáo cũ chỉ được dùng làm nguồn đối chiếu khi cần.
 
 Phương pháp thực hiện:
 
@@ -186,7 +186,7 @@ Hệ thống có:
 - `SimpleVADDiarizer`: fallback offline bằng MFCC/energy + Spectral/KMeans, đã ghi rõ độ chính xác thấp hơn SOTA và không xử lý overlap speech.
 - `NeMoPipeline`: có subprocess placeholder, chưa tích hợp sâu.
 
-Đánh giá: diarization hiện đạt mức "speaker label aid", chưa phải speaker identification. Chưa có enrollment/voiceprint, chưa có speaker verification score, chưa có DER/JER benchmark nội bộ, chưa xử lý tốt overlap speech và speaker change trong ASR segment dài.
+Đánh giá: diarization hiện đạt mức "speaker label aid", chưa phải speaker identification. Chưa có enrollment/voiceprint, chưa có speaker verification score, chưa có DER/JER benchmark trên bộ dữ liệu đánh giá tiếng Việt, chưa xử lý tốt overlap speech và speaker change trong ASR segment dài.
 
 ### 5.5 Hiệu chỉnh transcript
 
@@ -280,9 +280,9 @@ UI hiện mới view-only evidence, chưa có confirm/reject/edit/merge/split UI
 
 ### 6.1 ASR: Whisper, faster-whisper, PhoWhisper, NeMo
 
-Whisper của OpenAI được công bố trong bài "Robust Speech Recognition via Large-Scale Weak Supervision", huấn luyện trên 680.000 giờ dữ liệu đa ngôn ngữ/đa nhiệm vụ, là nền tảng tốt cho ASR tổng quát. faster-whisper/SYSTRAN đưa Whisper sang CTranslate2 để tăng tốc và giảm bộ nhớ. PhoWhisper của VinAI fine-tune Whisper cho tiếng Việt, phù hợp để benchmark với dữ liệu nội bộ.
+Whisper của OpenAI được công bố trong bài "Robust Speech Recognition via Large-Scale Weak Supervision", huấn luyện trên 680.000 giờ dữ liệu đa ngôn ngữ/đa nhiệm vụ, là nền tảng tốt cho ASR tổng quát. faster-whisper/SYSTRAN đưa Whisper sang CTranslate2 để tăng tốc và giảm bộ nhớ. PhoWhisper của VinAI fine-tune Whisper cho tiếng Việt, phù hợp để benchmark với bộ dữ liệu đánh giá của đề tài.
 
-Đề xuất: benchmark song song faster-whisper large-v3-turbo, PhoWhisper large, và NeMo Canary/Parakeet trên fixture tiếng Việt nội bộ. Chọn theo WER/CER, keyword recall, phone/money/date preservation, latency và GPU memory.
+Đề xuất: benchmark song song faster-whisper large-v3-turbo, PhoWhisper large, và NeMo Canary/Parakeet trên fixture tiếng Việt đã gán nhãn. Chọn theo WER/CER, keyword recall, phone/money/date preservation, latency và GPU memory.
 
 ### 6.2 Alignment: WhisperX và forced alignment
 
@@ -322,7 +322,7 @@ SWGDE Forensic Audio yêu cầu examiner được đào tạo, ghi chú đầy �
 2. Speech enhancement đang là placeholder.
 3. PhoWhisper adapter có nhưng chưa được chọn mặc định; word timestamps chỉ ước lượng.
 4. `WhisperXPipeline` đặt tên gây hiểu nhầm vì chưa forced-align.
-5. Diarization chưa có benchmark DER/JER/cpWER trên audio tiếng Việt nội bộ.
+5. Diarization chưa có benchmark DER/JER/cpWER trên audio tiếng Việt đã gán nhãn.
 6. Chưa có speaker identification/voiceprint, chỉ có anonymous speaker labels.
 7. Old LLM summary/context prompts vẫn có nguy cơ hallucination nếu dùng làm truth.
 8. Domain templates backend đã có, nhưng chưa có UI builder/selector và chưa tạo slots/domain_frames runtime.
@@ -386,7 +386,7 @@ SWGDE Forensic Audio yêu cầu examiner được đào tạo, ghi chú đầy �
 
 ## 9. Thiết kế thực nghiệm đánh giá
 
-### 9.1 Bộ dữ liệu nội bộ
+### 9.1 Bộ dữ liệu đánh giá
 
 Cần xây `tests/fixtures/investigation_transcripts/*.json` và audio tương ứng nếu có. Tối thiểu gồm: khách sạn/đặt phòng; giao dịch/chuyển khoản; khiếu nại/dịch vụ; hẹn gặp/lịch trình; hội thoại không domain rõ; audio sạch/noisy/overlap; không có entity; false-positive traps.
 
