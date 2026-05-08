@@ -54,25 +54,102 @@ Phương pháp thực hiện:
 
 ### 4.2 Các file then chốt đã review
 
-| Nhóm | File | Vai trò |
-|---|---|---|
-| ASR manager | `src/services/transcription/models/whisper_manager.py` | faster-whisper, lazy loading, local cache, CUDA fallback |
-| Transcribe V2 | `src/services/transcription/transcribe_service_v2.py` | orchestration, Cherry Core first, fallback faster-whisper |
-| Cherry ASR | `src/cherry_core/adapters/asr/whisperv2_adapter.py` | Whisper large-v2 offline, anti-hallucination decode params |
-| Vietnamese ASR | `src/cherry_core/adapters/asr/phowhisper_adapter.py` | PhoWhisper local, chunking 30s, timestamp ước lượng |
-| Hallucination filter | `src/cherry_core/adapters/asr/hallucination_filter.py` | Bag-of-Hallucinations, repetition/delooping |
-| Diarization | `src/services/transcription/models/pyannote_loader.py` | pyannote local-first, Community-1/3.1 fallback |
-| Diarization adapter | `src/cherry_core/adapters/diarization/pyannote_adapter.py` | chuẩn hóa output thành speaker segments |
-| Fallback diarization | `src/audio_processing/diarization/simple_vad.py` | MFCC/energy + clustering |
-| Tiền xử lý | `src/audio_processing/vad/silero_adapter.py` | Silero VAD offline, conservative threshold |
-| Audio processor | `src/audio_processing/processor.py` | load/normalize/trim/segment; enhancement placeholders |
-| Analysis schema | `src/services/analysis_intelligence/schemas.py` | V2 graph, evidence refs, facts, risk flags, slots, display sections |
-| Core extractor | `src/services/analysis_intelligence/extractor.py` | deterministic Vietnamese facts/entities |
-| Segment builder | `src/services/analysis_intelligence/segment_builder.py` | segment priority và transcript fallback |
-| Domain templates | `src/services/analysis_intelligence/domain_templates.py` | backend registry, schema validation, version immutable |
-| API V2 | `src/api/endpoints/audio_v2.py` | generate analysis, review endpoints |
-| Clip endpoint | `src/api/endpoints/audio.py` | ffmpeg argv list, stream WAV, no raw path |
-| UI Analysis | `frontend/src/components/AnalysisPanel.tsx` | Overview/Graph/Evidence, display_sections_vi |
+<table border="1" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; table-layout: fixed; margin: 12px 0; font-size: 0.95em;">
+<thead>
+<tr>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Nhóm</th>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">File</th>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Vai trò</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">ASR manager</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src/services/transcription/models/whisper_manager.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">faster-whisper, lazy loading, local cache, CUDA fallback</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Transcribe V2</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src/services/transcription/transcribe_service_v2.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">orchestration, Cherry Core first, fallback faster-whisper</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Cherry ASR</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src/cherry_core/adapters/asr/whisperv2_adapter.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Whisper large-v2 offline, anti-hallucination decode params</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Vietnamese ASR</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src/cherry_core/adapters/asr/phowhisper_adapter.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">PhoWhisper local, chunking 30s, timestamp ước lượng</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Hallucination filter</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src/cherry_core/adapters/asr/hallucination_filter.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Bag-of-Hallucinations, repetition/delooping</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Diarization</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src/services/transcription/models/pyannote_loader.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">pyannote local-first, Community-1/3.1 fallback</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Diarization adapter</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src/cherry_core/adapters/diarization/pyannote_adapter.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">chuẩn hóa output thành speaker segments</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Fallback diarization</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src/audio_processing/diarization/simple_vad.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">MFCC/energy + clustering</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Tiền xử lý</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src/audio_processing/vad/silero_adapter.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Silero VAD offline, conservative threshold</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Audio processor</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src/audio_processing/processor.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">load/normalize/trim/segment; enhancement placeholders</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Analysis schema</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src/services/analysis_intelligence/schemas.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">V2 graph, evidence refs, facts, risk flags, slots, display sections</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Core extractor</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src/services/analysis_intelligence/extractor.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">deterministic Vietnamese facts/entities</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Segment builder</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src/services/analysis_intelligence/segment_builder.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">segment priority và transcript fallback</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Domain templates</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src/services/analysis_intelligence/domain_templates.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">backend registry, schema validation, version immutable</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">API V2</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src/api/endpoints/audio_v2.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">generate analysis, review endpoints</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Clip endpoint</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src/api/endpoints/audio.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">ffmpeg argv list, stream WAV, no raw path</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">UI Analysis</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">frontend/src/components/AnalysisPanel.tsx</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Overview/Graph/Evidence, display_sections_vi</td>
+</tr>
+</tbody>
+</table>
 
 ## 5. Các kỹ thuật đang sử dụng trong dự án
 
@@ -139,16 +216,48 @@ Core extractor hiện bắt: phone có khoảng trắng/dấu chấm/dấu gạc
 
 Chạy trên transcript "A - First Case" cho kết quả:
 
-| Nhóm | Kết quả bắt được |
-|---|---|
-| Liên hệ | `0978 711 253`, email candidate `quyên24a.gmail.com`, `quên 24a.gmail.com` |
-| Định danh | CCCD candidate `0912 1212 09012`, có risk do độ dài bất thường |
-| Thời gian | date_range `15/2 - 16/2`, thêm date đơn lẻ `15/2`, các từ `đêm`, `tối`, `sáng` |
-| Tiền | `3 triệu`, `3 triệu 500 nghìn`, `4.500.000`, `5 triệu`, `6 triệu`, hai price range |
-| Số lượng | `2 phòng`, `4 người`, `2 nam`, `2 nữ`, `1 đêm` |
-| Người | `Quyên`, `Nguyễn Thị Quyên` |
-| Tổ chức | `G.R.P.Marius Hotel Hà Nội Rất` |
-| Hành động | chuyển khoản, gửi STK qua email, điều khoản đặt phòng/hoàn hủy, ưu đãi fitness center |
+<table border="1" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; table-layout: fixed; margin: 12px 0; font-size: 0.95em;">
+<thead>
+<tr>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Nhóm</th>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Kết quả bắt được</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Liên hệ</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">0978 711 253</code>, email candidate <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">quyên24a.gmail.com</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">quên 24a.gmail.com</code></td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Định danh</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">CCCD candidate <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">0912 1212 09012</code>, có risk do độ dài bất thường</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Thời gian</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">date_range <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">15/2 - 16/2</code>, thêm date đơn lẻ <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">15/2</code>, các từ <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">đêm</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">tối</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">sáng</code></td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Tiền</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">3 triệu</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">3 triệu 500 nghìn</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">4.500.000</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">5 triệu</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">6 triệu</code>, hai price range</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Số lượng</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">2 phòng</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">4 người</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">2 nam</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">2 nữ</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">1 đêm</code></td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Người</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">Quyên</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">Nguyễn Thị Quyên</code></td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Tổ chức</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">G.R.P.Marius Hotel Hà Nội Rất</code></td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Hành động</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">chuyển khoản, gửi STK qua email, điều khoản đặt phòng/hoàn hủy, ưu đãi fitness center</td>
+</tr>
+</tbody>
+</table>
 
 Kết luận: chất lượng đã tốt hơn "visualization rỗng", nhưng vẫn còn lỗi:
 
@@ -283,14 +392,40 @@ Cần xây `tests/fixtures/investigation_transcripts/*.json` và audio tương �
 
 ### 9.2 Metrics
 
-| Lớp | Metric |
-|---|---|
-| ASR | WER, CER, keyword recall, hallucination rate, latency |
-| Diarization | DER, JER, speaker attribution accuracy, cpWER |
-| Alignment | median/p95 timestamp error |
-| Extraction | entity/fact/slot precision/recall/F1, normalized value accuracy |
-| Safety | evidence coverage 100%, critical false positives = 0, PII logs = 0 |
-| UI | generate -> open analysis -> verify evidence -> export |
+<table border="1" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; table-layout: fixed; margin: 12px 0; font-size: 0.95em;">
+<thead>
+<tr>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Lớp</th>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Metric</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">ASR</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">WER, CER, keyword recall, hallucination rate, latency</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Diarization</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">DER, JER, speaker attribution accuracy, cpWER</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Alignment</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">median/p95 timestamp error</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Extraction</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">entity/fact/slot precision/recall/F1, normalized value accuracy</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Safety</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">evidence coverage 100%, critical false positives = 0, PII logs = 0</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">UI</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">generate -&gt; open analysis -&gt; verify evidence -&gt; export</td>
+</tr>
+</tbody>
+</table>
 
 ### 9.3 Gates để bật mặc định
 

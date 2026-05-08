@@ -28,16 +28,48 @@ Nguồn rà soát chính: `D:\Workspace\SpeechToInfomation-pr`
 
 ## Danh mục từ viết tắt
 
-| Viết tắt | Ý nghĩa |
-|---|---|
-| ASR | Automatic Speech Recognition - nhận dạng tiếng nói tự động |
-| VAD | Voice Activity Detection - phát hiện đoạn có tiếng nói |
-| DER | Diarization Error Rate - tỷ lệ lỗi phân tách người nói |
-| WER/CER | Word/Character Error Rate - tỷ lệ lỗi từ/ký tự trong nhận dạng tiếng nói |
-| LLM | Large Language Model - mô hình ngôn ngữ lớn |
-| V2 graph | Schema phân tích `analysis_intelligence.v2` trong dự án |
-| Evidence ref | Tham chiếu bằng chứng gồm span transcript, hash, thời gian, speaker, segment |
-| Domain template | Mẫu phân tích theo lĩnh vực nghiệp vụ do người dùng định nghĩa |
+<table border="1" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; table-layout: fixed; margin: 12px 0; font-size: 0.95em;">
+<thead>
+<tr>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Viết tắt</th>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Ý nghĩa</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">ASR</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Automatic Speech Recognition - nhận dạng tiếng nói tự động</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">VAD</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Voice Activity Detection - phát hiện đoạn có tiếng nói</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">DER</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Diarization Error Rate - tỷ lệ lỗi phân tách người nói</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">WER/CER</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Word/Character Error Rate - tỷ lệ lỗi từ/ký tự trong nhận dạng tiếng nói</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">LLM</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Large Language Model - mô hình ngôn ngữ lớn</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">V2 graph</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Schema phân tích <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">analysis_intelligence.v2</code> trong dự án</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Evidence ref</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Tham chiếu bằng chứng gồm span transcript, hash, thời gian, speaker, segment</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Domain template</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Mẫu phân tích theo lĩnh vực nghiệp vụ do người dùng định nghĩa</td>
+</tr>
+</tbody>
+</table>
 
 ---
 
@@ -112,14 +144,47 @@ Nghiên cứu Frontiers in Communication 2024 về ASR với forensic-like audio
 
 ## 3.1. Kiến trúc tổng thể
 
-| Lớp | Thành phần | Vai trò |
-|---|---|---|
-| Frontend | React, Vite, MUI | Upload, quản lý case/file, hiển thị Transcript, Summary, Analysis, Evidence |
-| API | FastAPI routers `audio.py`, `audio_v2.py`, `analysis_templates.py` | Endpoint upload, transcribe, summarize, visualize, review, clip, template |
-| Database | SQLAlchemy, Alembic, PostgreSQL JSON/JSONB | Lưu User, Case, AudioFile, Task, ActivityLog, AnalysisDomainTemplate |
-| Queue | Celery, Redis | Xử lý transcript/summarize bất đồng bộ |
-| Audio/AI | Whisper, faster-whisper, PhoWhisper, Pyannote, Silero, LLM/Ollama | Chuyển audio thành thông tin có cấu trúc |
-| Storage | `storage/audio`, path safety | Lưu file theo case, không expose raw filesystem path |
+<table border="1" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; table-layout: fixed; margin: 12px 0; font-size: 0.95em;">
+<thead>
+<tr>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Lớp</th>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Thành phần</th>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Vai trò</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Frontend</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">React, Vite, MUI</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Upload, quản lý case/file, hiển thị Transcript, Summary, Analysis, Evidence</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">API</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">FastAPI routers <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">audio.py</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">audio_v2.py</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">analysis_templates.py</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Endpoint upload, transcribe, summarize, visualize, review, clip, template</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Database</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">SQLAlchemy, Alembic, PostgreSQL JSON/JSONB</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Lưu User, Case, AudioFile, Task, ActivityLog, AnalysisDomainTemplate</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Queue</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Celery, Redis</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Xử lý transcript/summarize bất đồng bộ</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Audio/AI</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Whisper, faster-whisper, PhoWhisper, Pyannote, Silero, LLM/Ollama</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Chuyển audio thành thông tin có cấu trúc</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Storage</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">storage/audio</code>, path safety</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Lưu file theo case, không expose raw filesystem path</td>
+</tr>
+</tbody>
+</table>
 
 ## 3.2. Luồng nghiệp vụ chính
 
@@ -381,21 +446,82 @@ Review status gồm `machine_suggested`, `needs_review`, `confirmed`, `rejected`
 
 `src/services/analysis_intelligence/extractor.py` là lớp trích xuất deterministic hiện đang thực sự chạy trong V2. Version: `deterministic_vi_core.2026-05-03`.
 
-| Nhóm | Kỹ thuật | Ví dụ |
-|---|---|---|
-| Phone | Regex chấp nhận khoảng trắng, dấu chấm, dấu gạch | `0978 711 253` -> `0978711253` |
-| Email | Regex email chuẩn | `a@b.com` |
-| Email candidate | Regex cho ASR mất `@` | `quyên24a.gmail.com` |
-| ID candidate | Regex gần từ khóa CCCD/CMND/căn cước | cần review |
-| Date/date range | Regex tiếng Việt | `ngày 15 tháng 2 đến ngày 16 tháng 2` |
-| Time | Regex giờ, sáng/chiều/tối/đêm | `10:30`, `buổi tối` |
-| Money | Regex số tiền | `3 triệu 500 nghìn`, `4.500.000` |
-| Quantity | Regex số lượng + đơn vị | `2 phòng`, `4 người` |
-| Person | Mẫu tự giới thiệu | `Chị là Nguyễn Thị Quyên` |
-| Organization | Từ khóa khách sạn/công ty/... + tên riêng | `khách sạn G.R.P.Marius Hotel Hà Nội` |
-| Payment | Từ khóa | `chuyển khoản` |
-| Purpose | Từ khóa mục đích | `công tác` |
-| Action/offer/policy | Pattern nghiệp vụ | gửi số tài khoản, điều khoản, fitness free |
+<table border="1" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; table-layout: fixed; margin: 12px 0; font-size: 0.95em;">
+<thead>
+<tr>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Nhóm</th>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Kỹ thuật</th>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Ví dụ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Phone</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Regex chấp nhận khoảng trắng, dấu chấm, dấu gạch</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">0978 711 253</code> -&gt; <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">0978711253</code></td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Email</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Regex email chuẩn</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">a@b.com</code></td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Email candidate</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Regex cho ASR mất <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">@</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">quyên24a.gmail.com</code></td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">ID candidate</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Regex gần từ khóa CCCD/CMND/căn cước</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">cần review</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Date/date range</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Regex tiếng Việt</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">ngày 15 tháng 2 đến ngày 16 tháng 2</code></td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Time</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Regex giờ, sáng/chiều/tối/đêm</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">10:30</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">buổi tối</code></td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Money</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Regex số tiền</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">3 triệu 500 nghìn</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">4.500.000</code></td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Quantity</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Regex số lượng + đơn vị</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">2 phòng</code>, <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">4 người</code></td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Person</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Mẫu tự giới thiệu</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">Chị là Nguyễn Thị Quyên</code></td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Organization</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Từ khóa khách sạn/công ty/... + tên riêng</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">khách sạn G.R.P.Marius Hotel Hà Nội</code></td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Payment</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Từ khóa</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">chuyển khoản</code></td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Purpose</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Từ khóa mục đích</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">công tác</code></td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Action/offer/policy</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Pattern nghiệp vụ</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">gửi số tài khoản, điều khoản, fitness free</td>
+</tr>
+</tbody>
+</table>
 
 Extractor đã được sửa để:
 
@@ -542,14 +668,54 @@ Audit:
 
 ## 5.3. Rủi ro nghiệp vụ và biện pháp giảm thiểu
 
-| Rủi ro | Tác động | Biện pháp hiện có | Kiến nghị |
-|---|---|---|---|
-| ASR nghe sai số/tên/ngày | Sai thông tin nhân thân/tài chính | confidence, evidence refs, review_status | Bắt buộc review với PII/critical facts |
-| Diarization gán sai speaker | Sai chủ thể phát ngôn | speaker_id chỉ là label kỹ thuật | Hiển thị "người nói dự kiến", không gán danh tính |
-| LLM hallucination | Tạo fact/quan hệ không có trong audio | V2 chưa tin LLM, legacy derived requires_review | Structured output + evidence locating + fail closed |
-| Log lộ PII | Lộ phone/email/transcript | Đã redaction một số path | Audit log định kỳ, grep secret/PII trong logs |
-| Truy cập trái phép audio | Lộ file/chứng cứ | case access, audio access, path safety | Bật AUTH_ENABLED trong production, CSRF, cookie secure |
-| Mẫu phân tích bị prompt injection | Sai extraction | Template chỉ lưu schema/hints/examples | Validate schema, không dùng prompt tự do làm system prompt |
+<table border="1" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; table-layout: fixed; margin: 12px 0; font-size: 0.95em;">
+<thead>
+<tr>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Rủi ro</th>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Tác động</th>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Biện pháp hiện có</th>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Kiến nghị</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">ASR nghe sai số/tên/ngày</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Sai thông tin nhân thân/tài chính</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">confidence, evidence refs, review_status</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Bắt buộc review với PII/critical facts</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Diarization gán sai speaker</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Sai chủ thể phát ngôn</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">speaker_id chỉ là label kỹ thuật</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Hiển thị &quot;người nói dự kiến&quot;, không gán danh tính</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">LLM hallucination</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Tạo fact/quan hệ không có trong audio</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">V2 chưa tin LLM, legacy derived requires_review</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Structured output + evidence locating + fail closed</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Log lộ PII</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Lộ phone/email/transcript</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Đã redaction một số path</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Audit log định kỳ, grep secret/PII trong logs</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Truy cập trái phép audio</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Lộ file/chứng cứ</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">case access, audio access, path safety</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Bật AUTH_ENABLED trong production, CSRF, cookie secure</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Mẫu phân tích bị prompt injection</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Sai extraction</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Template chỉ lưu schema/hints/examples</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Validate schema, không dùng prompt tự do làm system prompt</td>
+</tr>
+</tbody>
+</table>
 
 ## 5.4. Tiêu chí đánh giá đề xuất
 
@@ -769,14 +935,59 @@ Kiến nghị tiếp tục phát triển theo ba trục:
 
 # 10. Phụ lục đề xuất form nghiệm thu kỹ thuật
 
-| Hạng mục | Lệnh/kiểm tra | Kết quả mong đợi |
-|---|---|---|
-| Python tests | `python -m pytest tests -q` | Tất cả pass |
-| Compile backend | `python -m compileall src -q` | Không lỗi cú pháp |
-| Frontend build | `cmd /c "cd frontend && npm run build"` | Build pass |
-| Docker config | `docker compose config --quiet` | Config hợp lệ |
-| Import-safe visualization | fresh process import `src.services.visualization_service` | Không load torch/faster_whisper/librosa/pyannote.audio |
-| Pyannote no auto-download | `PYANNOTE_AUTO_DOWNLOAD=false` | Không gọi snapshot_download |
-| Audio clip | GET clip có auth | WAV stream, no-store, filename generic |
-| V2 evidence | Generate Analysis | `schema_version=analysis_intelligence.v2`, facts có evidence_refs |
-| Review conflict | PATCH với stale revision | HTTP 409 + current graph |
+<table border="1" cellspacing="0" cellpadding="0" style="border-collapse: collapse; width: 100%; table-layout: fixed; margin: 12px 0; font-size: 0.95em;">
+<thead>
+<tr>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Hạng mục</th>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Lệnh/kiểm tra</th>
+<th style="border: 1px solid #4b5563; padding: 8px 10px; background: #eef2f7; font-weight: 700; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Kết quả mong đợi</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Python tests</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">python -m pytest tests -q</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Tất cả pass</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Compile backend</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">python -m compileall src -q</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Không lỗi cú pháp</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Frontend build</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">cmd /c &quot;cd frontend &amp;&amp; npm run build&quot;</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Build pass</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Docker config</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">docker compose config --quiet</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Config hợp lệ</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Import-safe visualization</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">fresh process import <code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">src.services.visualization_service</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Không load torch/faster_whisper/librosa/pyannote.audio</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Pyannote no auto-download</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">PYANNOTE_AUTO_DOWNLOAD=false</code></td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Không gọi snapshot_download</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Audio clip</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">GET clip có auth</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">WAV stream, no-store, filename generic</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">V2 evidence</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Generate Analysis</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;"><code style="font-family: Consolas, monospace; font-size: 0.92em; white-space: normal; overflow-wrap: anywhere;">schema_version=analysis_intelligence.v2</code>, facts có evidence_refs</td>
+</tr>
+<tr>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">Review conflict</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">PATCH với stale revision</td>
+<td style="border: 1px solid #6b7280; padding: 8px 10px; text-align: left; vertical-align: top; overflow-wrap: anywhere; word-break: break-word;">HTTP 409 + current graph</td>
+</tr>
+</tbody>
+</table>
