@@ -1,3 +1,69 @@
+<style>
+@page {
+  size: A4;
+  margin: 2cm 2cm 2cm 3cm;
+}
+body {
+  font-family: "Times New Roman", Times, serif;
+  font-size: 13pt;
+  line-height: 1.5;
+  text-align: justify;
+}
+p {
+  margin: 0 0 6pt 0;
+  text-indent: 1.27cm;
+}
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Times New Roman", Times, serif;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 12pt 0 6pt 0;
+  text-indent: 0;
+  text-align: left;
+}
+h1 {
+  font-size: 16pt;
+  text-align: center;
+  text-transform: uppercase;
+}
+h2 {
+  font-size: 14pt;
+}
+h3 {
+  font-size: 13pt;
+}
+blockquote, blockquote p, li, li p, table, table p, th, td, pre, code {
+  text-indent: 0;
+}
+ul, ol {
+  margin-top: 0;
+  margin-bottom: 6pt;
+}
+li {
+  margin-bottom: 3pt;
+  text-align: justify;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
+  margin: 12px 0;
+  font-size: 0.95em;
+}
+th, td {
+  border: 1px solid #6b7280;
+  padding: 8px 10px;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+th {
+  background: #eef2f7;
+  font-weight: 700;
+  text-align: left;
+}
+</style>
+
 # BÁO CÁO NGHIÊN CỨU KHOA HỌC SINH VIÊN
 
 ## Đề tài
