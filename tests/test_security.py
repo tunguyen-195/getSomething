@@ -964,6 +964,16 @@ def test_frontend_case_collection_calls_avoid_redirects():
     assert "proxy_set_header Host $http_host;" in nginx_conf
 
 
+def test_compact_uploader_does_not_report_success_on_failed_upload():
+    compact_source = Path("frontend/src/components/CompactUploader.tsx").read_text(encoding="utf-8")
+
+    assert "const response = await apiFetch('/api/v1/audio/upload'" in compact_source
+    assert "if (!response.ok)" in compact_source
+    assert "uploadErrorMessage(response, file.name)" in compact_source
+    assert "uploaded?.audio_id" in compact_source
+    assert "uploaded?.task_id" in compact_source
+
+
 def test_frontend_disables_summarize_when_llm_disabled():
     app_source = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
     file_table_source = Path("frontend/src/components/FileTable.tsx").read_text(encoding="utf-8")

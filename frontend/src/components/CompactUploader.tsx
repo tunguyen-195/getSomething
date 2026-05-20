@@ -39,6 +39,7 @@ const CompactUploader: React.FC<CompactUploaderProps> = ({ caseId, onUploadCompl
     const [uploading, setUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [isDragging, setIsDragging] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
     // Settings
@@ -74,10 +75,21 @@ const CompactUploader: React.FC<CompactUploaderProps> = ({ caseId, onUploadCompl
         setFiles(prev => prev.filter((_, i) => i !== idx));
     };
 
+    const uploadErrorMessage = async (response: Response, filename: string) => {
+        try {
+            const body = await response.clone().json();
+            const detail = typeof body?.detail === 'string' ? body.detail : response.statusText;
+            return `Upload thất bại cho "${filename}" (HTTP ${response.status}): ${detail}`;
+        } catch {
+            return `Upload thất bại cho "${filename}" (HTTP ${response.status}: ${response.statusText})`;
+        }
+    };
+
     const handleUpload = async () => {
         if (files.length === 0 || !caseId) return;
         setUploading(true);
         setUploadProgress(0);
+        setError(null);
 
         try {
             for (let i = 0; i < files.length; i++) {
@@ -92,10 +104,17 @@ const CompactUploader: React.FC<CompactUploaderProps> = ({ caseId, onUploadCompl
                 }));
                 formData.append('diarization_method', diarizationMethod);
 
-                await apiFetch('/api/v1/audio/upload', {
+                const response = await apiFetch('/api/v1/audio/upload', {
                     method: 'POST',
                     body: formData,
                 });
+                if (!response.ok) {
+                    throw new Error(await uploadErrorMessage(response, file.name));
+                }
+                const uploaded = await response.json();
+                if (!uploaded?.audio_id || !uploaded?.task_id) {
+                    throw new Error(`Upload "${file.name}" không trả về audio_id/task_id hợp lệ`);
+                }
 
                 setUploadProgress(((i + 1) / files.length) * 100);
             }
@@ -106,6 +125,7 @@ const CompactUploader: React.FC<CompactUploaderProps> = ({ caseId, onUploadCompl
             onUploadComplete?.();
         } catch (err) {
             console.error('Upload failed:', err);
+            setError(err instanceof Error ? err.message : 'Upload thất bại');
         } finally {
             setUploading(false);
             setUploadProgress(0);
@@ -274,6 +294,12 @@ const CompactUploader: React.FC<CompactUploaderProps> = ({ caseId, onUploadCompl
                                         Uploading... {Math.round(uploadProgress)}%
                                     </Typography>
                                 </Box>
+                            )}
+
+                            {error && (
+                                <Typography variant="body2" color="error" sx={{ mt: 2 }}>
+                                    {error}
+                                </Typography>
                             )}
 
                             <Box display="flex" justifyContent="flex-end" mt={2} gap={1}>
