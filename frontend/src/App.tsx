@@ -617,7 +617,7 @@ function App() {
         body: JSON.stringify({
           enable_diarization: options.enable_diarization,
           diarization_method: options.diarization_method || 'pyannote',
-          language: options.language || 'auto',
+          language: options.language || 'vi',
           fast_mode: options.fast_mode,
           asr_profile: options.asr_profile,
           async_mode: true

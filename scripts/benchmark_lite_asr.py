@@ -194,7 +194,7 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Benchmark Lite ASR profiles on local audio files.")
     parser.add_argument("--profile", default="rtx2050_safe")
-    parser.add_argument("--language", default="auto")
+    parser.add_argument("--language", default="vi")
     parser.add_argument("--files", nargs="+", required=True)
     parser.add_argument("--labels-json", type=Path)
     parser.add_argument("--output", type=Path, default=Path("lite_benchmark.json"))

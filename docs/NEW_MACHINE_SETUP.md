@@ -74,7 +74,13 @@ WHISPER_MODEL=medium
 WHISPER_MODEL_PATH=models/whisper
 WHISPER_DEVICE=cuda
 WHISPER_COMPUTE_TYPE=int8
+DEFAULT_LANGUAGE=vi
+ASR_GUARD_ENABLED=true
 ```
+
+Khong doi `DEFAULT_LANGUAGE` sang `auto` cho file Viet/Anh-Viet. `auto` co the
+nhan nham thanh ngon ngu khac tren audio ngan, nhieu, hoac co code-switch. Khi
+can test audio khong ro ngon ngu, chon `Tu dong` trong UI va xem warning ASR.
 
 Neu can bat Summary/LLM, dung OpenRouter server-side. Chi them key vao `.env` tren may chay, khong commit:
 

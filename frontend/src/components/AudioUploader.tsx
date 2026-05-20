@@ -144,7 +144,7 @@ const AudioUploader = ({ onNewTask, caseId, onUploadComplete }: AudioUploaderPro
         const formData = new FormData();
         formData.append('file', file);
         formData.append('options', JSON.stringify({
-          language: 'auto',
+          language: 'vi',
           model_type: 'whisper',
           fast_mode: transcriptionMode === 'fast',
           enable_diarization: diarizationMethod !== 'none'

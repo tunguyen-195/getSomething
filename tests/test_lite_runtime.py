@@ -124,11 +124,13 @@ def test_faster_whisper_runtime_passes_verified_local_path_to_model(monkeypatch,
     assert "download_root" not in kwargs
     _, transcribe_kwargs = transcribe_calls[0]
     assert transcribe_kwargs["task"] == "transcribe"
+    assert transcribe_kwargs["language"] == "vi"
     assert "tiếng Việt" in transcribe_kwargs["initial_prompt"]
     assert "SpeechToInformation" in transcribe_kwargs["hotwords"]
+    assert transcribe_kwargs["vad_filter"] == settings.WHISPER_VAD_FILTER
 
 
-def test_faster_whisper_auto_language_does_not_force_vietnamese(monkeypatch, tmp_path):
+def test_faster_whisper_explicit_auto_language_still_uses_detection(monkeypatch, tmp_path):
     from src.services.transcription import asr_providers
 
     transcribe_calls = []
@@ -179,15 +181,15 @@ def test_faster_whisper_auto_language_does_not_force_vietnamese(monkeypatch, tmp
     assert result["model_info"]["requested_language"] == "auto"
 
 
-def test_transcribe_defaults_are_auto_language():
+def test_transcribe_defaults_are_vietnamese_language():
     import inspect
 
     from src.api.endpoints.audio_v2 import transcribe_v2
     from src.services.transcription.transcribe_service_v2 import transcribe_audio_v2
 
     api_default = inspect.signature(transcribe_v2).parameters["language"].default
-    assert getattr(api_default, "default", None) == "auto"
-    assert inspect.signature(transcribe_audio_v2).parameters["language"].default == "auto"
+    assert getattr(api_default, "default", None) == "vi"
+    assert inspect.signature(transcribe_audio_v2).parameters["language"].default == "vi"
 
 
 def test_lite_gpu_smoke_maps_auto_language_to_detection():
@@ -280,8 +282,67 @@ def test_provider_health_marks_unmanifested_faster_whisper_profiles_unavailable(
     assert profiles["quality_local"]["availability_reason"] == "model_artifact_not_manifested"
     assert profiles["offline_cpp"]["available"] is False
     assert profiles["offline_cpp"]["availability_reason"] == "artifact_integrity_metadata_missing"
-    assert health["default_language"] == "auto"
+    assert health["default_language"] == settings.DEFAULT_LANGUAGE
     assert any(option["value"] == "auto" for option in health["language_options"])
+
+
+def test_asr_guard_drops_thai_script_hallucination_but_keeps_confident_short_vietnamese():
+    from src.services.hallucination_filter import guard_transcript_segments
+
+    segments = [
+        {
+            "start": 0.0,
+            "end": 1.0,
+            "text": "ขอบคุณครับ",
+            "confidence": -1.8,
+            "avg_logprob": -1.8,
+            "no_speech_prob": 0.91,
+            "compression_ratio": 1.0,
+        },
+        {
+            "start": 1.2,
+            "end": 2.0,
+            "text": "xin chào",
+            "confidence": -0.1,
+            "avg_logprob": -0.1,
+            "no_speech_prob": 0.02,
+            "compression_ratio": 1.0,
+        },
+    ]
+
+    filtered, report = guard_transcript_segments(segments, language="vi")
+
+    assert [segment["text"] for segment in filtered] == ["xin chào"]
+    assert report["removed_segments"] == 1
+    assert report["removed"][0]["reasons"]
+
+
+def test_asr_guard_drops_contextual_phrase_only_when_low_quality():
+    from src.services.hallucination_filter import guard_transcript_segments
+
+    segments = [
+        {
+            "start": 0.0,
+            "end": 0.5,
+            "text": "xin chào",
+            "avg_logprob": -1.7,
+            "no_speech_prob": 0.82,
+            "compression_ratio": 1.0,
+        },
+        {
+            "start": 1.0,
+            "end": 2.0,
+            "text": "xin chào",
+            "avg_logprob": -0.2,
+            "no_speech_prob": 0.01,
+            "compression_ratio": 1.0,
+        },
+    ]
+
+    filtered, report = guard_transcript_segments(segments, language="vi")
+
+    assert [segment["text"] for segment in filtered] == ["xin chào"]
+    assert report["removed_segments"] == 1
 
 
 def test_phowhisper_cpp_candidate_is_blocked_until_validated(monkeypatch):

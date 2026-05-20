@@ -15,7 +15,7 @@ def transcribe_audio_task(
     task_id: str,
     enable_diarization: bool = True,
     diarization_method: str = "pyannote",
-    language: str = "auto",
+    language: str = "vi",
     fast_mode: bool = True
 ):
     """

@@ -98,7 +98,7 @@ const CompactUploader: React.FC<CompactUploaderProps> = ({ caseId, onUploadCompl
                 formData.append('file', file);
                 formData.append('case_id', caseId);
                 formData.append('options', JSON.stringify({
-                    language: 'auto',
+                    language: 'vi',
                     fast_mode: fastMode,
                     enable_diarization: diarizationMethod !== 'none'
                 }));

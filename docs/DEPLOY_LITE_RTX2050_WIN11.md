@@ -72,6 +72,9 @@ WHISPER_DEVICE=cuda
 WHISPER_COMPUTE_TYPE=int8
 WHISPER_BATCH_SIZE=1
 WHISPER_BEAM_SIZE=5
+DEFAULT_LANGUAGE=vi
+WHISPER_VAD_FILTER=true
+ASR_GUARD_ENABLED=true
 ```
 
 Verified Python runtime pins for this Lite profile:
@@ -94,6 +97,19 @@ Profiles:
 - `offline_cpp`: whisper.cpp CLI with configured GGML model.
 - `phowhisper_cpp_candidate`: hidden until model SHA, source manifest, and smoke test pass.
 - `quality_local`: larger local faster-whisper model, benchmark before regular use.
+
+Language/guard policy:
+
+- Default language is `vi`, not `auto`. This is intentional for Vietnamese-first
+  deployments because Whisper language auto-detection can choose a wrong language
+  on short, noisy, or code-switched audio. English terms are preserved through
+  the Vietnamese prompt/hotwords instead of switching the whole decoder to
+  auto-detect.
+- Use the UI `Tự động` option only when the audio language is genuinely unknown.
+- `WHISPER_VAD_FILTER=true` reduces non-speech hallucination risk; tune or
+  disable it only after comparing against labeled audio.
+- `ASR_GUARD_ENABLED=true` removes low-confidence/no-speech/script-mismatch
+  segments before they enter summary or analysis.
 
 whisper.cpp settings:
 

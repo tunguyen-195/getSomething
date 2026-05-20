@@ -111,6 +111,15 @@ def generate_task_graph(
         warnings.append("LLM analysis đang tắt; mẫu phân tích được ghi nhận nhưng chưa chạy slot extraction LLM.")
     if selected_template_ids and getattr(settings, "ANALYSIS_INTELLIGENCE_LLM_ENABLED", False):
         warnings.append("LLM provider đã cấu hình nhưng V2 slot extraction LLM chưa được bật trong build này; kết quả vẫn là deterministic.")
+    asr_reliability = result.get("asr_reliability") if isinstance(result, dict) else None
+    if isinstance(asr_reliability, dict) and asr_reliability.get("review_required"):
+        warnings.append("Transcript có cảnh báo chất lượng ASR; các fact/entity từ analysis cần review thủ công.")
+    source_warnings = result.get("warnings") if isinstance(result, dict) else None
+    if isinstance(source_warnings, list):
+        for warning in source_warnings:
+            warning_text = str(warning)
+            if warning_text.startswith(("detected_language_unexpected", "asr_guard_removed_segments")):
+                warnings.append(f"ASR warning: {warning_text}")
 
     graph = AnalysisGraphV2(
         task_id=task_id,

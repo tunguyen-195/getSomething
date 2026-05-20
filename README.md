@@ -79,6 +79,10 @@ python scripts\precache_lite_models.py --model medium
 python scripts\verify_models.py --profile lite_rtx2050
 ```
 
+Mac dinh transcript dung `DEFAULT_LANGUAGE=vi`, khong dung `auto`, de tranh
+Whisper nhan nham ngon ngu tren audio Viet/Anh-Viet ngan hoac nhieu. Neu file
+that su khong ro ngon ngu, chon `Tu dong` trong UI va review warning guard.
+
 `verify_models.py` uses pinned revision/hash metadata from
 `docs/model_artifacts.required.json`; strict hash verification may take a few
 seconds while reading `model.bin`.

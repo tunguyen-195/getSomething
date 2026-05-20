@@ -7,7 +7,7 @@ Based on: "Investigation of Whisper ASR Hallucinations Induced by Non-Speech Aud
 Results: 67% reduction in erroneous outputs when combined with VAD.
 """
 import re
-from typing import Set
+from typing import Any, Set
 import logging
 
 logger = logging.getLogger(__name__)
@@ -72,11 +72,98 @@ class HallucinationFilter:
         "hẹn gặp lại các bạn",
     }
 
+    # These can be real user utterances. Only discard them when ASR metadata also
+    # says the segment is probably silence/low-confidence output.
+    CONTEXTUAL_VIETNAMESE_BOH: Set[str] = {
+        "xin chào",
+        "tạm biệt",
+        "ờ",
+        "à",
+        "ừ",
+        "ờ ờ",
+        "ừ ừ",
+        "à à",
+        "hả",
+        "hử",
+        "ơ",
+    }
+
+    CONTEXTUAL_ENGLISH_BOH: Set[str] = {
+        "you",
+        "bye bye",
+        "goodbye",
+    }
+
     # Word-level loop pattern
     WORD_LOOP_PATTERN = re.compile(
         r'(\b[\w\u00C0-\u1EF9]+\b)(\s*[.,!?]?\s*\1){2,}',
         re.IGNORECASE
     )
+    THAI_SCRIPT_PATTERN = re.compile(r"[\u0E00-\u0E7F]")
+    LETTER_PATTERN = re.compile(r"[A-Za-z\u00C0-\u1EF9]")
+
+    @classmethod
+    def _strict_boh(cls, language: str) -> Set[str]:
+        if language == "vi":
+            return cls.VIETNAMESE_BOH - cls.CONTEXTUAL_VIETNAMESE_BOH
+        return cls.ENGLISH_BOH - cls.CONTEXTUAL_ENGLISH_BOH
+
+    @classmethod
+    def _contextual_boh(cls, language: str) -> Set[str]:
+        if language == "vi":
+            return cls.CONTEXTUAL_VIETNAMESE_BOH
+        return cls.CONTEXTUAL_ENGLISH_BOH
+
+    @staticmethod
+    def _float_metric(segment: dict[str, Any] | None, *keys: str) -> float | None:
+        if not segment:
+            return None
+        for key in keys:
+            value = segment.get(key)
+            if value is None:
+                continue
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    @classmethod
+    def _is_low_quality_segment(
+        cls,
+        segment: dict[str, Any] | None,
+        *,
+        min_avg_logprob: float = -1.25,
+        max_no_speech_prob: float = 0.75,
+        max_compression_ratio: float = 2.6,
+    ) -> bool:
+        avg_logprob = cls._float_metric(segment, "avg_logprob", "confidence")
+        no_speech_prob = cls._float_metric(segment, "no_speech_prob")
+        compression_ratio = cls._float_metric(segment, "compression_ratio")
+        avg_word_probability = cls._float_metric(segment, "avg_word_probability")
+
+        if no_speech_prob is not None and no_speech_prob >= max_no_speech_prob:
+            return True
+        if avg_logprob is not None and avg_logprob <= min_avg_logprob:
+            return True
+        if compression_ratio is not None and compression_ratio >= max_compression_ratio:
+            return True
+        if avg_word_probability is not None and avg_word_probability < 0.25:
+            return True
+        return False
+
+    @classmethod
+    def _thai_script_ratio(cls, text: str) -> float:
+        letters = cls.LETTER_PATTERN.findall(text) + cls.THAI_SCRIPT_PATTERN.findall(text)
+        if not letters:
+            return 0.0
+        return len(cls.THAI_SCRIPT_PATTERN.findall(text)) / len(letters)
+
+    @classmethod
+    def _is_script_mismatch(cls, text: str, language: str) -> bool:
+        if language != "vi":
+            return False
+        return cls._thai_script_ratio(text) >= 0.25
 
     @classmethod
     def deloop(cls, text: str) -> str:
@@ -121,7 +208,7 @@ class HallucinationFilter:
         if not text:
             return text
 
-        boh = cls.VIETNAMESE_BOH if language == "vi" else cls.ENGLISH_BOH
+        boh = cls._strict_boh(language)
 
         for hallucination in boh:
             # Case-insensitive removal with boundary handling
@@ -137,7 +224,16 @@ class HallucinationFilter:
         return text
 
     @classmethod
-    def is_likely_hallucination(cls, text: str, language: str = "vi") -> bool:
+    def is_likely_hallucination(
+        cls,
+        text: str,
+        language: str = "vi",
+        segment: dict[str, Any] | None = None,
+        *,
+        min_avg_logprob: float = -1.25,
+        max_no_speech_prob: float = 0.75,
+        max_compression_ratio: float = 2.6,
+    ) -> bool:
         """
         Check if entire segment is likely a hallucination.
 
@@ -153,12 +249,23 @@ class HallucinationFilter:
 
         text_lower = text.strip().lower()
 
-        # Check full match against BoH
-        boh = cls.VIETNAMESE_BOH if language == "vi" else cls.ENGLISH_BOH
+        if cls._is_script_mismatch(text, language):
+            return True
 
-        for hallucination in boh:
+        # Check full match against BoH. Contextual short phrases are only
+        # removed when Whisper metadata also indicates low-confidence/silence.
+        for hallucination in cls._strict_boh(language):
             if text_lower == hallucination.lower():
                 return True
+
+        for hallucination in cls._contextual_boh(language):
+            if text_lower == hallucination.lower():
+                return cls._is_low_quality_segment(
+                    segment,
+                    min_avg_logprob=min_avg_logprob,
+                    max_no_speech_prob=max_no_speech_prob,
+                    max_compression_ratio=max_compression_ratio,
+                )
 
         # Check if mostly punctuation or too short
         alphanumeric = re.sub(r'[^\w]', '', text)
@@ -202,7 +309,15 @@ class HallucinationFilter:
         return text
 
     @classmethod
-    def filter_segments(cls, segments: list, language: str = "vi") -> list:
+    def filter_segments(
+        cls,
+        segments: list,
+        language: str = "vi",
+        *,
+        min_avg_logprob: float = -1.25,
+        max_no_speech_prob: float = 0.75,
+        max_compression_ratio: float = 2.6,
+    ) -> list:
         """
         Filter hallucinations from transcript segments.
 
@@ -220,7 +335,14 @@ class HallucinationFilter:
             text = seg.get('text', '')
 
             # Skip entirely hallucinated segments
-            if cls.is_likely_hallucination(text, language):
+            if cls.is_likely_hallucination(
+                text,
+                language,
+                seg,
+                min_avg_logprob=min_avg_logprob,
+                max_no_speech_prob=max_no_speech_prob,
+                max_compression_ratio=max_compression_ratio,
+            ):
                 removed_count += 1
                 continue
 
@@ -237,6 +359,61 @@ class HallucinationFilter:
             logger.info(f"[HallucinationFilter] Removed {removed_count} hallucinated segments")
 
         return filtered
+
+    @classmethod
+    def guard_segments(
+        cls,
+        segments: list[dict[str, Any]],
+        language: str = "vi",
+        *,
+        min_avg_logprob: float = -1.25,
+        max_no_speech_prob: float = 0.75,
+        max_compression_ratio: float = 2.6,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        filtered: list[dict[str, Any]] = []
+        removed: list[dict[str, Any]] = []
+
+        for index, seg in enumerate(segments):
+            text = str(seg.get("text", "")).strip()
+            reasons: list[str] = []
+            if not text:
+                reasons.append("empty_text")
+            if text and cls._is_script_mismatch(text, language):
+                reasons.append("script_mismatch")
+            if text and cls.is_likely_hallucination(
+                text,
+                language,
+                seg,
+                min_avg_logprob=min_avg_logprob,
+                max_no_speech_prob=max_no_speech_prob,
+                max_compression_ratio=max_compression_ratio,
+            ):
+                reasons.append("known_or_low_quality_hallucination")
+
+            cleaned_text = "" if reasons else cls.filter(text, language)
+            if cleaned_text:
+                guarded = {**seg, "text": cleaned_text}
+                if reasons:
+                    guarded["guard_flags"] = reasons
+                filtered.append(guarded)
+            else:
+                removed.append(
+                    {
+                        "index": index,
+                        "start": seg.get("start"),
+                        "end": seg.get("end"),
+                        "reasons": reasons or ["empty_after_filter"],
+                    }
+                )
+
+        report = {
+            "enabled": True,
+            "removed_segments": len(removed),
+            "removed": removed[:20],
+        }
+        if removed:
+            logger.info("[HallucinationFilter] Guard removed %s segment(s)", len(removed))
+        return filtered, report
 
     @classmethod
     def add_vietnamese_hallucination(cls, phrase: str):
@@ -276,3 +453,20 @@ def filter_transcript_segments(segments: list, language: str = "vi") -> list:
         Filtered segments
     """
     return HallucinationFilter.filter_segments(segments, language)
+
+
+def guard_transcript_segments(
+    segments: list[dict[str, Any]],
+    language: str = "vi",
+    *,
+    min_avg_logprob: float = -1.25,
+    max_no_speech_prob: float = 0.75,
+    max_compression_ratio: float = 2.6,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    return HallucinationFilter.guard_segments(
+        segments,
+        language,
+        min_avg_logprob=min_avg_logprob,
+        max_no_speech_prob=max_no_speech_prob,
+        max_compression_ratio=max_compression_ratio,
+    )

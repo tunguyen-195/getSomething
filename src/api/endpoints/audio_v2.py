@@ -146,7 +146,7 @@ async def transcribe_v2(
     task_id: str,
     enable_diarization: bool | None = Body(None),
     diarization_method: str = Body("pyannote"),
-    language: str = Body("auto"),
+    language: str = Body("vi"),
     fast_mode: bool = Body(True),
     async_mode: bool = Body(True),
     asr_profile: str | None = Body(None),

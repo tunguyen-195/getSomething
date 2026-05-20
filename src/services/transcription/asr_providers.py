@@ -17,6 +17,7 @@ from src.services.model_artifacts import (
     verify_artifact_id_for_health,
     verify_faster_whisper_runtime_health,
 )
+from src.services.hallucination_filter import guard_transcript_segments
 
 
 class ASRProviderError(RuntimeError):
@@ -95,19 +96,19 @@ AUTO_LANGUAGE_VALUES = {"", "auto", "detect", "mixed", "multilingual"}
 
 ASR_LANGUAGE_OPTIONS = [
     {
-        "value": "auto",
-        "label_vi": "Tự động / Anh-Việt",
-        "description": "Tự nhận diện ngôn ngữ và cho phép audio xen kẽ tiếng Việt, tiếng Anh.",
-    },
-    {
         "value": "vi",
-        "label_vi": "Tiếng Việt",
-        "description": "Ép nhận dạng tiếng Việt; phù hợp audio tiếng Việt thuần.",
+        "label_vi": "Tiếng Việt + thuật ngữ Anh",
+        "description": "Ép nhận dạng tiếng Việt; khuyến nghị cho hội thoại Việt có xen thuật ngữ tiếng Anh.",
     },
     {
         "value": "en",
         "label_vi": "English",
         "description": "Ép nhận dạng tiếng Anh.",
+    },
+    {
+        "value": "auto",
+        "label_vi": "Tự động",
+        "description": "Chỉ dùng khi chưa biết ngôn ngữ; có thể nhận nhầm với audio ngắn/nhiễu hoặc Anh-Việt.",
     },
 ]
 
@@ -136,6 +137,124 @@ def _segment_words(segment: Any) -> list[dict[str, Any]]:
             }
         )
     return output
+
+
+def _avg_word_probability(words: list[dict[str, Any]]) -> float | None:
+    probabilities = []
+    for word in words:
+        value = word.get("probability")
+        if value is None:
+            continue
+        try:
+            probabilities.append(float(value))
+        except (TypeError, ValueError):
+            continue
+    if not probabilities:
+        return None
+    return sum(probabilities) / len(probabilities)
+
+
+def _merge_segment_pair(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    words = list(left.get("words") or []) + list(right.get("words") or [])
+    merged = {
+        **left,
+        "end": right.get("end", left.get("end")),
+        "text": " ".join(
+            item
+            for item in [
+                str(left.get("text", "")).strip(),
+                str(right.get("text", "")).strip(),
+            ]
+            if item
+        ),
+        "words": words,
+    }
+    avg_word_probability = _avg_word_probability(words)
+    if avg_word_probability is not None:
+        merged["avg_word_probability"] = avg_word_probability
+    return merged
+
+
+def _normalize_asr_segments(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not segments:
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    max_seconds = float(getattr(settings, "ASR_SEGMENT_MAX_SECONDS", 18.0) or 18.0)
+    merge_gap = float(getattr(settings, "ASR_SEGMENT_MERGE_GAP_SECONDS", 0.7) or 0.7)
+
+    for segment in segments:
+        text = str(segment.get("text", "")).strip()
+        if not text:
+            continue
+        start = float(segment.get("start") or 0.0)
+        end = float(segment.get("end") or start)
+        duration = max(0.0, end - start)
+        previous = normalized[-1] if normalized else None
+        previous_end = float(previous.get("end") or 0.0) if previous else 0.0
+        gap = start - previous_end
+
+        if (
+            previous
+            and gap <= merge_gap
+            and (
+                duration < 0.75
+                or len(text) <= 6
+                or max(0.0, previous_end - float(previous.get("start") or previous_end)) < 0.75
+            )
+        ):
+            normalized[-1] = _merge_segment_pair(previous, segment)
+            continue
+
+        if duration > max_seconds and segment.get("words"):
+            chunk: list[dict[str, Any]] = []
+            chunk_start: float | None = None
+            for word in segment["words"]:
+                word_text = str(word.get("word", "")).strip()
+                if not word_text:
+                    continue
+                word_start = float(word.get("start") if word.get("start") is not None else start)
+                word_end = float(word.get("end") if word.get("end") is not None else word_start)
+                if chunk_start is None:
+                    chunk_start = word_start
+                chunk.append(word)
+                chunk_duration = word_end - chunk_start
+                boundary = word_text.endswith((".", "?", "!", ";", ":"))
+                forced_boundary = chunk_duration >= max_seconds * 1.5
+                if chunk_duration >= max_seconds and (boundary or forced_boundary):
+                    text_chunk = " ".join(str(item.get("word", "")).strip() for item in chunk).strip()
+                    split_segment = {
+                        **segment,
+                        "start": chunk_start,
+                        "end": word_end,
+                        "text": text_chunk,
+                        "words": list(chunk),
+                    }
+                    avg_word_probability = _avg_word_probability(split_segment["words"])
+                    if avg_word_probability is not None:
+                        split_segment["avg_word_probability"] = avg_word_probability
+                    normalized.append(split_segment)
+                    chunk = []
+                    chunk_start = None
+            if chunk:
+                chunk_end = float(chunk[-1].get("end") if chunk[-1].get("end") is not None else end)
+                text_chunk = " ".join(str(item.get("word", "")).strip() for item in chunk).strip()
+                split_segment = {
+                    **segment,
+                    "start": chunk_start if chunk_start is not None else start,
+                    "end": chunk_end,
+                    "text": text_chunk,
+                    "words": list(chunk),
+                }
+                avg_word_probability = _avg_word_probability(split_segment["words"])
+                if avg_word_probability is not None:
+                    split_segment["avg_word_probability"] = avg_word_probability
+                normalized.append(split_segment)
+            continue
+
+        normalized.append(segment)
+
+    return normalized
 
 
 def _from_segments(segments: list[dict[str, Any]], *, duration: float, language: str, provider: str, model_info: dict[str, Any], warnings: list[str], processing_time: float) -> dict[str, Any]:
@@ -246,22 +365,22 @@ def _faster_whisper_result(
         language=transcribe_language,
         task="transcribe",
         beam_size=runtime["beam_size"],
-        vad_filter=True,
+        vad_filter=settings.WHISPER_VAD_FILTER,
         temperature=0.0,
-        compression_ratio_threshold=2.4,
-        log_prob_threshold=-1.0,
-        no_speech_threshold=0.5,
+        compression_ratio_threshold=settings.WHISPER_COMPRESSION_RATIO_THRESHOLD,
+        log_prob_threshold=settings.WHISPER_LOG_PROB_THRESHOLD,
+        no_speech_threshold=settings.WHISPER_NO_SPEECH_THRESHOLD,
         initial_prompt=settings.WHISPER_INITIAL_PROMPT,
         hotwords=settings.WHISPER_HOTWORDS,
         vad_parameters={
-            "threshold": 0.4,
-            "min_speech_duration_ms": 200,
-            "min_silence_duration_ms": 1500,
-            "speech_pad_ms": 800,
+            "threshold": settings.WHISPER_VAD_THRESHOLD,
+            "min_speech_duration_ms": settings.WHISPER_VAD_MIN_SPEECH_MS,
+            "min_silence_duration_ms": settings.WHISPER_VAD_MIN_SILENCE_MS,
+            "speech_pad_ms": settings.WHISPER_VAD_SPEECH_PAD_MS,
         },
         word_timestamps=True,
         multilingual=multilingual,
-        condition_on_previous_text=False,
+        condition_on_previous_text=settings.WHISPER_CONDITION_ON_PREVIOUS_TEXT,
     )
 
     segments = []
@@ -274,21 +393,50 @@ def _faster_whisper_result(
             continue
         if any(pattern in lower and len(text) < 100 for pattern in ["subscribe", "đăng ký kênh", "thanks for watching"]):
             continue
-        segments.append(
-            {
-                "start": getattr(segment, "start", 0.0),
-                "end": getattr(segment, "end", 0.0),
-                "text": text,
-                "speaker": None,
-                "confidence": getattr(segment, "avg_logprob", None),
-                "words": _segment_words(segment),
-            }
+        words = _segment_words(segment)
+        avg_word_probability = _avg_word_probability(words)
+        item = {
+            "start": getattr(segment, "start", 0.0),
+            "end": getattr(segment, "end", 0.0),
+            "text": text,
+            "speaker": None,
+            "confidence": getattr(segment, "avg_logprob", None),
+            "avg_logprob": getattr(segment, "avg_logprob", None),
+            "no_speech_prob": getattr(segment, "no_speech_prob", None),
+            "compression_ratio": getattr(segment, "compression_ratio", None),
+            "words": words,
+        }
+        if avg_word_probability is not None:
+            item["avg_word_probability"] = avg_word_probability
+        segments.append(item)
+
+    detected_language = getattr(info, "language", language) or language
+    guard_language = transcribe_language or (
+        settings.DEFAULT_LANGUAGE
+        if str(settings.DEFAULT_LANGUAGE).strip().lower() not in AUTO_LANGUAGE_VALUES
+        else "vi"
+    )
+    warnings = _warnings(warning_prefix)
+    if requested_language == "auto" and str(detected_language).lower() not in {"vi", "en"}:
+        warnings.append(f"detected_language_unexpected:{detected_language}")
+
+    segments = _normalize_asr_segments(segments)
+    guard_report: dict[str, Any] | None = None
+    if settings.ASR_GUARD_ENABLED:
+        segments, guard_report = guard_transcript_segments(
+            segments,
+            language=str(guard_language).lower(),
+            min_avg_logprob=settings.ASR_GUARD_MIN_AVG_LOGPROB,
+            max_no_speech_prob=settings.ASR_GUARD_MAX_NO_SPEECH_PROB,
+            max_compression_ratio=settings.ASR_GUARD_MAX_COMPRESSION_RATIO,
         )
+        if guard_report.get("removed_segments"):
+            warnings.append(f"asr_guard_removed_segments:{guard_report['removed_segments']}")
 
     return _from_segments(
         segments,
         duration=float(getattr(info, "duration", 0.0) or 0.0),
-        language=getattr(info, "language", language) or language,
+        language=detected_language,
         provider="faster_whisper_ct2",
         model_info={
             "model": model_name,
@@ -297,8 +445,11 @@ def _faster_whisper_result(
             "profile": runtime["profile"],
             "requested_language": requested_language,
             "multilingual": multilingual,
+            "vad_filter": settings.WHISPER_VAD_FILTER,
+            "condition_on_previous_text": settings.WHISPER_CONDITION_ON_PREVIOUS_TEXT,
+            "guard": guard_report or {"enabled": False},
         },
-        warnings=_warnings(warning_prefix),
+        warnings=warnings,
         processing_time=time.time() - start,
     )
 
@@ -702,7 +853,7 @@ def provider_health() -> dict[str, Any]:
         "whisper_model": settings.WHISPER_MODEL,
         "whisper_device": settings.WHISPER_DEVICE,
         "whisper_compute_type": settings.WHISPER_COMPUTE_TYPE,
-        "default_language": "auto",
+        "default_language": settings.DEFAULT_LANGUAGE,
         "language_options": ASR_LANGUAGE_OPTIONS,
         "whisper_cpp_binary_available": whisper_cpp_bin.exists(),
         "whisper_cpp_model_available": Path(settings.WHISPER_CPP_MODEL).exists(),

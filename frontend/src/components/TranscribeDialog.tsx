@@ -67,22 +67,22 @@ const FALLBACK_ASR_PROFILES = [
 ];
 
 const DEFAULT_ASR_PROFILE = 'balanced';
-const DEFAULT_LANGUAGE = 'auto';
+const DEFAULT_LANGUAGE = 'vi';
 const FALLBACK_LANGUAGE_OPTIONS = [
   {
-    value: 'auto',
-    label_vi: 'Tự động / Anh-Việt',
-    description: 'Tự nhận diện ngôn ngữ, phù hợp file có cả tiếng Việt và tiếng Anh.',
-  },
-  {
     value: 'vi',
-    label_vi: 'Tiếng Việt',
-    description: 'Ép nhận dạng tiếng Việt cho audio tiếng Việt thuần.',
+    label_vi: 'Tiếng Việt + thuật ngữ Anh',
+    description: 'Khuyến nghị cho hội thoại tiếng Việt, kể cả khi có xen từ tiếng Anh.',
   },
   {
     value: 'en',
     label_vi: 'English',
     description: 'Force English transcription.',
+  },
+  {
+    value: 'auto',
+    label_vi: 'Tự động',
+    description: 'Chỉ dùng khi chưa biết ngôn ngữ; audio ngắn/nhiễu có thể nhận nhầm.',
   },
 ];
 

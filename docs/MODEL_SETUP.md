@@ -12,6 +12,8 @@ WHISPER_MODEL=medium
 WHISPER_DEVICE=cuda
 WHISPER_COMPUTE_TYPE=int8
 WHISPER_MODEL_PATH=models/whisper
+DEFAULT_LANGUAGE=vi
+ASR_GUARD_ENABLED=true
 ```
 
 Full Cherry/PhoWhisper offline models are optional. If an artifact is not
@@ -80,6 +82,12 @@ runtime fails with `model_artifact_not_manifested` instead of downloading latest
 
 `faster_whisper_small` remains optional as a fast fallback. It is no longer the
 recommended default for Vietnamese transcript quality.
+
+For Vietnamese-first audio, keep `DEFAULT_LANGUAGE=vi`. Do not use `auto` as the
+default for Anh-Viet conversations; the English terms are handled by
+`WHISPER_INITIAL_PROMPT` and `WHISPER_HOTWORDS`. Use `auto` only for truly
+unknown-language audio, then review `model_info.requested_language`,
+detected language, and guard warnings.
 
 If the machine is offline, copy a prepared public `models/whisper` cache into
 the repo root and run the verify commands above.

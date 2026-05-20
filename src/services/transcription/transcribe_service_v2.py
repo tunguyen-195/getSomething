@@ -16,12 +16,57 @@ from src.core.config import settings
 from src.services.transcription.asr_providers import transcribe_with_provider
 
 
+def _asr_reliability_report(
+    segments: list[dict],
+    *,
+    warnings: list[str],
+    model_info: dict,
+) -> dict:
+    avg_logprobs = []
+    no_speech_probs = []
+    for segment in segments:
+        for key, target in (("avg_logprob", avg_logprobs), ("confidence", avg_logprobs)):
+            value = segment.get(key)
+            if value is None:
+                continue
+            try:
+                target.append(float(value))
+                break
+            except (TypeError, ValueError):
+                continue
+        value = segment.get("no_speech_prob")
+        if value is not None:
+            try:
+                no_speech_probs.append(float(value))
+            except (TypeError, ValueError):
+                pass
+
+    mean_logprob = sum(avg_logprobs) / len(avg_logprobs) if avg_logprobs else None
+    max_no_speech = max(no_speech_probs) if no_speech_probs else None
+    guard = model_info.get("guard") if isinstance(model_info, dict) else {}
+    removed_segments = int((guard or {}).get("removed_segments") or 0)
+    review_required = bool(
+        removed_segments
+        or any(str(warning).startswith(("detected_language_unexpected", "asr_guard_removed_segments")) for warning in warnings)
+        or (mean_logprob is not None and mean_logprob <= settings.ASR_GUARD_MIN_AVG_LOGPROB)
+        or (max_no_speech is not None and max_no_speech >= settings.ASR_GUARD_MAX_NO_SPEECH_PROB)
+    )
+    return {
+        "review_required": review_required,
+        "mean_avg_logprob": mean_logprob,
+        "max_no_speech_prob": max_no_speech,
+        "removed_segments": removed_segments,
+        "segment_count": len(segments),
+        "reason": "asr_guard_or_low_confidence" if review_required else "ok",
+    }
+
+
 def transcribe_audio_v2(
     task_id: str,
     db,
     enable_diarization: bool = True,
     diarization_method: str = "pyannote",
-    language: str = "auto",
+    language: str = "vi",
     fast_mode: bool = True,
     asr_profile: str | None = None,
 ) -> Dict:
@@ -70,6 +115,13 @@ def transcribe_audio_v2(
         segments = asr_result.get("segments", [])
         duration = float(asr_result.get("duration") or 0.0)
         language = asr_result.get("language") or language
+        warnings = asr_result.get("warnings", [])
+        model_info = asr_result.get("model_info", {})
+        asr_reliability = _asr_reliability_report(
+            segments,
+            warnings=warnings,
+            model_info=model_info,
+        )
         num_speakers = 1
 
         speakers_found = {seg.get("speaker") for seg in segments if seg.get("speaker")}
@@ -144,8 +196,10 @@ def transcribe_audio_v2(
             "fast_mode": fast_mode,
             "asr_provider": asr_result.get("provider"),
             "asr_profile": asr_profile or settings.ASR_PROFILE,
-            "model_info": asr_result.get("model_info", {}),
-            "warnings": asr_result.get("warnings", []),
+            "model_info": model_info,
+            "warnings": warnings,
+            "phoguard": model_info.get("guard") if isinstance(model_info, dict) else {},
+            "asr_reliability": asr_reliability,
         }
 
         result_dict = response.copy()
@@ -153,7 +207,7 @@ def transcribe_audio_v2(
              "transcription": full_transcript,
              "summary": "",
              "context_analysis": {},
-             "confidence": 1.0,
+             "confidence": 0.5 if asr_reliability["review_required"] else 1.0,
              "filename": audio_path.name
         })
 
