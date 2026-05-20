@@ -13,6 +13,23 @@ from src.database.models.schemas import TaskResult
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
+def _case_to_dict(case: Case) -> Dict[str, Any]:
+    return {
+        "id": case.id,
+        "case_code": case.case_code,
+        "title": case.title,
+        "description": case.description,
+        "status_id": case.status_id,
+        "priority_id": case.priority_id,
+        "created_by": case.created_by,
+        "created_at": case.created_at,
+        "updated_at": case.updated_at,
+        "is_archived": case.is_archived,
+        "archive_reason": case.archive_reason,
+    }
+
+
 @router.get("/", response_model=List[Dict[str, Any]])
 def get_cases(
     sort_by: str = "created_at",
@@ -72,19 +89,13 @@ def get_cases(
                     summaries.append(task_result["summary"])
                 if task_result.get("context_analysis"):
                     contexts.append(task_result["context_analysis"])
-        result.append({
-            "id": c.id,
-            "case_code": c.case_code,
-            "title": c.title,
-            "description": c.description,
-            "status_id": c.status_id,
-            "priority_id": c.priority_id,
-            "created_by": c.created_by,
-            "created_at": c.created_at,  # Ensure created_at is returned
+        item = _case_to_dict(c)
+        item.update({
             "transcripts": transcripts,
             "summaries": summaries,
             "contexts": contexts,
         })
+        result.append(item)
     return result
 
 @router.post("/", response_model=Dict[str, Any], status_code=201)
@@ -116,16 +127,7 @@ def create_case(
         db.commit()
         db.refresh(case)
         logger.info(f"Created case: {case.id} - {case.title}")
-        return {
-            "id": case.id,
-            "case_code": case.case_code,
-            "title": case.title,
-            "description": case.description,
-            "status_id": case.status_id,
-            "priority_id": case.priority_id,
-            "created_by": case.created_by,
-            "created_at": case.created_at
-        }
+        return _case_to_dict(case)
     except Exception as e:
         logger.error(f"Error creating case: {e}")
         db.rollback()
@@ -141,7 +143,7 @@ def get_case(
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case or case.is_archived:
         raise HTTPException(status_code=404, detail="Case not found")
-    return case
+    return _case_to_dict(case)
 
 @router.patch("/{case_id}", response_model=Dict[str, Any])
 def update_case(
@@ -159,7 +161,7 @@ def update_case(
             setattr(case, k, v)
     db.commit()
     db.refresh(case)
-    return case
+    return _case_to_dict(case)
 
 @router.delete("/{case_id}")
 def delete_case(

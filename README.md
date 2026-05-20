@@ -20,7 +20,7 @@ Doc nay bao gom:
 - Cach verify build/test/model sau khi cai.
 - Luu y model/audio/runtime data khong commit len Git; model khong tai duoc thi copy thu cong tu bundle noi bo va verify.
 
-## Cach chay nhanh Lite RTX2050
+## Cach chay nhanh Lite RTX2050 bang Docker
 
 ```powershell
 git clone https://github.com/tunguyen-195/getSomething.git
@@ -38,16 +38,44 @@ INITIAL_ADMIN_PASSWORD=<your-admin-password>
 POSTGRES_PASSWORD=<your-db-password>
 ```
 
+Neu can bat Summary/LLM qua OpenRouter, them key vao `.env` tren may chay:
+
+```env
+ANALYSIS_LLM_PROVIDER=openrouter
+ANALYSIS_LLM_BASE_URL=https://openrouter.ai/api/v1
+ANALYSIS_LLM_MODEL=google/gemini-2.5-flash
+ANALYSIS_LLM_FALLBACK_MODEL=openai/gpt-5-mini
+ANALYSIS_LLM_API_KEY=<openrouter-api-key>
+ANALYSIS_LLM_HTTP_REFERER=http://localhost:3000
+ANALYSIS_LLM_APP_TITLE=SpeechToInformation Lite
+```
+
+Khong commit `.env` hoac API key. Neu thieu key, nut Summary bi tat va API tra `llm_not_configured`.
+Kiem tra nhanh provider sau khi them key:
+
+```powershell
+docker compose --env-file .env run --rm backend python3 scripts/check_llm_provider.py
+```
+
 Generate `SECRET_KEY`:
 
 ```powershell
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Chuan bi model public Lite:
+Khoi dong Docker Lite. Script se build image, tai/verify public
+`faster-whisper medium` theo manifest pinned, roi start backend/frontend/db/redis:
 
 ```powershell
-python scripts\precache_lite_models.py --model small
+.\START_DOCKER_LITE.bat
+```
+
+Neu khong dung Docker va muon chay local Python/Node, chuan bi model public Lite
+truoc. Mac dinh Lite dung `faster-whisper medium` thay vi `small` de uu tien
+transcript tieng Viet:
+
+```powershell
+python scripts\precache_lite_models.py --model medium
 python scripts\verify_models.py --profile lite_rtx2050
 ```
 
@@ -61,17 +89,23 @@ Khoi dong local Lite:
 .\START_LITE_RTX2050.bat
 ```
 
-Docker Compose la path advanced cho full/Celery/Redis hoac de test container:
-
-```powershell
-docker compose up --build
-```
-
 Mo:
 
 - Frontend: http://localhost:3000
 - Backend: http://localhost:8000
 - API docs dev: http://localhost:8000/docs
+
+Sau khi sua code, build lai container:
+
+```powershell
+docker compose up -d --build
+```
+
+Neu can full/Celery worker optional:
+
+```powershell
+docker compose --profile full up -d --build
+```
 
 ## Cach chay local tren Windows
 
@@ -97,7 +131,7 @@ cd frontend
 npm install
 cd ..
 python -m src.database.scripts.init_db
-python scripts\precache_lite_models.py --model small
+python scripts\precache_lite_models.py --model medium
 python scripts\verify_models.py --profile lite_rtx2050
 ```
 

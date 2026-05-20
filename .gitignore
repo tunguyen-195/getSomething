@@ -41,6 +41,14 @@ app.log
 backend.log
 celery.log
 web_interface.log
+.coverage
+htmlcov/
+coverage/
+runs/
+output/
+test-results/
+playwright-report/
+.playwright-cli/
 
 # Environment
 .env
@@ -81,6 +89,9 @@ node_modules/
 frontend/node_modules/
 frontend/build/
 frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+frontend/.playwright-cli/
 npm-debug.log*
 yarn-error.log*
 

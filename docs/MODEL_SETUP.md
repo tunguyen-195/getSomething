@@ -7,8 +7,8 @@ machine is the Lite RTX2050 profile:
 APP_EDITION=lite
 PROCESSING_RUNNER=single_job_db_lease
 ASR_PROVIDER=faster_whisper_ct2
-ASR_PROFILE=rtx2050_safe
-WHISPER_MODEL=small
+ASR_PROFILE=balanced
+WHISPER_MODEL=medium
 WHISPER_DEVICE=cuda
 WHISPER_COMPUTE_TYPE=int8
 WHISPER_MODEL_PATH=models/whisper
@@ -26,8 +26,9 @@ pull-readiness.
   internal bundle and verify locally.
 - Git: track only docs, scripts, manifest, expected paths, size, checksum, and
   license/source notes.
-- Pull-ready acceptance: Lite RTX2050 can run upload, transcribe, summarize, and
-  analysis/visualize after setup.
+- Pull-ready acceptance: Lite RTX2050 can run upload, transcribe, deterministic
+  analysis, and visualize after setup. Summarization is available only after a
+  server-side LLM provider/API key is configured.
 - Full/offline Cherry/PhoWhisper: documented optional profile, not a blocker for
   a new Lite machine.
 
@@ -45,13 +46,19 @@ type docs\model_artifacts.required.json
 
 Required artifact:
 
-- `faster_whisper_small`
-- Source: `Systran/faster-whisper-small`
+- `faster_whisper_medium`
+- Source: `Systran/faster-whisper-medium`
 - Runtime cache root: `models/whisper`
-- Setup command:
+- Local setup command:
 
 ```powershell
-python scripts\precache_lite_models.py --model small
+python scripts\precache_lite_models.py --model medium
+```
+
+Docker setup command:
+
+```powershell
+docker compose --env-file .env --profile setup run --rm model_sync
 ```
 
 Verify:
@@ -66,10 +73,13 @@ the revision and file list pinned in `docs/model_artifacts.required.json`.
 `verify_models.py` checks required file size and hash/blob metadata offline.
 Strict verification may take a few seconds because `model.bin` is hashed.
 
-The application does not pass `small` or another model name to faster-whisper at
+The application does not pass `medium`, `small`, or another model name to faster-whisper at
 runtime. It first verifies the local artifact and then loads faster-whisper from
 the resolved local snapshot path. If a configured model is not in the manifest,
 runtime fails with `model_artifact_not_manifested` instead of downloading latest.
+
+`faster_whisper_small` remains optional as a fast fallback. It is no longer the
+recommended default for Vietnamese transcript quality.
 
 If the machine is offline, copy a prepared public `models/whisper` cache into
 the repo root and run the verify commands above.

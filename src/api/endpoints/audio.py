@@ -733,13 +733,6 @@ def delete_audio(
             except Exception as e:
                 logger.warning(f"[DELETE_AUDIO] Could not delete file from disk: {e}")
 
-        # Delete associated task if exists
-        if audio.task_id:
-            task = db.query(Task).filter(Task.id == audio.task_id).first()
-            if task:
-                db.delete(task)
-
-        # Delete from DB
         log_activity(
             db,
             "delete",
@@ -750,11 +743,19 @@ def delete_audio(
             task_id=audio.task_id,
             detail={"resource": "audio"},
         )
-        db.delete(audio)
+        if audio.task_id:
+            task = db.query(Task).filter(Task.id == audio.task_id).first()
+            if task:
+                task.status = "archived"
+                task.updated_at = datetime.utcnow()
+        audio.status = "archived"
+        audio.is_archived = True
+        audio.archive_reason = "Deleted by user"
+        audio.updated_at = datetime.utcnow()
         db.commit()
 
-        logger.info(f"[DELETE_AUDIO] Deleted audio id={audio.id}, task_id={audio.task_id}")
-        return {"detail": "Audio deleted", "id": str(audio.id)}
+        logger.info(f"[DELETE_AUDIO] Archived audio id={audio.id}, task_id={audio.task_id}")
+        return {"detail": "Audio archived", "id": str(audio.id)}
 
     except HTTPException:
         raise

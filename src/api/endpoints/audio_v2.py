@@ -146,7 +146,7 @@ async def transcribe_v2(
     task_id: str,
     enable_diarization: bool | None = Body(None),
     diarization_method: str = Body("pyannote"),
-    language: str = Body("vi"),
+    language: str = Body("auto"),
     fast_mode: bool = Body(True),
     async_mode: bool = Body(True),
     asr_profile: str | None = Body(None),
@@ -219,6 +219,10 @@ async def summarize_v2(task_id: str, model_name: str = Body(None), summary_type:
         if not transcript or not transcript.strip():
             logger.warning(f"[API_V2] No transcription found for task {task_id}. Task result keys: {list(task.get('result', {}).keys()) if task.get('result') else 'No result'}")
             raise HTTPException(status_code=400, detail="No transcription found. Please transcribe the audio first.")
+
+        from src.services.summarization.models.llm_manager import llm_provider_configured
+        if not llm_provider_configured():
+            raise HTTPException(status_code=503, detail="llm_not_configured")
 
         logger.info(f"[API_V2] Summarize | task_id={task_id} | transcript_length={len(transcript)} | model={model_name}")
 
@@ -345,6 +349,9 @@ async def get_transcription_detail_v2(
             "duration": result_data.get("duration"),
             "num_speakers": result_data.get("num_speakers"),
             "has_diarization": bool(result_data.get("has_diarization", False)),
+            "asr_provider": result_data.get("asr_provider"),
+            "asr_profile": result_data.get("asr_profile"),
+            "model_info": result_data.get("model_info") or {},
             "phoguard": result_data.get("phoguard"),
             "asr_reliability": result_data.get("asr_reliability"),
             "warnings": result_data.get("warnings") or [],

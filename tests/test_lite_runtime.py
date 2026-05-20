@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.core.config import settings
-from src.database.models.models import AudioFile, RuntimeJobLease, Task
+from src.database.models.models import AudioFile, Language, RuntimeJobLease, Task
 from src.services import lite_runtime
 from src.services.lite_runtime import lite_runner_enabled
 from src.services.task_service import update_task
@@ -28,7 +28,7 @@ def _lite_test_session():
     return sessionmaker(bind=engine, expire_on_commit=False)
 
 
-def _wait_for(predicate, timeout: float = 2.0):
+def _wait_for(predicate, timeout: float = 5.0):
     import time
 
     deadline = time.time() + timeout
@@ -75,6 +75,7 @@ def test_faster_whisper_runtime_passes_verified_local_path_to_model(monkeypatch,
     from src.services.transcription import asr_providers
 
     calls = []
+    transcribe_calls = []
     verified_path = tmp_path / "models" / "whisper" / "models--Systran--faster-whisper-small" / "snapshots" / "rev"
     verified_path.mkdir(parents=True)
 
@@ -94,6 +95,7 @@ def test_faster_whisper_runtime_passes_verified_local_path_to_model(monkeypatch,
             calls.append((args, kwargs))
 
         def transcribe(self, *args, **kwargs):
+            transcribe_calls.append((args, kwargs))
             return iter([FakeSegment()]), FakeInfo()
 
     monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=FakeWhisperModel))
@@ -120,6 +122,80 @@ def test_faster_whisper_runtime_passes_verified_local_path_to_model(monkeypatch,
     assert args == (str(verified_path),)
     assert args[0] != "small"
     assert "download_root" not in kwargs
+    _, transcribe_kwargs = transcribe_calls[0]
+    assert transcribe_kwargs["task"] == "transcribe"
+    assert "tiếng Việt" in transcribe_kwargs["initial_prompt"]
+    assert "SpeechToInformation" in transcribe_kwargs["hotwords"]
+
+
+def test_faster_whisper_auto_language_does_not_force_vietnamese(monkeypatch, tmp_path):
+    from src.services.transcription import asr_providers
+
+    transcribe_calls = []
+    verified_path = tmp_path / "models" / "whisper" / "models--Systran--faster-whisper-medium" / "snapshots" / "rev"
+    verified_path.mkdir(parents=True)
+
+    class FakeSegment:
+        start = 0.0
+        end = 1.0
+        text = "xin chao hello"
+        avg_logprob = -0.1
+        words = []
+
+    class FakeInfo:
+        duration = 1.0
+        language = "vi"
+
+    class FakeWhisperModel:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def transcribe(self, *args, **kwargs):
+            transcribe_calls.append((args, kwargs))
+            return iter([FakeSegment()]), FakeInfo()
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=FakeWhisperModel))
+    monkeypatch.setattr(asr_providers, "require_faster_whisper_runtime_ready", lambda *args, **kwargs: verified_path)
+    monkeypatch.setattr(settings, "WHISPER_MODEL", "small")
+    monkeypatch.setattr(settings, "WHISPER_DEVICE", "cpu")
+    monkeypatch.setattr(settings, "WHISPER_COMPUTE_TYPE", "int8")
+
+    result = asr_providers._faster_whisper_result(
+        "audio.wav",
+        language="auto",
+        runtime={
+            "profile": "balanced",
+            "model": "medium",
+            "device": "cpu",
+            "compute_type": "int8",
+            "beam_size": 1,
+        },
+    )
+
+    assert result["text"] == "xin chao hello"
+    _, transcribe_kwargs = transcribe_calls[0]
+    assert transcribe_kwargs["language"] is None
+    assert transcribe_kwargs["multilingual"] is True
+    assert result["model_info"]["requested_language"] == "auto"
+
+
+def test_transcribe_defaults_are_auto_language():
+    import inspect
+
+    from src.api.endpoints.audio_v2 import transcribe_v2
+    from src.services.transcription.transcribe_service_v2 import transcribe_audio_v2
+
+    api_default = inspect.signature(transcribe_v2).parameters["language"].default
+    assert getattr(api_default, "default", None) == "auto"
+    assert inspect.signature(transcribe_audio_v2).parameters["language"].default == "auto"
+
+
+def test_lite_gpu_smoke_maps_auto_language_to_detection():
+    from scripts.check_lite_runtime import transcribe_language_arg
+
+    assert transcribe_language_arg("auto") is None
+    assert transcribe_language_arg("mixed") is None
+    assert transcribe_language_arg("vi") == "vi"
 
 
 def test_unmanifested_faster_whisper_model_fails_before_model_load(monkeypatch):
@@ -143,7 +219,7 @@ def test_unmanifested_faster_whisper_model_fails_before_model_load(monkeypatch):
             language="vi",
             runtime={
                 "profile": "test",
-                "model": "medium",
+                "model": "large-v3-turbo",
                 "device": "cpu",
                 "compute_type": "int8",
                 "beam_size": 1,
@@ -185,23 +261,27 @@ def test_provider_health_marks_unmanifested_faster_whisper_profiles_unavailable(
         calls.append(model_name)
         if model_name == "small":
             return ArtifactVerification(True, "faster_whisper_small", Path("verified-small"))
+        if model_name == "medium":
+            return ArtifactVerification(True, "faster_whisper_medium", Path("verified-medium"))
         return ArtifactVerification(False, model_name, errors=["model_artifact_not_manifested"])
 
     monkeypatch.setattr(asr_providers, "verify_faster_whisper_runtime_health", fake_health)
     monkeypatch.setattr(asr_providers, "_artifact_result_reason", lambda artifact_id: "artifact_integrity_metadata_missing")
 
-    profiles = {profile["value"]: profile for profile in asr_providers.provider_health()["profiles"]}
+    health = asr_providers.provider_health()
+    profiles = {profile["value"]: profile for profile in health["profiles"]}
 
     assert calls.count("small") == 1
     assert profiles["rtx2050_safe"]["available"] is True
     assert profiles["rtx2050_fast"]["available"] is True
     assert profiles["cpu_safe"]["available"] is True
-    assert profiles["balanced"]["available"] is False
-    assert profiles["balanced"]["availability_reason"] == "model_artifact_not_manifested"
+    assert profiles["balanced"]["available"] is True
     assert profiles["quality_local"]["available"] is False
     assert profiles["quality_local"]["availability_reason"] == "model_artifact_not_manifested"
     assert profiles["offline_cpp"]["available"] is False
     assert profiles["offline_cpp"]["availability_reason"] == "artifact_integrity_metadata_missing"
+    assert health["default_language"] == "auto"
+    assert any(option["value"] == "auto" for option in health["language_options"])
 
 
 def test_phowhisper_cpp_candidate_is_blocked_until_validated(monkeypatch):
@@ -563,6 +643,27 @@ def test_lite_audio_list_returns_metadata_not_transcript_payload(monkeypatch):
     db.close()
 
 
+def test_audio_upload_resolves_language_by_code_not_fixed_id():
+    from src.services.audio_service import _resolve_language_id
+
+    class FakeQuery:
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def order_by(self, *_args, **_kwargs):
+            return self
+
+        def first(self):
+            return SimpleNamespace(id=7, language_code="vi")
+
+    class FakeDb:
+        def query(self, model):
+            assert model is Language
+            return FakeQuery()
+
+    assert _resolve_language_id(FakeDb()) == 7
+
+
 def test_llm_provider_error_does_not_include_response_body(monkeypatch):
     import requests
     from src.services.summarization.models.llm_manager import LLMManager
@@ -599,3 +700,97 @@ def test_llm_provider_error_does_not_include_response_body(monkeypatch):
     message = str(exc.value)
     assert "status=500" in message
     assert sensitive not in message
+
+
+def test_openrouter_provider_uses_openai_compatible_headers(monkeypatch):
+    import requests
+    from src.services.summarization.models.llm_manager import LLMManager, llm_provider_configured
+
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        reason = "OK"
+
+        def json(self):
+            return {"choices": [{"message": {"content": "Tóm tắt ổn định"}}]}
+
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_PROVIDER", "openrouter")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_BASE_URL", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MODEL", "google/gemini-2.5-flash")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_HTTP_REFERER", "http://localhost:3000")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_APP_TITLE", "SpeechToInformation Lite")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MAX_INPUT_CHARS", 24000)
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MAX_OUTPUT_TOKENS", 2000)
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_TIMEOUT_SECONDS", 60)
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: type("ModelResponse", (), {
+        "status_code": 200,
+        "json": lambda self: {"data": [{"id": "google/gemini-2.5-flash"}]},
+    })())
+
+    def fake_post(*args, **kwargs):
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.setattr(LLMManager, "_instance", None)
+    monkeypatch.setattr(LLMManager, "_initialized", False)
+
+    assert llm_provider_configured() is True
+    manager = LLMManager()
+    assert manager.generate("Tóm tắt hội thoại", model=None) == "Tóm tắt ổn định"
+
+    headers = captured["headers"]
+    assert headers["Authorization"] == "Bearer test-key"
+    assert headers["HTTP-Referer"] == "http://localhost:3000"
+    assert headers["X-Title"] == "SpeechToInformation Lite"
+    assert captured["json"]["model"] == "google/gemini-2.5-flash"
+
+
+def test_openrouter_provider_retries_configured_fallback(monkeypatch):
+    import requests
+    from src.services.summarization.models.llm_manager import LLMManager
+
+    posted_models = []
+
+    class FailedResponse:
+        status_code = 503
+        reason = "Service Unavailable"
+
+        def json(self):
+            return {}
+
+    class OkResponse:
+        status_code = 200
+        reason = "OK"
+
+        def json(self):
+            return {"choices": [{"message": {"content": "Fallback summary"}}]}
+
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_PROVIDER", "openrouter")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_BASE_URL", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MODEL", "google/gemini-2.5-flash")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_FALLBACK_MODEL", "openai/gpt-5-mini")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_HTTP_REFERER", "http://localhost:3000")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_APP_TITLE", "SpeechToInformation Lite")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MAX_INPUT_CHARS", 24000)
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MAX_OUTPUT_TOKENS", 2000)
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_TIMEOUT_SECONDS", 60)
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: type("ModelResponse", (), {
+        "status_code": 200,
+        "json": lambda self: {"data": [{"id": "google/gemini-2.5-flash"}, {"id": "openai/gpt-5-mini"}]},
+    })())
+
+    def fake_post(*args, **kwargs):
+        posted_models.append(kwargs["json"]["model"])
+        return FailedResponse() if len(posted_models) == 1 else OkResponse()
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.setattr(LLMManager, "_instance", None)
+    monkeypatch.setattr(LLMManager, "_initialized", False)
+
+    manager = LLMManager()
+    assert manager.generate("Tóm tắt hội thoại") == "Fallback summary"
+    assert posted_models == ["google/gemini-2.5-flash", "openai/gpt-5-mini"]

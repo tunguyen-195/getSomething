@@ -52,6 +52,8 @@ interface RuntimeProfile {
     whisper_model?: string;
     whisper_compute_type?: string;
     phowhisper_cpp_candidate_valid?: boolean;
+    default_language?: string;
+    language_options?: Array<Record<string, unknown>>;
     profiles?: Array<Record<string, unknown>>;
   };
   llm?: {
@@ -175,6 +177,7 @@ function App() {
 
   const activeJob = runtimeProfile?.active_job || null;
   const processingBlocked = Boolean(activeJob?.active_task_id);
+  const summarizationAvailable = Boolean(runtimeProfile?.llm?.configured);
   const appDisplayName = runtimeProfile?.display_name || 'SpeechToInformation';
 
   const mapApiFile = (f: any) => ({
@@ -227,7 +230,7 @@ function App() {
     }
     setLoadingCases(true);
     try {
-      const res = await apiFetch(`/api/v1/cases?sort_by=${caseSortBy}&order=${caseOrder}`, {
+      const res = await apiFetch(`/api/v1/cases/?sort_by=${caseSortBy}&order=${caseOrder}`, {
         cache: 'no-store',
         headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' }
       });
@@ -286,7 +289,7 @@ function App() {
   const fetchFiles = async () => {
     if (selectedCase && currentUser) {
       try {
-        const res = await apiFetch(`/api/v1/audio?case_id=${selectedCase.id}`);
+        const res = await apiFetch(`/api/v1/audio/?case_id=${selectedCase.id}`);
         if (!res.ok) {
           setFiles([]);
           return;
@@ -515,7 +518,7 @@ function App() {
 
     setCreatingCase(true);
     try {
-      const response = await apiFetch('/api/v1/cases', {
+      const response = await apiFetch('/api/v1/cases/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -614,7 +617,7 @@ function App() {
         body: JSON.stringify({
           enable_diarization: options.enable_diarization,
           diarization_method: options.diarization_method || 'pyannote',
-          language: 'vi',
+          language: options.language || 'auto',
           fast_mode: options.fast_mode,
           asr_profile: options.asr_profile,
           async_mode: true
@@ -1066,6 +1069,7 @@ function App() {
                 <FileTable
                   files={files}
                   processingBlocked={processingBlocked}
+                  summarizationAvailable={summarizationAvailable}
                   onTranscribe={(taskId) => {
                     if (processingBlocked) {
                       setSnackbar({ open: true, message: 'Máy đang xử lý một tác vụ khác. Vui lòng chờ hoàn tất.', severity: 'warning' });
@@ -1077,6 +1081,10 @@ function App() {
                   onSummarize={(taskId) => {
                     if (processingBlocked) {
                       setSnackbar({ open: true, message: 'Máy đang xử lý một tác vụ khác. Vui lòng chờ hoàn tất.', severity: 'warning' });
+                      return;
+                    }
+                    if (!summarizationAvailable) {
+                      setSnackbar({ open: true, message: 'LLM chưa được cấu hình nên chưa thể tóm tắt.', severity: 'warning' });
                       return;
                     }
                     setSelectedTaskId(taskId);

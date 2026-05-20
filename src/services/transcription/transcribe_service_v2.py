@@ -21,7 +21,7 @@ def transcribe_audio_v2(
     db,
     enable_diarization: bool = True,
     diarization_method: str = "pyannote",
-    language: str = "vi",
+    language: str = "auto",
     fast_mode: bool = True,
     asr_profile: str | None = None,
 ) -> Dict:

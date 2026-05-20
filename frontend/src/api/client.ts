@@ -2,17 +2,6 @@ let csrfToken: string | null = null;
 
 const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const API_BASE_URL = typeof window !== 'undefined' && (window as any).API_BASE_URL ? (window as any).API_BASE_URL : '';
-const CSRF_COOKIE_NAME = 'csrf_token';
-
-function readCookie(name: string): string | null {
-  if (typeof document === 'undefined') return null;
-  const prefix = `${name}=`;
-  const value = document.cookie
-    .split(';')
-    .map(part => part.trim())
-    .find(part => part.startsWith(prefix));
-  return value ? decodeURIComponent(value.slice(prefix.length)) : null;
-}
 
 async function responseDetail(response: Response): Promise<string | null> {
   try {
@@ -24,9 +13,7 @@ async function responseDetail(response: Response): Promise<string | null> {
 }
 
 export async function getCsrfToken(forceRefresh = false): Promise<string> {
-  const cookieToken = readCookie(CSRF_COOKIE_NAME);
-  if (!forceRefresh && cookieToken) {
-    csrfToken = cookieToken;
+  if (!forceRefresh && csrfToken) {
     return csrfToken;
   }
   const response = await fetch(`${API_BASE_URL}/api/v1/auth/csrf`, {

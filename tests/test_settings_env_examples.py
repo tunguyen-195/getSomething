@@ -92,6 +92,17 @@ def test_lite_runtime_check_imports_lite_env_example():
     assert "SpeechToInformation Lite runtime check" in completed.stdout
 
 
+def test_lite_env_uses_openrouter_without_committed_api_key():
+    values = dotenv_values(ROOT / ".env.lite.example")
+
+    assert values["ANALYSIS_INTELLIGENCE_LLM_ENABLED"] == "false"
+    assert values["ANALYSIS_LLM_PROVIDER"] == "openrouter"
+    assert values["ANALYSIS_LLM_BASE_URL"] == "https://openrouter.ai/api/v1"
+    assert values["ANALYSIS_LLM_MODEL"] == "google/gemini-2.5-flash"
+    assert values["ANALYSIS_LLM_FALLBACK_MODEL"] == "openai/gpt-5-mini"
+    assert values.get("ANALYSIS_LLM_API_KEY", "") == ""
+
+
 def test_lite_runtime_gpu_smoke_uses_mocked_checker(monkeypatch):
     import scripts.check_lite_runtime as check_lite_runtime
 

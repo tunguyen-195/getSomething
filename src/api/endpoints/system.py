@@ -6,6 +6,7 @@ from src.core.auth import get_current_user
 from src.database.config.database import get_db
 from src.database.models.models import User
 from src.services.lite_runtime import get_active_lease
+from src.services.summarization.models.llm_manager import llm_provider_configured
 from src.services.transcription.asr_providers import provider_health
 
 
@@ -18,10 +19,7 @@ async def runtime_profile(
     current_user: User = Depends(get_current_user),
 ):
     active_lease = get_active_lease(db)
-    llm_configured = bool(settings.ANALYSIS_LLM_API_KEY) or settings.ANALYSIS_LLM_PROVIDER in {
-        "ollama",
-        "llama_cpp_server",
-    }
+    llm_configured = llm_provider_configured()
     return {
         "edition": settings.APP_EDITION,
         "display_name": settings.APP_DISPLAY_NAME,

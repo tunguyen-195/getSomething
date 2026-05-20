@@ -23,7 +23,7 @@ def main() -> int:
 
     print(
         "download_models.py is a compatibility wrapper. "
-        "Prefer: python scripts\\precache_lite_models.py --model small"
+        "Prefer: python scripts\\precache_lite_models.py --model medium"
     )
     sys.argv = ["precache_lite_models.py", *rest]
     return precache_lite_main()

@@ -28,6 +28,14 @@ def _write_fake_hf_snapshot(tmp_path: Path, *, revision: str = FAKE_REVISION, co
     return snapshot
 
 
+def _write_fake_hf_blobs(tmp_path: Path, *, config: bytes = b"abc", model: bytes = b"model") -> Path:
+    blobs = tmp_path / "models" / "whisper" / "models--Systran--faster-whisper-small" / "blobs"
+    blobs.mkdir(parents=True)
+    (blobs / _git_blob_id(config)).write_bytes(config)
+    (blobs / _sha256(model)).write_bytes(model)
+    return blobs
+
+
 def _fake_manifest(tmp_path: Path, *, revision: str = FAKE_REVISION, config: bytes = b"abc", model: bytes = b"model") -> dict:
     manifest = {
         "schema_version": "sti.model_artifacts.v1",
@@ -80,6 +88,7 @@ def test_new_machine_docs_reference_existing_local_scripts():
     references = set(re.findall(r"(?:\.\\|scripts[\\/])([A-Za-z0-9_.-]+(?:\.bat|\.py))", text))
 
     expected = {
+        "START_DOCKER_LITE.bat",
         "START_LITE_RTX2050.bat",
         "precache_lite_models.py",
         "verify_models.py",
@@ -102,16 +111,18 @@ def test_model_artifact_manifest_covers_pull_ready_lite_profile():
     assert manifest["distribution_decision"]["unavailable_model_distribution"] == "manual_copy_bundle"
 
     profile = manifest["profiles"]["lite_rtx2050"]
-    assert profile["required"] == ["faster_whisper_small"]
+    assert profile["required"] == ["faster_whisper_medium"]
+    assert "faster_whisper_small" in profile["optional"]
 
     artifacts = {item["id"]: item for item in manifest["artifacts"]}
-    lite_model = artifacts["faster_whisper_small"]
+    lite_model = artifacts["faster_whisper_medium"]
     assert lite_model["kind"] == "hf_snapshot"
     assert lite_model["source_type"] == "public_hf"
-    assert lite_model["repo_id"] == "Systran/faster-whisper-small"
+    assert lite_model["repo_id"] == "Systran/faster-whisper-medium"
     assert lite_model["revision"] != "main"
     assert lite_model["cache_root"] == "models/whisper"
-    assert lite_model["runtime_env"]["ASR_PROFILE"] == "rtx2050_safe"
+    assert lite_model["runtime_env"]["ASR_PROFILE"] == "balanced"
+    assert lite_model["runtime_env"]["WHISPER_MODEL"] == "medium"
 
     phowhisper_cpp = artifacts["phowhisper_cpp_large_q5_internal"]
     assert phowhisper_cpp["source_type"] == "manual_copy"
@@ -191,15 +202,77 @@ def test_model_handoff_does_not_track_lfs_or_public_cache_importer():
     assert "copy .env.example .env" not in docs_text.lower()
 
 
-def test_frontend_fallback_does_not_offer_unmanifested_faster_whisper_profiles():
+def test_docker_compose_default_is_pull_ready_runtime_not_source_mount_dev():
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
+    gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+    docs = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in [
+            ROOT / "README.md",
+            ROOT / "docs" / "NEW_MACHINE_SETUP.md",
+            ROOT / "docs" / "MODEL_SETUP.md",
+            ROOT / "docs" / "DEPLOY_LITE_RTX2050_WIN11.md",
+        ]
+    )
+
+    assert "- .:/app" not in compose
+    assert "- ./frontend:/app" not in compose
+    assert "model_sync:" in compose
+    assert 'profiles: ["setup"]' in compose
+    assert 'profiles: ["full", "dev"]' in compose
+    assert "WHISPER_MODEL: ${WHISPER_MODEL:-medium}" in compose
+    assert "WHISPER_MODEL_PATH: ${WHISPER_MODEL_PATH:-models/whisper}" in compose
+    assert "condition: service_healthy" in compose
+    assert ".\\START_DOCKER_LITE.bat" in docs
+    assert "docker compose --env-file .env --profile setup run --rm model_sync" in docs
+    assert "runs/" in dockerignore
+    assert "test-results/" in dockerignore
+    assert "frontend/.playwright-cli/" in dockerignore
+    assert "runs/" in gitignore
+    assert ".coverage" in gitignore
+    assert "test-results/" in gitignore
+    assert "frontend/.playwright-cli/" in gitignore
+
+
+def test_frontend_fallback_disables_only_unmanifested_quality_profile():
     source = (ROOT / "frontend" / "src" / "components" / "TranscribeDialog.tsx").read_text(encoding="utf-8")
 
-    balanced_block = re.search(r"value: 'balanced'.*?availability_reason: 'model_artifact_not_manifested'", source, re.S)
     quality_block = re.search(r"value: 'quality_local'.*?availability_reason: 'model_artifact_not_manifested'", source, re.S)
+    fallback_block = re.search(r"const FALLBACK_ASR_PROFILES = \[(.*?)\];", source, re.S)
 
-    assert balanced_block
+    assert "const DEFAULT_ASR_PROFILE = 'balanced'" in source
+    assert "useState(runtimeProfile?.asr?.asr_profile || DEFAULT_ASR_PROFILE)" in source
+    assert fallback_block and re.search(r"value: 'balanced'.*?value: 'rtx2050_safe'", fallback_block.group(1), re.S)
+    assert re.search(r"value: 'balanced'.*?available: true", source, re.S)
     assert quality_block
     assert "disabled={!selectedProfileAvailable}" in source
+
+
+def test_frontend_dockerfile_uses_vite_compatible_node_and_lockfile_install():
+    source = (ROOT / "frontend" / "Dockerfile").read_text(encoding="utf-8")
+
+    assert re.search(r"FROM\s+node:22(?:-|$)", source), source
+    assert "RUN npm ci" in source
+    assert "RUN npm install" not in source
+
+
+def test_lite_asr_benchmark_reports_transcript_and_wer():
+    from scripts.benchmark_lite_asr import word_error_rate
+
+    assert word_error_rate("xin chao viet nam", "xin chao viet nam") == 0.0
+    assert word_error_rate("xin chao viet nam", "xin chao") == 0.5
+
+
+def test_lite_precache_default_is_vietnamese_quality_medium():
+    source = (ROOT / "scripts" / "precache_lite_models.py").read_text(encoding="utf-8")
+    wrapper = (ROOT / "scripts" / "download_models.py").read_text(encoding="utf-8")
+    docs = (ROOT / "docs" / "NEW_MACHINE_SETUP.md").read_text(encoding="utf-8")
+
+    assert 'default=os.getenv("WHISPER_MODEL", "medium")' in source
+    assert "precache_lite_models.py --model medium" in wrapper
+    assert "faster-whisper medium" in docs
+    assert "Tai public faster-whisper small vao cache local" not in docs
 
 
 def test_strict_hf_verifier_rejects_marker_only_cache(tmp_path):
@@ -326,6 +399,24 @@ def test_strict_hf_verifier_rejects_same_size_blob_mutation(tmp_path):
     assert "hf_blob_id_mismatch:faster_whisper_small:config.json" in result.errors
 
 
+def test_precache_materializes_zero_byte_hf_snapshot_files_from_blobs(tmp_path):
+    from src.services.model_artifacts import artifacts_by_id, load_manifest, materialize_hf_snapshot_from_cache, verify_profile
+
+    _fake_manifest(tmp_path)
+    snapshot = _write_fake_hf_snapshot(tmp_path, config=b"", model=b"")
+    _write_fake_hf_blobs(tmp_path)
+    manifest = load_manifest(tmp_path)
+    artifact = artifacts_by_id(manifest)["faster_whisper_small"]
+
+    errors = materialize_hf_snapshot_from_cache(artifact, snapshot, root=tmp_path)
+    result = verify_profile("lite_rtx2050", root=tmp_path)[0]
+
+    assert errors == []
+    assert result.ok is True
+    assert (snapshot / "config.json").read_bytes() == b"abc"
+    assert (snapshot / "model.bin").read_bytes() == b"model"
+
+
 def test_lite_precache_rejects_local_dir_for_hf_cache_layout(tmp_path):
     _fake_manifest(tmp_path)
 
@@ -335,6 +426,8 @@ def test_lite_precache_rejects_local_dir_for_hf_cache_layout(tmp_path):
             "scripts/precache_lite_models.py",
             "--root",
             str(tmp_path),
+            "--model",
+            "small",
             "--local-dir",
             "readable-copy",
         ],

@@ -26,7 +26,7 @@ celery_app.conf.update(
     task_soft_time_limit=7000,  # Soft limit before hard kill
     task_acks_late=True,  # Acknowledge task after completion (not before)
     task_reject_on_worker_lost=True,  # Reject task if worker dies
-    worker_max_tasks_per_child=0,  # 0 = unlimited (no restart after X tasks)
+    worker_max_tasks_per_child=None,  # None = unlimited; Celery prefork rejects 0.
     worker_prefetch_multiplier=1,
     worker_concurrency=1,  # Process 1 task at a time (sequential)
     worker_pool_restarts=True,  # Auto-restart pool on failure
@@ -40,11 +40,6 @@ celery_app.conf.update(
         "socket_connect_timeout": 60,  # Increased from 30s to 60s
         "socket_timeout": 90,  # Increased from 30s to 90s (gevent needs more time)
         "socket_keepalive": True,
-        "socket_keepalive_options": {
-            1: 120,  # TCP_KEEPIDLE: 120 seconds before sending keepalive probes
-            2: 10,   # TCP_KEEPINTVL: 10 seconds between keepalive probes
-            3: 6     # TCP_KEEPCNT: 6 probes before declaring connection dead
-        },
         "health_check_interval": 30,  # Check connection health every 30s
     },
     result_backend_transport_options={

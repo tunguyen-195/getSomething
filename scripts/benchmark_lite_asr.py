@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
 PHONE_RE = re.compile(r"\b0\d(?:[\s.\-]?\d){8,10}\b")
 DATE_RE = re.compile(r"\b(?:ngay\s+)?\d{1,2}\s*(?:/|\s+thang\s+)\s*\d{1,2}\b", re.IGNORECASE)
 MONEY_RE = re.compile(r"\b\d+(?:[.,]\d+)?\s*(?:trieu|nghin|k|d|dong)\b", re.IGNORECASE)
+WORD_RE = re.compile(r"\w+", re.UNICODE)
 
 
 def process_tree_rss_mb() -> float | None:
@@ -101,14 +102,41 @@ def recall_for(text: str, expected: list[str]) -> float | None:
     return hits / len(expected)
 
 
-def benchmark_file(path: Path, *, profile: str, labels: dict[str, Any]) -> dict[str, Any]:
+def normalize_words(text: str) -> list[str]:
+    return WORD_RE.findall(text.lower())
+
+
+def word_error_rate(reference: str | None, hypothesis: str) -> float | None:
+    if not reference:
+        return None
+    ref_words = normalize_words(reference)
+    hyp_words = normalize_words(hypothesis)
+    if not ref_words:
+        return 0.0 if not hyp_words else 1.0
+
+    previous = list(range(len(hyp_words) + 1))
+    for i, ref_word in enumerate(ref_words, start=1):
+        current = [i]
+        for j, hyp_word in enumerate(hyp_words, start=1):
+            current.append(
+                min(
+                    previous[j] + 1,
+                    current[j - 1] + 1,
+                    previous[j - 1] + (ref_word != hyp_word),
+                )
+            )
+        previous = current
+    return previous[-1] / len(ref_words)
+
+
+def benchmark_file(path: Path, *, profile: str, language: str, labels: dict[str, Any]) -> dict[str, Any]:
     from src.services.transcription.asr_providers import transcribe_with_provider
 
     start = time.time()
     with ResourceSampler() as sampler:
         result = transcribe_with_provider(
             audio_path=str(path),
-            language="vi",
+            language=language,
             profile=profile,
             enable_diarization=False,
             diarization_method="none",
@@ -118,12 +146,17 @@ def benchmark_file(path: Path, *, profile: str, labels: dict[str, Any]) -> dict[
     duration = float(result.get("duration") or 0.0)
     text = result.get("text", "")
     label_set = labels.get(path.name) or labels.get(str(path)) or {}
+    reference_text = label_set.get("text")
 
     return {
         "file": str(path),
         "profile": profile,
+        "language_request": language,
         "provider": result.get("provider"),
         "model_info": result.get("model_info", {}),
+        "reference_text": reference_text,
+        "transcription": text,
+        "wer": word_error_rate(reference_text, text),
         "duration_seconds": duration,
         "wall_time_seconds": wall_time,
         "rtf": wall_time / duration if duration > 0 else None,
@@ -161,6 +194,7 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Benchmark Lite ASR profiles on local audio files.")
     parser.add_argument("--profile", default="rtx2050_safe")
+    parser.add_argument("--language", default="auto")
     parser.add_argument("--files", nargs="+", required=True)
     parser.add_argument("--labels-json", type=Path)
     parser.add_argument("--output", type=Path, default=Path("lite_benchmark.json"))
@@ -171,7 +205,7 @@ def main() -> int:
     for file_name in args.files:
         path = Path(file_name).resolve()
         try:
-            results.append(benchmark_file(path, profile=args.profile, labels=labels))
+            results.append(benchmark_file(path, profile=args.profile, language=args.language, labels=labels))
         except Exception as exc:
             results.append(
                 {

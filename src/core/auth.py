@@ -116,7 +116,7 @@ def issue_csrf_cookie(response: Response) -> str:
     response.set_cookie(
         settings.CSRF_COOKIE_NAME,
         token,
-        httponly=False,
+        httponly=True,
         secure=settings.COOKIE_SECURE,
         samesite=settings.COOKIE_SAMESITE,
         domain=settings.COOKIE_DOMAIN,

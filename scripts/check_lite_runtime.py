@@ -12,6 +12,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from src.services.model_artifacts import ModelArtifactError, require_faster_whisper_runtime_ready  # noqa: E402
 
 
@@ -59,6 +64,13 @@ def model_available_locally(model_name: str, cache_root: Path) -> bool:
     return False
 
 
+def transcribe_language_arg(value: object) -> str | None:
+    language = str(value or "").strip().lower()
+    if language in {"", "auto", "detect", "mixed", "multilingual"}:
+        return None
+    return language
+
+
 def run_gpu_smoke(settings, *, audio_path: Path | None, offline_models_only: bool) -> None:
     if audio_path and not audio_path.is_file():
         raise RuntimeError("gpu_smoke_audio_unavailable")
@@ -94,7 +106,7 @@ def run_gpu_smoke(settings, *, audio_path: Path | None, offline_models_only: boo
         if audio_path:
             segments, _info = model.transcribe(
                 str(audio_path),
-                language=settings.DEFAULT_LANGUAGE,
+                language=transcribe_language_arg(settings.DEFAULT_LANGUAGE),
                 beam_size=1,
                 vad_filter=True,
             )

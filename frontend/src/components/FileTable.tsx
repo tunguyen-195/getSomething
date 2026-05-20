@@ -61,6 +61,7 @@ interface FileTableProps {
     onDelete: (taskId: string) => void;
     processingTaskId?: string;
     processingBlocked?: boolean;
+    summarizationAvailable?: boolean;
 }
 
 const getStatusChip = (status: string) => {
@@ -98,6 +99,7 @@ const FileTable: React.FC<FileTableProps> = ({
     onDelete,
     processingTaskId,
     processingBlocked = false,
+    summarizationAvailable = true,
 }) => {
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [order, setOrder] = useState<Order>('desc');
@@ -275,7 +277,7 @@ const FileTable: React.FC<FileTableProps> = ({
                                                         size="small"
                                                         startIcon={<SummarizeIcon />}
                                                         onClick={(e) => { e.stopPropagation(); onSummarize(file.task_id); }}
-                                                        disabled={processingDisabled || !hasTranscript || file.status === 'summarizing'}
+                                                        disabled={processingDisabled || !hasTranscript || !summarizationAvailable || file.status === 'summarizing'}
                                                         sx={{ textTransform: 'none' }}
                                                     >
                                                         Summarize

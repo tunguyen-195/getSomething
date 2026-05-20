@@ -4,7 +4,7 @@ from fastapi import UploadFile, HTTPException
 from pathlib import Path
 from src.core.logging import logger
 from src.core.config import settings
-from src.database.models.models import AudioFile
+from src.database.models.models import AudioFile, Language, User
 from src.services.task_service import create_task, update_task, get_task
 from src.speech_to_text.transcriber import Transcriber, OllamaProcessor
 from src.audio_processing.processor import AudioProcessor
@@ -15,6 +15,32 @@ from src.services.audio_storage import (
     stage_upload,
 )
 
+
+
+def _resolve_language_id(db, language_code: str = "vi") -> int:
+    language = db.query(Language).filter(Language.language_code == language_code).first()
+    if not language:
+        language = (
+            db.query(Language)
+            .filter(Language.is_active.is_(True))
+            .order_by(Language.id.asc())
+            .first()
+        )
+    if not language:
+        raise HTTPException(status_code=500, detail="language_lookup_not_configured")
+    return int(language.id)
+
+
+def _resolve_upload_user_id(db, user_id: int | None, task: dict) -> int:
+    if user_id:
+        return int(user_id)
+    task_user_id = task.get("user_id")
+    if task_user_id:
+        return int(task_user_id)
+    user = db.query(User).filter(User.username == "admin").first() or db.query(User).first()
+    if not user:
+        raise HTTPException(status_code=500, detail="upload_user_not_configured")
+    return int(user.id)
 
 
 def save_audio_and_create_task(file: UploadFile, db, case_id: int = None, user_id: int | None = None) -> dict:
@@ -39,8 +65,8 @@ def save_audio_and_create_task(file: UploadFile, db, case_id: int = None, user_i
             task_id=task["id"],
             file_path=stored.relative_path,
             status="uploaded",
-            language_id=1,
-            uploaded_by=user_id or task.get("user_id") or 1,
+            language_id=_resolve_language_id(db),
+            uploaded_by=_resolve_upload_user_id(db, user_id, task),
             file_size=stored.size,
             duration=None,
             audio_status_id=None,

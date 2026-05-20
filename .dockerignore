@@ -33,6 +33,13 @@ huggingface_cache/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.playwright-cli/
+frontend/.playwright-cli/
+test-results/
+runs/
+output/
+playwright-report/
+frontend/playwright-report/
 
 .agent/
 .gradio/

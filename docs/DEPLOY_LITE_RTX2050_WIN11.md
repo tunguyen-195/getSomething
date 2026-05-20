@@ -65,9 +65,9 @@ Safe default for RTX2050 4GB:
 
 ```env
 ASR_PROVIDER=faster_whisper_ct2
-ASR_PROFILE=rtx2050_safe
+ASR_PROFILE=balanced
 ENABLE_DIARIZATION_DEFAULT=false
-WHISPER_MODEL=small
+WHISPER_MODEL=medium
 WHISPER_DEVICE=cuda
 WHISPER_COMPUTE_TYPE=int8
 WHISPER_BATCH_SIZE=1
@@ -87,9 +87,9 @@ check and the Lite benchmark gate on the target machine.
 
 Profiles:
 
-- `rtx2050_safe`: faster-whisper small, CUDA int8, batch 1. Default.
+- `balanced`: faster-whisper medium, CUDA int8. Default recommendation for Vietnamese transcript quality.
+- `rtx2050_safe`: faster-whisper small, CUDA int8, batch 1. Fast fallback when speed or RAM matters more than accuracy.
 - `rtx2050_fast`: faster-whisper small, CUDA int8_float16. Promote only after benchmark.
-- `balanced`: faster-whisper medium, CUDA int8.
 - `cpu_safe`: faster-whisper small, CPU int8.
 - `offline_cpp`: whisper.cpp CLI with configured GGML model.
 - `phowhisper_cpp_candidate`: hidden until model SHA, source manifest, and smoke test pass.
@@ -153,12 +153,14 @@ core extraction in this build; evidence-bound domain slot extraction with
 Structured Outputs is a follow-up phase, not an implemented runtime claim.
 
 ```env
-ANALYSIS_INTELLIGENCE_LLM_ENABLED=true
-ANALYSIS_LLM_PROVIDER=openai
-ANALYSIS_LLM_BASE_URL=https://api.openai.com/v1
-ANALYSIS_LLM_MODEL=gpt-5-mini
-ANALYSIS_LLM_FALLBACK_MODEL=gpt-4.1-mini
+ANALYSIS_INTELLIGENCE_LLM_ENABLED=false
+ANALYSIS_LLM_PROVIDER=openrouter
+ANALYSIS_LLM_BASE_URL=https://openrouter.ai/api/v1
+ANALYSIS_LLM_MODEL=google/gemini-2.5-flash
+ANALYSIS_LLM_FALLBACK_MODEL=openai/gpt-5-mini
 ANALYSIS_LLM_API_KEY=
+ANALYSIS_LLM_HTTP_REFERER=http://localhost:3000
+ANALYSIS_LLM_APP_TITLE=SpeechToInformation Lite
 ANALYSIS_LLM_TIMEOUT_SECONDS=60
 ANALYSIS_LLM_MAX_INPUT_CHARS=24000
 ANALYSIS_LLM_MAX_OUTPUT_TOKENS=2000
@@ -170,9 +172,18 @@ Rules:
 - API key is read server-side only.
 - Do not log prompt text, transcripts, or raw provider responses.
 - Current implementation uses the configured LLM provider for summarization, with input/output limits.
-- Analysis V2 records a warning when LLM is enabled because structured slot extraction is not active yet.
+- OpenRouter is the default API provider for Lite summarization. Add only `ANALYSIS_LLM_API_KEY` to the local `.env`; never commit the key.
+- `google/gemini-2.5-flash` is the default because it has long context for transcripts and good Vietnamese summary quality/cost. `openai/gpt-5-mini` is the fallback model.
+- If no OpenRouter/OpenAI-compatible API key or reachable local LLM provider is configured, summarize is disabled in the UI and the API returns `llm_not_configured`.
+- Analysis V2 remains deterministic by default. It records a warning when LLM is enabled because structured slot extraction is not active yet.
 - Future evidence-bound extraction must use strict structured output schema and locate every `evidence_text` back to the transcript; otherwise drop the item or mark it `requires_review=true`.
-- If no API key is configured, summarization falls back to provider-unavailable behavior and Analysis V2 remains deterministic.
+- Summarization is unavailable until an LLM provider/API key is configured; Analysis V2 remains deterministic.
+
+Smoke-test the configured provider after adding the key to `.env`:
+
+```powershell
+docker compose --env-file .env run --rm backend python3 scripts/check_llm_provider.py
+```
 
 Local LLM fallback can use llama.cpp server:
 
@@ -189,26 +200,36 @@ Do not default to 7B/8B models on 12GB RAM.
 ## Setup
 
 1. Copy `.env.lite.example` to `.env`.
-2. Start Postgres only:
+2. Recommended Docker path:
+
+```powershell
+.\START_DOCKER_LITE.bat
+```
+
+The Docker starter builds backend/frontend images, downloads/verifies the pinned
+Lite model in the backend container, and starts backend, frontend, Postgres and
+Redis. It does not start Celery unless the `full` profile is requested.
+
+3. Local Python/Node path: start Postgres only:
 
 ```powershell
 docker compose -f docker-compose.lite.yml --env-file .env up -d db
 ```
 
-3. Install backend dependencies in the local Python environment.
-4. Run migrations:
+4. Install backend dependencies in the local Python environment.
+5. Run migrations:
 
 ```powershell
 alembic upgrade head
 ```
 
-5. Start backend with no reload:
+6. Start backend with no reload:
 
 ```powershell
 uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 1
 ```
 
-6. Start frontend:
+7. Start frontend:
 
 ```powershell
 Push-Location frontend
@@ -217,7 +238,7 @@ cmd /c npm run dev
 Pop-Location
 ```
 
-7. Open `http://localhost:3000`.
+8. Open `http://localhost:3000`.
 
 ## Runtime Checks
 
@@ -233,7 +254,7 @@ Runtime no longer downloads faster-whisper implicitly. Pre-cache the pinned Lite
 model first, then verify it before GPU smoke:
 
 ```powershell
-python scripts/precache_lite_models.py --model small
+python scripts/precache_lite_models.py --model medium
 python scripts/verify_models.py --profile lite_rtx2050
 ```
 
@@ -279,7 +300,7 @@ The full model matrix and manual-copy policy are documented in
 Run benchmark scaffold:
 
 ```powershell
-python scripts/benchmark_lite_asr.py --profile rtx2050_safe --files path\to\a.wav path\to\b.wav --output lite_benchmark.json
+python scripts/benchmark_lite_asr.py --profile balanced --files path\to\a.wav path\to\b.wav --output lite_benchmark.json
 ```
 
 ## Safety Notes

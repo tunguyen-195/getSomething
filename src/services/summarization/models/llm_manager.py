@@ -11,6 +11,15 @@ from src.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+def llm_provider_configured() -> bool:
+    provider = (settings.ANALYSIS_LLM_PROVIDER or "").lower()
+    if provider in {"openai", "openai_compatible", "openrouter"}:
+        return bool(settings.ANALYSIS_LLM_API_KEY)
+    if provider in {"ollama", "llama_cpp_server"}:
+        return True
+    return bool(settings.ANALYSIS_LLM_API_KEY)
+
+
 class LLMManager:
     """
     Singleton manager for Ollama LLM
@@ -35,12 +44,17 @@ class LLMManager:
             logger.info("[LLM_MANAGER] Initialized | provider=%s | model=%s", self._provider, self._default_model)
 
     def _is_chat_provider(self) -> bool:
-        return self._provider in {"openai", "openai_compatible", "llama_cpp_server"}
+        return self._provider in {"openai", "openai_compatible", "openrouter", "llama_cpp_server"}
 
     def _auth_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if settings.ANALYSIS_LLM_API_KEY:
             headers["Authorization"] = f"Bearer {settings.ANALYSIS_LLM_API_KEY}"
+        if self._provider == "openrouter":
+            if settings.ANALYSIS_LLM_HTTP_REFERER:
+                headers["HTTP-Referer"] = settings.ANALYSIS_LLM_HTTP_REFERER
+            if settings.ANALYSIS_LLM_APP_TITLE:
+                headers["X-Title"] = settings.ANALYSIS_LLM_APP_TITLE
         return headers
 
     def _chat_url(self) -> str:
@@ -72,7 +86,7 @@ class LLMManager:
     def check_availability(self) -> bool:
         """Check if the configured provider is available."""
         if self._is_chat_provider():
-            if self._provider in {"openai", "openai_compatible"} and not settings.ANALYSIS_LLM_API_KEY:
+            if self._provider in {"openai", "openai_compatible", "openrouter"} and not settings.ANALYSIS_LLM_API_KEY:
                 logger.warning("[LLM_MANAGER] API key is missing for provider=%s", self._provider)
                 return False
             try:
@@ -183,12 +197,28 @@ class LLMManager:
         logger.info("[LLM_MANAGER] Generating | provider=%s | model=%s", self._provider, model)
 
         if self._is_chat_provider():
-            return self._generate_chat_completion(
-                prompt=prompt,
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            try:
+                return self._generate_chat_completion(
+                    prompt=prompt,
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            except Exception:
+                fallback = settings.ANALYSIS_LLM_FALLBACK_MODEL
+                if fallback and fallback != model:
+                    logger.warning(
+                        "[LLM_MANAGER] Primary chat model failed, retrying fallback | provider=%s | fallback=%s",
+                        self._provider,
+                        fallback,
+                    )
+                    return self._generate_chat_completion(
+                        prompt=prompt,
+                        model=fallback,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                raise
 
         try:
             payload = {
@@ -282,7 +312,14 @@ class LLMManager:
                 return ""
             message = choices[0].get("message") if isinstance(choices[0], dict) else None
             if isinstance(message, dict):
-                return str(message.get("content") or "")
+                content = message.get("content")
+                if isinstance(content, list):
+                    return "".join(
+                        str(part.get("text") or "")
+                        for part in content
+                        if isinstance(part, dict)
+                    )
+                return str(content or "")
             return str(choices[0].get("text") or "")
         except requests.exceptions.Timeout as e:
             logger.error("[LLM_MANAGER] Chat completion timeout: %s", e)

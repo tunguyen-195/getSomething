@@ -3,7 +3,7 @@
 Tai lieu nay dung de cai du an tren mot may moi hoan toan tu Git.
 
 Pull-ready target hien tai la **Lite RTX2050**. Profile nay dung `faster_whisper_ct2`
-`small/cuda/int8` va `PROCESSING_RUNNER=single_job_db_lease`, khong bat buoc Redis,
+`medium/cuda/int8` va `PROCESSING_RUNNER=single_job_db_lease`, khong bat buoc Redis,
 Celery, Cherry full offline, PhoWhisper offline, hay Pyannote.
 
 Full/offline Cherry/PhoWhisper la optional profile rieng. Cai model theo
@@ -11,23 +11,20 @@ Full/offline Cherry/PhoWhisper la optional profile rieng. Cai model theo
 
 ## 1. Yeu cau chung
 
-Bat buoc:
+Bat buoc de chay Docker pull-ready:
 
 - Git
-- Python 3.10 hoac 3.11
-- Node.js 18+
-- FFmpeg va ffprobe
-
-Neu chay local khong Docker:
-
-- PostgreSQL 13+
-- Redis hoac Memurai chi can cho full/Celery. Lite RTX2050 khong can Redis/Celery.
-
-Neu chay Docker:
-
 - Docker Desktop
 - Docker Compose plugin
 - NVIDIA Container Toolkit neu muon dung GPU trong container
+
+Neu chay local khong Docker moi can them:
+
+- Python 3.10 hoac 3.11
+- Node.js 18+
+- FFmpeg va ffprobe
+- PostgreSQL 13+
+- Redis hoac Memurai chi can cho full/Celery. Lite RTX2050 khong can Redis/Celery.
 
 ## 2. Clone source
 
@@ -72,11 +69,31 @@ Giu cac gia tri Lite quan trong:
 APP_EDITION=lite
 PROCESSING_RUNNER=single_job_db_lease
 ASR_PROVIDER=faster_whisper_ct2
-ASR_PROFILE=rtx2050_safe
-WHISPER_MODEL=small
+ASR_PROFILE=balanced
+WHISPER_MODEL=medium
 WHISPER_MODEL_PATH=models/whisper
 WHISPER_DEVICE=cuda
 WHISPER_COMPUTE_TYPE=int8
+```
+
+Neu can bat Summary/LLM, dung OpenRouter server-side. Chi them key vao `.env` tren may chay, khong commit:
+
+```env
+ANALYSIS_LLM_PROVIDER=openrouter
+ANALYSIS_LLM_BASE_URL=https://openrouter.ai/api/v1
+ANALYSIS_LLM_MODEL=google/gemini-2.5-flash
+ANALYSIS_LLM_FALLBACK_MODEL=openai/gpt-5-mini
+ANALYSIS_LLM_API_KEY=<openrouter-api-key>
+ANALYSIS_LLM_HTTP_REFERER=http://localhost:3000
+ANALYSIS_LLM_APP_TITLE=SpeechToInformation Lite
+```
+
+`google/gemini-2.5-flash` la mac dinh vi phu hop transcript dai, tieng Viet va chi phi. Neu `ANALYSIS_LLM_API_KEY` de trong, workflow transcribe/visualize deterministic van chay, nhung Summary bi disable va API tra `llm_not_configured`.
+
+Kiem tra nhanh OpenRouter sau khi them key:
+
+```powershell
+docker compose --env-file .env run --rm backend python3 scripts/check_llm_provider.py
 ```
 
 Tao secret:
@@ -96,7 +113,22 @@ Ghi nho:
 Day la cach de tai lap nhanh nhat tren may moi.
 
 ```powershell
-docker compose up --build
+.\START_DOCKER_LITE.bat
+```
+
+Script nay:
+
+- build backend/frontend image;
+- tai va verify public `faster-whisper medium` trong container;
+- mount `models/`, `storage/audio/`, `uploads/`, `logs/`, `data/` lam du lieu runtime tren host;
+- start backend, frontend, Postgres va Redis.
+
+Neu muon chay thu cong:
+
+```powershell
+docker compose --env-file .env --profile setup build backend frontend model_sync
+docker compose --env-file .env --profile setup run --rm model_sync
+docker compose --env-file .env up -d --build
 ```
 
 Mo cac URL:
@@ -115,6 +147,18 @@ Xoa ca volume DB/Redis neu muon tao lai tu dau:
 
 ```powershell
 docker compose down -v
+```
+
+Sau khi sua code, build lai image de container nhan code moi:
+
+```powershell
+docker compose up -d --build
+```
+
+Neu can full/Celery worker optional:
+
+```powershell
+docker compose --profile full up -d --build
 ```
 
 ## 5. Chay local tren Windows
@@ -171,10 +215,10 @@ Production nen dat `INIT_DB_ON_STARTUP=false` va chay migration/init bang quy tr
 
 ### 5.5. Tai/cache model Lite
 
-Tai public faster-whisper small vao cache local:
+Tai public faster-whisper medium vao cache local:
 
 ```powershell
-python scripts\precache_lite_models.py --model small
+python scripts\precache_lite_models.py --model medium
 python scripts\verify_models.py --profile lite_rtx2050
 ```
 
@@ -222,7 +266,7 @@ Model contract chinh thuc nam o:
 - [MODEL_SETUP.md](MODEL_SETUP.md)
 - [model_artifacts.required.json](model_artifacts.required.json)
 
-Pull-ready Lite bat buoc co `faster_whisper_small`. Full/offline Cherry/PhoWhisper can copy thu cong cac artifact khong
+Pull-ready Lite bat buoc co `faster_whisper_medium` de uu tien transcript tieng Viet. `faster_whisper_small` chi la fallback nhanh. Full/offline Cherry/PhoWhisper can copy thu cong cac artifact khong
 tai duoc theo manifest rieng va khong block Lite setup.
 
 Verify:
@@ -327,10 +371,10 @@ Docker config:
 docker compose config --quiet
 ```
 
-Docker backend build:
+Docker build:
 
 ```powershell
-docker compose build backend
+docker compose build backend frontend
 ```
 
 ## 9. Loi thuong gap

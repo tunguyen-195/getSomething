@@ -8,11 +8,12 @@
   },
   "profiles": {
     "lite_rtx2050": {
-      "description": "Pull-ready target for a new RTX2050 Windows machine.",
+      "description": "Pull-ready Vietnamese-quality target for a new RTX2050 Windows machine.",
       "required": [
-        "faster_whisper_small"
+        "faster_whisper_medium"
       ],
       "optional": [
+        "faster_whisper_small",
         "pyannote_community_1",
         "whisper_cpp_small_q5",
         "phowhisper_cpp_large_q5_internal"
@@ -35,7 +36,8 @@
     {
       "id": "faster_whisper_small",
       "kind": "hf_snapshot",
-      "required_for": [
+      "required_for": [],
+      "optional_for": [
         "lite_rtx2050"
       ],
       "source": "huggingface",
@@ -87,6 +89,63 @@
       },
       "setup_command": "python scripts/precache_lite_models.py --model small",
       "verify_command": "python scripts/verify_models.py --profile lite_rtx2050"
+    },
+    {
+      "id": "faster_whisper_medium",
+      "kind": "hf_snapshot",
+      "required_for": [
+        "lite_rtx2050"
+      ],
+      "source": "huggingface",
+      "source_type": "public_hf",
+      "repo_id": "Systran/faster-whisper-medium",
+      "revision": "08e178d48790749d25932bbc082711ddcfdfbc4f",
+      "layout": "hf_cache",
+      "allow_patterns": [
+        "config.json",
+        "model.bin",
+        "tokenizer.json",
+        "vocabulary.txt"
+      ],
+      "files": [
+        {
+          "path": "config.json",
+          "required": true,
+          "size_bytes": 2257,
+          "hf_blob_id": "242aa06a480a7b5509375c645097e87af5136774"
+        },
+        {
+          "path": "model.bin",
+          "required": true,
+          "size_bytes": 1527906378,
+          "lfs_sha256": "9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae"
+        },
+        {
+          "path": "tokenizer.json",
+          "required": true,
+          "size_bytes": 2203239,
+          "hf_blob_id": "7818adb6de9fa3064d3ff81226fdd675be1f6344"
+        },
+        {
+          "path": "vocabulary.txt",
+          "required": true,
+          "size_bytes": 459861,
+          "hf_blob_id": "c9074644d9d1205686f16d411564729461324b75"
+        }
+      ],
+      "license": "MIT",
+      "cache_root": "models/whisper",
+      "runtime_env": {
+        "ASR_PROVIDER": "faster_whisper_ct2",
+        "ASR_PROFILE": "balanced",
+        "WHISPER_MODEL": "medium",
+        "WHISPER_MODEL_PATH": "models/whisper",
+        "WHISPER_DEVICE": "cuda",
+        "WHISPER_COMPUTE_TYPE": "int8"
+      },
+      "setup_command": "python scripts/precache_lite_models.py --model medium",
+      "verify_command": "python scripts/verify_models.py --profile lite_rtx2050",
+      "notes": "Default Lite ASR artifact. Medium is preferred over small for Vietnamese accuracy; small remains available as a fast fallback."
     },
     {
       "id": "pyannote_community_1",

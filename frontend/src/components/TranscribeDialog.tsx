@@ -25,6 +25,7 @@ interface TranscribeDialogProps {
     diarization_method: string;
     fast_mode: boolean;
     asr_profile?: string;
+    language?: string;
   }) => void;
   filename: string;
   duration?: number;
@@ -33,17 +34,16 @@ interface TranscribeDialogProps {
 
 const FALLBACK_ASR_PROFILES = [
   {
-    value: 'rtx2050_safe',
-    label_vi: 'Nhanh',
-    description: 'faster-whisper small, CUDA int8, batch 1, không diarization.',
+    value: 'balanced',
+    label_vi: 'Tiếng Việt cân bằng',
+    description: 'faster-whisper medium, CUDA int8. Khuyến nghị cho transcript tiếng Việt.',
     available: true,
   },
   {
-    value: 'balanced',
-    label_vi: 'Cân bằng',
-    description: 'faster-whisper medium, CUDA int8, dùng khi RAM/VRAM ổn định.',
-    available: false,
-    availability_reason: 'model_artifact_not_manifested',
+    value: 'rtx2050_safe',
+    label_vi: 'Nhanh (small)',
+    description: 'faster-whisper small, CUDA int8, batch 1. Chỉ dùng khi ưu tiên tốc độ.',
+    available: true,
   },
   {
     value: 'offline_cpp',
@@ -66,6 +66,26 @@ const FALLBACK_ASR_PROFILES = [
   },
 ];
 
+const DEFAULT_ASR_PROFILE = 'balanced';
+const DEFAULT_LANGUAGE = 'auto';
+const FALLBACK_LANGUAGE_OPTIONS = [
+  {
+    value: 'auto',
+    label_vi: 'Tự động / Anh-Việt',
+    description: 'Tự nhận diện ngôn ngữ, phù hợp file có cả tiếng Việt và tiếng Anh.',
+  },
+  {
+    value: 'vi',
+    label_vi: 'Tiếng Việt',
+    description: 'Ép nhận dạng tiếng Việt cho audio tiếng Việt thuần.',
+  },
+  {
+    value: 'en',
+    label_vi: 'English',
+    description: 'Force English transcription.',
+  },
+];
+
 const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
   open,
   onClose,
@@ -74,10 +94,11 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
   duration,
   runtimeProfile,
 }) => {
-  const [enableDiarization, setEnableDiarization] = useState(true);
-  const [diarizationMethod, setDiarizationMethod] = useState('pyannote');
+  const [enableDiarization, setEnableDiarization] = useState(false);
+  const [diarizationMethod, setDiarizationMethod] = useState('none');
   const [fastMode, setFastMode] = useState(true);
-  const [asrProfile, setAsrProfile] = useState(runtimeProfile?.asr?.asr_profile || 'rtx2050_safe');
+  const [asrProfile, setAsrProfile] = useState(runtimeProfile?.asr?.asr_profile || DEFAULT_ASR_PROFILE);
+  const [language, setLanguage] = useState(runtimeProfile?.asr?.default_language || DEFAULT_LANGUAGE);
 
   const asrProfiles = useMemo(() => {
     const fromRuntime = runtimeProfile?.asr?.profiles;
@@ -93,10 +114,14 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
   }, [runtimeProfile]);
   const selectedProfile = asrProfiles.find((profile: any) => profile.value === asrProfile);
   const selectedProfileAvailable = selectedProfile?.available !== false;
+  const languageOptions = useMemo(() => {
+    const fromRuntime = runtimeProfile?.asr?.language_options;
+    return Array.isArray(fromRuntime) && fromRuntime.length > 0 ? fromRuntime : FALLBACK_LANGUAGE_OPTIONS;
+  }, [runtimeProfile]);
 
   useEffect(() => {
     if (!open) return;
-    const nextProfile = runtimeProfile?.asr?.asr_profile || 'rtx2050_safe';
+    const nextProfile = runtimeProfile?.asr?.asr_profile || DEFAULT_ASR_PROFILE;
     const matchingProfile = asrProfiles.find((profile: any) => profile.value === nextProfile);
     if (matchingProfile?.available === false) {
       const firstAvailable = asrProfiles.find((profile: any) => profile.available !== false);
@@ -108,6 +133,7 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
       setEnableDiarization(false);
       setDiarizationMethod('none');
     }
+    setLanguage(runtimeProfile?.asr?.default_language || DEFAULT_LANGUAGE);
   }, [open, runtimeProfile, asrProfiles]);
 
   const handleProfileChange = (value: string) => {
@@ -124,6 +150,7 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
       diarization_method: diarizationMethod,
       fast_mode: fastMode,
       asr_profile: asrProfile,
+      language,
     });
     onClose();
   };
@@ -235,9 +262,47 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
           </FormControl>
           {runtimeProfile?.edition === 'lite' && (
             <Typography variant="caption" color="text.secondary" display="block" mt={1}>
-              Lite mặc định dùng cấu hình an toàn cho RTX2050: int8, batch 1, một job tại một thời điểm.
+              Lite mặc định ưu tiên chất lượng tiếng Việt bằng medium/int8; có thể chọn small khi cần tốc độ.
             </Typography>
           )}
+        </Paper>
+
+        {/* Language */}
+        <Paper
+          elevation={0}
+          sx={{
+            p: 2,
+            mb: 2,
+            bgcolor: 'rgba(25, 118, 210, 0.05)',
+            borderRadius: '12px',
+            border: '1px solid rgba(25, 118, 210, 0.2)',
+          }}
+        >
+          <Box display="flex" alignItems="center" gap={1} mb={1}>
+            <RecordVoiceOver sx={{ color: '#1976d2' }} />
+            <Typography variant="subtitle2" fontWeight={700}>
+              LANGUAGE
+            </Typography>
+          </Box>
+          <FormControl fullWidth>
+            <Select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              size="small"
+              sx={{ borderRadius: '8px' }}
+            >
+              {languageOptions.map((option: any) => (
+                <MenuItem key={option.value} value={option.value}>
+                  <Box>
+                    <Typography fontWeight={600}>{option.label_vi || option.value}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {option.description}
+                    </Typography>
+                  </Box>
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </Paper>
 
         {/* Speaker Diarization */}

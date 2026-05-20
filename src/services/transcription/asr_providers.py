@@ -28,14 +28,14 @@ _PHOWHISPER_VALIDATION_CACHE: dict[str, Any] = {}
 
 ASR_PROFILE_PRESETS: dict[str, dict[str, Any]] = {
     "rtx2050_safe": {
-        "label_vi": "Nhanh",
+        "label_vi": "Nhanh (small)",
         "provider": "faster_whisper_ct2",
         "model": "small",
         "device": "cuda",
         "compute_type": "int8",
         "beam_size": 5,
         "enable_diarization": False,
-        "description": "RTX2050 safe default: small/cuda/int8/batch 1.",
+        "description": "Small/cuda/int8/batch 1. Dùng khi cần tốc độ hoặc máy yếu; không phải profile chất lượng tiếng Việt.",
     },
     "rtx2050_fast": {
         "label_vi": "Nhanh benchmark",
@@ -48,17 +48,17 @@ ASR_PROFILE_PRESETS: dict[str, dict[str, Any]] = {
         "description": "Only promote after no-OOM benchmark on the target RTX2050 machine.",
     },
     "balanced": {
-        "label_vi": "Cân bằng",
+        "label_vi": "Tiếng Việt cân bằng",
         "provider": "faster_whisper_ct2",
         "model": "medium",
         "device": "cuda",
         "compute_type": "int8",
         "beam_size": 5,
         "enable_diarization": False,
-        "description": "Medium/cuda/int8 for better recall when VRAM/RAM is stable.",
+        "description": "Medium/cuda/int8. Mặc định khuyến nghị cho tiếng Việt trên RTX2050 nếu model đã verify.",
     },
     "cpu_safe": {
-        "label_vi": "CPU an toàn",
+        "label_vi": "CPU an toàn (small)",
         "provider": "faster_whisper_ct2",
         "model": "small",
         "device": "cpu",
@@ -91,9 +91,36 @@ ASR_PROFILE_PRESETS: dict[str, dict[str, Any]] = {
     },
 }
 
+AUTO_LANGUAGE_VALUES = {"", "auto", "detect", "mixed", "multilingual"}
+
+ASR_LANGUAGE_OPTIONS = [
+    {
+        "value": "auto",
+        "label_vi": "Tự động / Anh-Việt",
+        "description": "Tự nhận diện ngôn ngữ và cho phép audio xen kẽ tiếng Việt, tiếng Anh.",
+    },
+    {
+        "value": "vi",
+        "label_vi": "Tiếng Việt",
+        "description": "Ép nhận dạng tiếng Việt; phù hợp audio tiếng Việt thuần.",
+    },
+    {
+        "value": "en",
+        "label_vi": "English",
+        "description": "Ép nhận dạng tiếng Anh.",
+    },
+]
+
 
 def _warnings(*items: str | None) -> list[str]:
     return [item for item in items if item]
+
+
+def _normalize_requested_language(language: str | None) -> tuple[str | None, bool, str]:
+    requested = (language or settings.DEFAULT_LANGUAGE or "vi").strip().lower()
+    if requested in AUTO_LANGUAGE_VALUES:
+        return None, True, "auto"
+    return requested, False, requested
 
 
 def _segment_words(segment: Any) -> list[dict[str, Any]]:
@@ -212,16 +239,20 @@ def _faster_whisper_result(
         device = settings.WHISPER_DEVICE
         compute_type = settings.WHISPER_COMPUTE_TYPE
 
+    transcribe_language, multilingual, requested_language = _normalize_requested_language(language)
+
     segments_iter, info = transcribe(
         audio_path,
-        language=language,
+        language=transcribe_language,
+        task="transcribe",
         beam_size=runtime["beam_size"],
         vad_filter=True,
         temperature=0.0,
         compression_ratio_threshold=2.4,
         log_prob_threshold=-1.0,
         no_speech_threshold=0.5,
-        initial_prompt="Tiếng Việt",
+        initial_prompt=settings.WHISPER_INITIAL_PROMPT,
+        hotwords=settings.WHISPER_HOTWORDS,
         vad_parameters={
             "threshold": 0.4,
             "min_speech_duration_ms": 200,
@@ -229,6 +260,7 @@ def _faster_whisper_result(
             "speech_pad_ms": 800,
         },
         word_timestamps=True,
+        multilingual=multilingual,
         condition_on_previous_text=False,
     )
 
@@ -263,6 +295,8 @@ def _faster_whisper_result(
             "device": device,
             "compute_type": compute_type,
             "profile": runtime["profile"],
+            "requested_language": requested_language,
+            "multilingual": multilingual,
         },
         warnings=_warnings(warning_prefix),
         processing_time=time.time() - start,
@@ -556,7 +590,7 @@ def transcribe_whisper_cpp_cli(audio_path: str, *, language: str, provider: str 
             "-f",
             str(wav_path),
             "-l",
-            language or settings.WHISPER_CPP_LANGUAGE,
+            _normalize_requested_language(language)[0] or settings.WHISPER_CPP_LANGUAGE,
             "-t",
             str(settings.WHISPER_CPP_THREADS),
             "-oj",
@@ -668,6 +702,8 @@ def provider_health() -> dict[str, Any]:
         "whisper_model": settings.WHISPER_MODEL,
         "whisper_device": settings.WHISPER_DEVICE,
         "whisper_compute_type": settings.WHISPER_COMPUTE_TYPE,
+        "default_language": "auto",
+        "language_options": ASR_LANGUAGE_OPTIONS,
         "whisper_cpp_binary_available": whisper_cpp_bin.exists(),
         "whisper_cpp_model_available": Path(settings.WHISPER_CPP_MODEL).exists(),
         "phowhisper_cpp_model_available": phowhisper_model.exists(),

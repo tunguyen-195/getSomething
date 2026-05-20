@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 from src.services.model_artifacts import (  # noqa: E402
     artifact_with_cache_root,
     find_artifact_for_faster_whisper_model,
+    materialize_hf_snapshot_from_cache,
     verify_artifact,
 )
 
@@ -21,7 +22,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Pre-cache the pinned public faster-whisper artifact used by the Lite RTX2050 profile."
     )
-    parser.add_argument("--model", default=os.getenv("WHISPER_MODEL", "small"))
+    parser.add_argument("--model", default=os.getenv("WHISPER_MODEL", "medium"))
     parser.add_argument("--cache-dir", default=os.getenv("WHISPER_MODEL_PATH", "models/whisper"))
     parser.add_argument("--manifest", default="docs/model_artifacts.required.json")
     parser.add_argument("--root", type=Path, default=ROOT)
@@ -74,10 +75,15 @@ def main() -> int:
         print("Check internet access, Hugging Face availability, or copy a prepared models\\whisper cache manually.")
         return 3
 
+    materialize_errors = materialize_hf_snapshot_from_cache(artifact, snapshot_path, root=root)
+    if materialize_errors:
+        print(f"[ERROR] snapshot_materialize_failed:{';'.join(materialize_errors)}")
+        return 4
+
     result = verify_artifact(artifact, root=root, candidate_path=snapshot_path, write_provenance=True)
     if not result.ok:
         print(f"[ERROR] model_cache_missing_or_unverified:{';'.join(result.errors)}")
-        return 4
+        return 5
 
     print(f"[OK] snapshot={result.resolved_path}")
     print("[OK] strict verification passed and portable provenance was written")
@@ -90,7 +96,7 @@ def main() -> int:
             print("[OK] faster-whisper CPU/int8 load")
         except Exception as exc:
             print(f"[ERROR] verify_load_failed:{exc.__class__.__name__}")
-            return 5
+            return 6
 
     print("Next: python scripts\\verify_models.py --profile lite_rtx2050")
     return 0

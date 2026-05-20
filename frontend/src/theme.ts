@@ -6,7 +6,7 @@ import { createTheme } from '@mui/material/styles';
  * Design System:
  * - Warm rose/coral accent (evokes cherry)
  * - Slate neutral base
- * - Inter font family
+ * - Bundled Roboto font family
  * - Minimal, professional styling
  */
 
@@ -66,7 +66,7 @@ const tokens = {
 };
 
 const typography = {
-  fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+  fontFamily: "'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   h1: { fontWeight: 700, fontSize: '2rem', letterSpacing: '-0.02em' },
   h2: { fontWeight: 700, fontSize: '1.5rem', letterSpacing: '-0.01em' },
   h3: { fontWeight: 600, fontSize: '1.25rem', letterSpacing: '-0.01em' },

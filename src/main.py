@@ -11,6 +11,7 @@ from src.api.router import api_router
 from src.database.init_db import init_db
 from src.services.audio_storage import validate_ffprobe_available
 from src.core.auth import auth_middleware
+from src.core.security_headers import security_headers_middleware
 
 # Configure logging
 logging.basicConfig(
@@ -42,6 +43,7 @@ app.add_middleware(
 )
 
 app.middleware("http")(auth_middleware)
+app.middleware("http")(security_headers_middleware)
 
 # Include API router
 app.include_router(api_router, prefix=settings.API_V1_STR)

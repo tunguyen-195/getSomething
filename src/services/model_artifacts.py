@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
 import time
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -339,6 +341,64 @@ def _verify_hf_files(root: Path, artifact: dict[str, Any], snapshot: Path) -> tu
     if not artifact.get("files"):
         warnings.append(f"hf_files_not_declared:{artifact['id']}")
     return errors, warnings
+
+
+def _hf_blob_path(root: Path, artifact: dict[str, Any], item: dict[str, Any]) -> Path | None:
+    blob_name = item.get("lfs_sha256") or item.get("hf_blob_id")
+    if not blob_name:
+        return None
+    cache_root = _resolve_root_path(root, artifact["cache_root"])
+    repo_dir = repo_local_name(str(artifact["repo_id"]))
+    return cache_root / f"models--{repo_dir}" / "blobs" / str(blob_name).lower()
+
+
+def materialize_hf_snapshot_from_cache(
+    artifact: dict[str, Any],
+    snapshot: Path | str,
+    *,
+    root: Path | str | None = None,
+) -> list[str]:
+    """Repair HF cache snapshots whose files are empty placeholders.
+
+    On some Windows/manual-cache handoffs, the HF blob store is complete but the
+    snapshot directory contains zero-byte placeholders instead of links/copies.
+    Runtime loads from the snapshot path, so pre-cache must materialize real
+    files before strict verification writes provenance.
+    """
+    root_path = repo_root(root)
+    snapshot_path = _resolve_root_path(root_path, snapshot)
+    errors: list[str] = []
+    for item in artifact.get("files", []):
+        rel_path = str(item["path"])
+        target = snapshot_path / rel_path
+        expected_size = int(item["size_bytes"]) if item.get("size_bytes") is not None else None
+        if target.is_file() and (expected_size is None or target.stat().st_size == expected_size):
+            continue
+
+        blob = _hf_blob_path(root_path, artifact, item)
+        if blob is None or not blob.is_file():
+            errors.append(f"missing_blob:{artifact['id']}:{rel_path}")
+            continue
+        if expected_size is not None and blob.stat().st_size != expected_size:
+            errors.append(f"blob_size_mismatch:{artifact['id']}:{rel_path}")
+            continue
+        expected_lfs_sha = item.get("lfs_sha256")
+        if expected_lfs_sha and sha256_file(blob) != str(expected_lfs_sha).lower():
+            errors.append(f"blob_lfs_sha256_mismatch:{artifact['id']}:{rel_path}")
+            continue
+        expected_blob = item.get("hf_blob_id")
+        if expected_blob and git_blob_sha1(blob) != str(expected_blob).lower():
+            errors.append(f"blob_hf_blob_id_mismatch:{artifact['id']}:{rel_path}")
+            continue
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            target.unlink()
+        try:
+            os.link(blob, target)
+        except OSError:
+            shutil.copy2(blob, target)
+    return errors
 
 
 def _write_provenance(root: Path, artifact: dict[str, Any], snapshot: Path) -> None:
@@ -722,7 +782,7 @@ def require_faster_whisper_runtime_ready(
     if not result.ok or result.resolved_path is None:
         raise ModelArtifactError(
             "model_cache_missing_or_unverified",
-            "Run python scripts\\precache_lite_models.py --model small.",
+            f"Run python scripts\\precache_lite_models.py --model {model_name}.",
         )
     return result.resolved_path
 

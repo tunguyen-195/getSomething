@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     WHISPER_USE_LOCAL: bool = True  # Use local cached model for offline mode
     WHISPER_MODEL_PATH: str = "models/whisper"  # Local model cache directory
     WHISPER_FAST_MODE: bool = True  # Skip heavy LLM post-processing (31x speed vs 3x)
+    WHISPER_INITIAL_PROMPT: str = (
+        "Cuộc hội thoại tiếng Việt, có thể xen kẽ thuật ngữ tiếng Anh, tên riêng, "
+        "số điện thoại, ngày giờ, địa chỉ và số tiền. Giữ nguyên thuật ngữ tiếng Anh khi nghe rõ."
+    )
+    WHISPER_HOTWORDS: str = (
+        "SpeechToInformation, Speech to Information, số điện thoại, ngày mai, hôm nay, "
+        "địa chỉ, khách hàng, công ty, hợp đồng, thanh toán"
+    )
     WHISPER_CPP_BIN: str = "tools/whisper.cpp/whisper-cli.exe"
     WHISPER_CPP_MODEL: str = "models/asr/whisper_cpp/ggml-small-q5_0.bin"
     WHISPER_CPP_THREADS: int = 6
@@ -87,11 +95,13 @@ class Settings(BaseSettings):
     ANALYSIS_INTELLIGENCE_V2_ENABLED: bool = True
     ANALYSIS_INTELLIGENCE_LLM_ENABLED: bool = False
     ANALYSIS_CLIP_MAX_DURATION_SECONDS: int = 60
-    ANALYSIS_LLM_PROVIDER: str = "ollama"  # ollama, openai_compatible, custom_http
+    ANALYSIS_LLM_PROVIDER: str = "ollama"  # ollama, openrouter, openai, openai_compatible, llama_cpp_server
     ANALYSIS_LLM_BASE_URL: str = "http://localhost:11434"
     ANALYSIS_LLM_MODEL: str = "gpt-oss"
     ANALYSIS_LLM_FALLBACK_MODEL: str = "gpt-4.1-mini"
     ANALYSIS_LLM_API_KEY: str = ""
+    ANALYSIS_LLM_HTTP_REFERER: str = "http://localhost:3000"
+    ANALYSIS_LLM_APP_TITLE: str = "SpeechToInformation"
     ANALYSIS_LLM_TIMEOUT_SECONDS: int = 60
     ANALYSIS_LLM_MAX_INPUT_CHARS: int = 24000
     ANALYSIS_LLM_MAX_OUTPUT_TOKENS: int = 2000
@@ -191,6 +201,13 @@ def validate_security_settings() -> None:
     )
     if not production:
         return
+
+    if not settings.AUTH_ENABLED:
+        raise RuntimeError("AUTH_ENABLED must be true in production mode")
+    if settings.ENABLE_API_DOCS:
+        raise RuntimeError("ENABLE_API_DOCS must be false in production mode")
+    if any(origin.strip() == "*" for origin in settings.CORS_ORIGINS):
+        raise RuntimeError("CORS_ORIGINS must not contain '*' in production mode")
 
     secret = settings.SECRET_KEY or ""
     lowered = secret.lower()

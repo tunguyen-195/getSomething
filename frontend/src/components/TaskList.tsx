@@ -103,7 +103,7 @@ const TaskList = () => {
 
   const fetchCases = async () => {
     try {
-      const res = await apiFetch(`${API_BASE_URL}/api/v1/cases`);
+      const res = await apiFetch(`${API_BASE_URL}/api/v1/cases/`);
       const data = await res.json();
       setCases(data);
       if (data.length > 0) {
@@ -160,7 +160,6 @@ const TaskList = () => {
       fetchCases();
       fetchTasks(date);
     }
-    // eslint-disable-next-line
   }, [processSuccess]);
 
   // Polling tự động cập nhật trạng thái task

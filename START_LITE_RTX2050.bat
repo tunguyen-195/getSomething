@@ -34,8 +34,8 @@ echo Checking Lite model cache...
 echo Strict model verification may take a moment while hashing model.bin.
 venv\Scripts\python.exe scripts\verify_models.py --profile lite_rtx2050
 if errorlevel 1 (
-  echo Missing public Lite model cache. Downloading faster-whisper small...
-  venv\Scripts\python.exe scripts\precache_lite_models.py --model small
+  echo Missing public Lite model cache. Downloading faster-whisper medium for Vietnamese quality...
+  venv\Scripts\python.exe scripts\precache_lite_models.py --model medium
   if errorlevel 1 (
     echo Failed to download public Lite model. If this machine is offline, copy a prepared models\whisper cache into this repo and run:
     echo   venv\Scripts\python.exe scripts\verify_models.py --profile lite_rtx2050

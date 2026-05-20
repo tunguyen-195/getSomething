@@ -1,5 +1,6 @@
 import uuid
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
@@ -33,6 +34,9 @@ from src.main import app
 from src.services.task_service import extract_visualization_payload, update_task
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 @pytest.fixture()
 def auth_enabled(monkeypatch):
     monkeypatch.setattr(settings, "ENVIRONMENT", "test")
@@ -41,6 +45,7 @@ def auth_enabled(monkeypatch):
     monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", False)
     monkeypatch.setattr(settings, "COOKIE_SECURE", False)
     monkeypatch.setattr(settings, "SECRET_KEY", "test-secret-key-with-enough-length-1234567890")
+    monkeypatch.setattr(settings, "PROCESSING_RUNNER", "celery")
     init_db()
 
 
@@ -203,6 +208,75 @@ def _csrf_header(client: TestClient) -> dict[str, str]:
 
 def _sample_path(path: str) -> str:
     return path.replace("{case_id}", "1").replace("{task_id}", "1").replace("{audio_id}", "1").replace("{file_id}", "1").replace("{summary_id}", "1").replace("{filename}", "sample.wav")
+
+
+def _assert_backend_security_headers(response):
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert "camera=()" in response.headers["permissions-policy"]
+    assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+
+
+def test_backend_security_headers_on_public_and_auth_error(auth_enabled):
+    client = TestClient(app)
+
+    health = client.get("/api/v1/health")
+    assert health.status_code == 200
+    _assert_backend_security_headers(health)
+    assert health.headers["content-security-policy"] == (
+        "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+    )
+
+    protected = client.get("/api/v1/cases")
+    assert protected.status_code == 401
+    _assert_backend_security_headers(protected)
+
+
+def test_transformers_trainer_checkpoint_loader_is_not_in_runtime_surface():
+    """CVE-2026-1839 is in transformers Trainer checkpoint loading; runtime must not use that API."""
+
+    checked_paths = [
+        *list((ROOT / "src").rglob("*.py")),
+        *list((ROOT / "scripts").rglob("*.py")),
+        ROOT / "download_pyannote_model.py",
+    ]
+    risky = re.compile(r"\b(?:Trainer|TrainingArguments|resume_from_checkpoint|_load_rng_state|rng_state\.pth)\b")
+    violations = []
+    for path in checked_paths:
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        if risky.search(text):
+            violations.append(str(path.relative_to(ROOT)))
+
+    assert violations == []
+
+
+def test_backend_docs_have_csp_and_clickjacking_headers():
+    client = TestClient(app)
+
+    response = client.get("/docs")
+
+    assert response.status_code == 200
+    _assert_backend_security_headers(response)
+    csp = response.headers["content-security-policy"]
+    assert "https://cdn.jsdelivr.net" in csp
+    assert "frame-ancestors 'none'" in csp
+    assert "object-src 'none'" in csp
+
+
+def test_csrf_cookie_is_httponly_and_token_still_returned(auth_enabled):
+    client = TestClient(app)
+
+    response = client.get("/api/v1/auth/csrf")
+
+    assert response.status_code == 200
+    assert response.json()["csrf_token"]
+    set_cookie = response.headers["set-cookie"]
+    assert f"{settings.CSRF_COOKIE_NAME}=" in set_cookie
+    assert "HttpOnly" in set_cookie
+    assert "SameSite=lax" in set_cookie
 
 
 def test_route_inventory_is_private_by_default_when_auth_enabled(auth_enabled):
@@ -456,6 +530,17 @@ def test_expensive_summary_endpoints_are_rate_limited(auth_enabled, monkeypatch)
 def test_required_torch_requirements_file_is_tracked():
     path = Path("requirements-torch-cu121.txt")
     assert path.is_file()
+    content = path.read_text(encoding="utf-8")
+    assert "torch==2.5.1" in content
+    assert "torchvision==0.20.1" in content
+    assert "torchaudio==2.5.1" in content
+    dockerfile = Path("Dockerfile.backend").read_text(encoding="utf-8")
+    requirements = Path("requirements.txt").read_text(encoding="utf-8")
+    assert "openai-whisper==20250625" in requirements
+    assert "pip3 install --no-cache-dir --upgrade pip setuptools wheel" in dockerfile
+    assert "pip3 install --no-cache-dir --no-build-isolation openai-whisper==20250625" in dockerfile
+    assert "pip3 install --no-cache-dir -r requirements.txt -c requirements-torch-cu121.txt" in dockerfile
+    assert '"--reload"' not in dockerfile
     result = subprocess.run(
         ["git", "ls-files", "--error-unmatch", str(path)],
         cwd=Path.cwd(),
@@ -633,6 +718,7 @@ def test_analysis_visualize_errors_do_not_log_sensitive_exception_text(auth_enab
     task_id = _create_task_for_user(user_id, case_id)
     _create_audio_for_task(user_id, case_id, task_id, status="transcribed")
     sensitive = "SECRET_TRANSCRIPT graph={'segments':[{'text':'private evidence'}]}"
+    monkeypatch.setattr(settings, "PROCESSING_RUNNER", "celery")
 
     def raise_sensitive_error(*_args, **_kwargs):
         raise RuntimeError(sensitive)
@@ -697,6 +783,68 @@ def test_summary_analyze_blocks_cross_user_orphan_task(auth_enabled):
     assert response.status_code == 403
 
 
+def test_audio_v2_summarize_rejects_when_llm_not_configured(auth_enabled, monkeypatch):
+    user_id, username, password = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_task_for_user(user_id, case_id)
+    update_task(task_id, {"status": "transcribed", "result": {"transcription": "transcript ready"}})
+    monkeypatch.setattr(settings, "PROCESSING_RUNNER", "single_job_db_lease")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_PROVIDER", "openai")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_API_KEY", "")
+
+    client = _login_client(username, password)
+    response = client.post(
+        f"/api/v1/audio/v2/summarize/{task_id}",
+        json={"summary_type": "investigation", "include_context": True, "async_mode": True},
+        headers=_csrf_header(client),
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "llm_not_configured"
+
+
+def test_case_detail_and_patch_return_serialized_dict(auth_enabled):
+    user_id, username, password = _create_user()
+    case_id = _create_case_for_user(user_id)
+    client = _login_client(username, password)
+
+    detail = client.get(f"/api/v1/cases/{case_id}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["id"] == case_id
+
+    patched = client.patch(
+        f"/api/v1/cases/{case_id}",
+        json={"description": "updated description"},
+        headers=_csrf_header(client),
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["description"] == "updated description"
+
+
+def test_delete_audio_archives_instead_of_hard_delete(auth_enabled):
+    user_id, username, password = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_task_for_user(user_id, case_id)
+    audio_id = _create_audio_for_task(user_id, case_id, task_id)
+    client = _login_client(username, password)
+
+    response = client.delete(f"/api/v1/audio/{audio_id}", headers=_csrf_header(client))
+
+    assert response.status_code == 200, response.text
+    assert response.json()["detail"] == "Audio archived"
+    db = SessionLocal()
+    try:
+        audio = db.query(AudioFile).filter(AudioFile.id == audio_id).first()
+        task = db.query(Task).filter(Task.id == task_id).first()
+        assert audio is not None
+        assert audio.is_archived is True
+        assert audio.status == "archived"
+        assert task is not None
+        assert task.status == "archived"
+    finally:
+        db.close()
+
+
 def test_task_result_updates_merge_without_dropping_existing_fields():
     user_id, _, _ = _create_user()
     case_id = _create_case_for_user(user_id)
@@ -722,8 +870,104 @@ def test_production_rejects_default_secret(monkeypatch):
     monkeypatch.setattr(settings, "ENVIRONMENT", "production")
     monkeypatch.setattr(settings, "AUTH_ENABLED", True)
     monkeypatch.setattr(settings, "DEBUG", False)
+    monkeypatch.setattr(settings, "ENABLE_API_DOCS", False)
     monkeypatch.setattr(settings, "COOKIE_SECURE", True)
     monkeypatch.setattr(settings, "SECRET_KEY", "your-super-secret-key-here")
 
     with pytest.raises(RuntimeError, match="Weak SECRET_KEY"):
         validate_security_settings()
+
+
+def test_production_rejects_auth_disabled(monkeypatch):
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "AUTH_ENABLED", False)
+    monkeypatch.setattr(settings, "DEBUG", False)
+    monkeypatch.setattr(settings, "ENABLE_API_DOCS", False)
+    monkeypatch.setattr(settings, "COOKIE_SECURE", True)
+    monkeypatch.setattr(settings, "SECRET_KEY", "P9Hh7vUa6sKf3QnR8tYb2LmW5cXe0ZaD4rFg6JiK9NoP1QsT")
+
+    with pytest.raises(RuntimeError, match="AUTH_ENABLED must be true"):
+        validate_security_settings()
+
+
+def test_production_rejects_api_docs_enabled(monkeypatch):
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "AUTH_ENABLED", True)
+    monkeypatch.setattr(settings, "DEBUG", False)
+    monkeypatch.setattr(settings, "ENABLE_API_DOCS", True)
+    monkeypatch.setattr(settings, "COOKIE_SECURE", True)
+    monkeypatch.setattr(settings, "SECRET_KEY", "P9Hh7vUa6sKf3QnR8tYb2LmW5cXe0ZaD4rFg6JiK9NoP1QsT")
+
+    with pytest.raises(RuntimeError, match="ENABLE_API_DOCS must be false"):
+        validate_security_settings()
+
+
+def test_production_rejects_wildcard_cors(monkeypatch):
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "AUTH_ENABLED", True)
+    monkeypatch.setattr(settings, "DEBUG", False)
+    monkeypatch.setattr(settings, "ENABLE_API_DOCS", False)
+    monkeypatch.setattr(settings, "COOKIE_SECURE", True)
+    monkeypatch.setattr(settings, "CORS_ORIGINS", ["*"])
+    monkeypatch.setattr(settings, "SECRET_KEY", "P9Hh7vUa6sKf3QnR8tYb2LmW5cXe0ZaD4rFg6JiK9NoP1QsT")
+
+    with pytest.raises(RuntimeError, match="CORS_ORIGINS"):
+        validate_security_settings()
+
+
+def test_frontend_csrf_does_not_read_httponly_cookie():
+    client_source = Path("frontend/src/api/client.ts").read_text(encoding="utf-8")
+
+    assert "document.cookie" not in client_source
+    assert "/api/v1/auth/csrf" in client_source
+
+
+def test_frontend_does_not_load_public_font_cdn():
+    index_html = Path("frontend/index.html").read_text(encoding="utf-8")
+    nginx_conf = Path("frontend/nginx.conf").read_text(encoding="utf-8")
+
+    assert "fonts.googleapis.com" not in index_html
+    assert "fonts.gstatic.com" not in index_html
+    assert "fonts.googleapis.com" not in nginx_conf
+    assert "fonts.gstatic.com" not in nginx_conf
+
+
+def test_frontend_nginx_blocks_spa_hidden_file_fallback_and_uses_nonce_csp():
+    index_html = Path("frontend/index.html").read_text(encoding="utf-8")
+    main_source = Path("frontend/src/main.tsx").read_text(encoding="utf-8")
+    nginx_conf = Path("frontend/nginx.conf").read_text(encoding="utf-8")
+
+    assert '<meta name="csp-nonce" content="__CSP_NONCE__" />' in index_html
+    assert "@emotion/cache" in main_source
+    assert "nonce: cspNonce" in main_source
+    assert "sub_filter \"__CSP_NONCE__\" \"$request_id\";" in nginx_conf
+    assert "style-src 'self'; style-src-elem 'self' 'nonce-$request_id'" in nginx_conf
+    assert "style-src 'self' 'unsafe-inline'" not in nginx_conf
+    assert "location ~ (^|/)\\.(?!well-known(?:/|$))" in nginx_conf
+    assert "location = /BitKeeper" in nginx_conf
+    assert "resolver 127.0.0.11 valid=10s ipv6=off;" in nginx_conf
+    assert "set $backend_upstream backend:8000;" in nginx_conf
+    assert "proxy_pass http://$backend_upstream$request_uri;" in nginx_conf
+    assert "proxy_pass http://$backend_upstream/api/;" not in nginx_conf
+    assert "proxy_pass http://$backend_upstream/ws/;" not in nginx_conf
+
+
+def test_frontend_case_collection_calls_avoid_redirects():
+    app_source = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
+    task_list_source = Path("frontend/src/components/TaskList.tsx").read_text(encoding="utf-8")
+    nginx_conf = Path("frontend/nginx.conf").read_text(encoding="utf-8")
+
+    assert "/api/v1/cases/?sort_by=" in app_source
+    assert "/api/v1/audio/?case_id=" in app_source
+    assert "/api/v1/audio?case_id=" not in app_source
+    assert "api/v1/cases/`" in task_list_source
+    assert "proxy_set_header Host $http_host;" in nginx_conf
+
+
+def test_frontend_disables_summarize_when_llm_disabled():
+    app_source = Path("frontend/src/App.tsx").read_text(encoding="utf-8")
+    file_table_source = Path("frontend/src/components/FileTable.tsx").read_text(encoding="utf-8")
+
+    assert "summarizationAvailable" in app_source
+    assert "runtimeProfile?.llm?.configured" in app_source
+    assert "!summarizationAvailable" in file_table_source
