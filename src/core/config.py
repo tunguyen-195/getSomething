@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     VERSION: str = "0.1.0"
     DESCRIPTION: str = "Speech to Information API"
     APP_EDITION: str = "full"
-    APP_DISPLAY_NAME: str = "Speech to Information"
+    APP_DISPLAY_NAME: str = "cherry2"
     RUNTIME_PROFILE: str = "full"
     PROCESSING_RUNNER: str = "celery"
     MAX_ACTIVE_JOBS: int = 1

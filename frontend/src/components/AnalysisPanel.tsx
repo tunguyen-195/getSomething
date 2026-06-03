@@ -234,7 +234,7 @@ const EvidenceItemList: React.FC<{ title: string; items?: EvidenceItem[] }> = ({
                                 <Chip label={item.slot_type || item.type} size="small" variant="outlined" />
                                 <Chip label={confidenceLabel(item.confidence)} size="small" color="info" variant="outlined" />
                                 <Chip label={item.review_status || 'unknown'} size="small" color={reviewColor(item.review_status)} />
-                                {item.source_method && <Chip label={item.source_method} size="small" variant="outlined" />}
+                                {item.source_method && <Chip label="GPT OSS 120" size="small" variant="outlined" />}
                                 <Chip label={`${item.evidence_refs?.length || 0} evidence`} size="small" variant="outlined" />
                             </Box>
                             {item.confidence_reason && (

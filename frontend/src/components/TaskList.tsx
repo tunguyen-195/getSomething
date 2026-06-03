@@ -282,7 +282,7 @@ const TaskList = () => {
       const res = await apiFetch(`${API_BASE_URL}/api/v1/audio/summarize-multi`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcripts, model_name: 'gemma2:9b' }),
+        body: JSON.stringify({ transcripts, model_name: 'configured_api' }),
       });
       const data = await res.json();
       setMultiSummary(data.summary || data.result || '');
@@ -304,7 +304,7 @@ const TaskList = () => {
       const res = await apiFetch(`${API_BASE_URL}/api/v1/audio/summarize-case`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ case_id: selectedCaseForSummary, model_name: 'gemma2:9b' }),
+        body: JSON.stringify({ case_id: selectedCaseForSummary, model_name: 'configured_api' }),
       });
       const data = await res.json();
       setCaseSummary(data.summary || data.result || '');

@@ -60,6 +60,7 @@ interface RuntimeProfile {
     provider?: string;
     model?: string;
     fallback_model?: string;
+    display_model?: string;
     configured?: boolean;
   };
 }
@@ -178,7 +179,8 @@ function App() {
   const activeJob = runtimeProfile?.active_job || null;
   const processingBlocked = Boolean(activeJob?.active_task_id);
   const summarizationAvailable = Boolean(runtimeProfile?.llm?.configured);
-  const appDisplayName = runtimeProfile?.display_name || 'SpeechToInformation';
+  const appDisplayName = 'cherry2';
+  const aiDisplayName = runtimeProfile?.llm?.display_model || 'GPT OSS 120';
 
   const mapApiFile = (f: any) => ({
     task_id: f.task_id || f.id,
@@ -851,18 +853,7 @@ function App() {
             <Box sx={{ display: { xs: 'none', lg: 'flex' }, alignItems: 'center', gap: 1 }}>
               <Chip
                 size="small"
-                label={runtimeProfile.display_name || runtimeProfile.edition}
-                color={runtimeProfile.edition === 'lite' ? 'secondary' : 'default'}
-                variant={runtimeProfile.edition === 'lite' ? 'filled' : 'outlined'}
-              />
-              <Chip
-                size="small"
-                label={`ASR ${runtimeProfile.asr?.asr_provider || '-'} / ${runtimeProfile.asr?.asr_profile || '-'}`}
-                variant="outlined"
-              />
-              <Chip
-                size="small"
-                label={`LLM ${runtimeProfile.llm?.configured ? (runtimeProfile.llm?.model || 'configured') : 'disabled'}`}
+                label={runtimeProfile.llm?.configured ? `AI ${aiDisplayName}` : 'AI offline'}
                 color={runtimeProfile.llm?.configured ? 'success' : 'default'}
                 variant="outlined"
               />

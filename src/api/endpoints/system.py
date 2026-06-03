@@ -32,6 +32,7 @@ async def runtime_profile(
             "provider": settings.ANALYSIS_LLM_PROVIDER,
             "model": settings.ANALYSIS_LLM_MODEL,
             "fallback_model": settings.ANALYSIS_LLM_FALLBACK_MODEL,
+            "display_model": "GPT OSS 120",
             "configured": llm_configured,
             "local_base_url": settings.ANALYSIS_LLM_BASE_URL
             if settings.ANALYSIS_LLM_PROVIDER in {"ollama", "llama_cpp_server"}

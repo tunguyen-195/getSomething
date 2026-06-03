@@ -10,7 +10,7 @@ interface SummarizeDialogProps {
 }
 
 const SummarizeDialog: React.FC<SummarizeDialogProps> = ({ open, onClose, onConfirm, transcriptLength }) => {
-  const [modelName, setModelName] = useState('vistral');
+  const [modelName, setModelName] = useState('configured_api');
   const [summaryType, setSummaryType] = useState('investigation');
   const [includeContext, setIncludeContext] = useState(true);
 
@@ -30,10 +30,7 @@ const SummarizeDialog: React.FC<SummarizeDialogProps> = ({ open, onClose, onConf
         <Typography variant="subtitle2" fontWeight={700} mb={1}>AI MODEL</Typography>
         <FormControl fullWidth sx={{ mb: 2 }}>
           <Select value={modelName} onChange={(e) => setModelName(e.target.value)} size="small">
-            <MenuItem value="vistral">🇻🇳 Vistral 7B (Vietnamese, Llama.cpp - Fast)</MenuItem>
-            <MenuItem value="qwen3">🌏 Qwen3 8B (32K Context, Llama.cpp)</MenuItem>
-            <MenuItem value="forensic">🔍 Forensic Analysis (Vistral + Template)</MenuItem>
-            <MenuItem value="gemma2:9b">Gemma 2 9B (Ollama Fallback)</MenuItem>
+            <MenuItem value="configured_api">GPT OSS 120</MenuItem>
           </Select>
         </FormControl>
 
@@ -48,7 +45,7 @@ const SummarizeDialog: React.FC<SummarizeDialogProps> = ({ open, onClose, onConf
 
         <FormControlLabel
           control={<Checkbox checked={includeContext} onChange={(e) => setIncludeContext(e.target.checked)} sx={{ color: '#ff9800' }} />}
-          label="Include context analysis (entities, actions, privacy)"
+          label="Include AI analysis (entities, actions, risk signals)"
         />
       </DialogContent>
       <DialogActions sx={{ p: 3, gap: 2 }}>

@@ -115,7 +115,8 @@ Trả về dạng JSON với các trường: entities, events, relationships, ke
             }
 
         # Select model if not specified
-        if model_name is None or model_name in ["vistral", "qwen3"]:  # Fallback to Ollama
+        configured_aliases = {"configured_api", "gpt-oss-120", "gpt oss 120", "vistral", "qwen3"}
+        if model_name is None or str(model_name).strip().lower() in configured_aliases:
             model_name = llm_mgr.select_best_model()
 
         logger.info(
