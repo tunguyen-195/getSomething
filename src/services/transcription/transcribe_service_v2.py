@@ -117,6 +117,38 @@ def transcribe_audio_v2(
         language = asr_result.get("language") or language
         warnings = asr_result.get("warnings", [])
         model_info = asr_result.get("model_info", {})
+        raw_segments = asr_result.get("raw_segments")
+        if not isinstance(raw_segments, list) or not raw_segments:
+            raw_segments = segments
+        raw_transcript = str(
+            asr_result.get("raw_text")
+            or asr_result.get("raw_transcription")
+            or ""
+        ).strip()
+        filtered_transcript = str(
+            asr_result.get("filtered_text")
+            or asr_result.get("filtered_transcription")
+            or asr_result.get("text")
+            or ""
+        ).strip()
+        hallucination_report = (
+            asr_result.get("hallucination_report")
+            or asr_result.get("phoguard")
+            or (model_info.get("guard") if isinstance(model_info, dict) else {})
+            or {}
+        )
+        if not raw_transcript:
+            raw_transcript = " ".join(
+                str(seg.get("text", "")).strip()
+                for seg in raw_segments
+                if str(seg.get("text", "")).strip()
+            ).strip()
+        if not filtered_transcript:
+            filtered_transcript = " ".join(
+                str(seg.get("text", "")).strip()
+                for seg in segments
+                if str(seg.get("text", "")).strip()
+            ).strip()
         asr_reliability = _asr_reliability_report(
             segments,
             warnings=warnings,
@@ -155,7 +187,7 @@ def transcribe_audio_v2(
 
         # Step 3: Format output (Common)
         formatted_transcript = ""
-        full_transcript = asr_result.get("text") or " ".join(
+        full_transcript = filtered_transcript or asr_result.get("text") or " ".join(
             str(seg.get("text", "")).strip() for seg in segments if str(seg.get("text", "")).strip()
         )
 
@@ -183,6 +215,7 @@ def transcribe_audio_v2(
             "transcript": full_transcript,
             "formatted_transcript": formatted_transcript,
             "segments": segments,
+            "raw_segments": raw_segments,
             "has_diarization": enable_diarization and num_speakers > 1,
             "num_speakers": num_speakers,
             "duration": duration,
@@ -198,8 +231,12 @@ def transcribe_audio_v2(
             "asr_profile": asr_profile or settings.ASR_PROFILE,
             "model_info": model_info,
             "warnings": warnings,
-            "phoguard": model_info.get("guard") if isinstance(model_info, dict) else {},
+            "phoguard": hallucination_report,
+            "hallucination_report": hallucination_report,
             "asr_reliability": asr_reliability,
+            "raw_transcription": raw_transcript,
+            "review_transcription": raw_transcript,
+            "filtered_transcription": full_transcript,
         }
 
         result_dict = response.copy()

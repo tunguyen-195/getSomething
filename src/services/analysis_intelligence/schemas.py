@@ -290,6 +290,38 @@ class DisplaySection(BaseModel):
     items: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class HallucinationSpan(BaseModel):
+    id: str
+    text: str
+    filtered_text: str | None = None
+    status: Literal["filtered", "flagged", "kept_for_review"] = "flagged"
+    source: str
+    reason_codes: list[str] = Field(default_factory=list)
+    reason_vi: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    start_time: float | None = None
+    end_time: float | None = None
+    segment_id: str | None = None
+    word_index: int | None = None
+    char_start: int | None = None
+    char_end: int | None = None
+    llm_review: dict[str, Any] | None = None
+
+
+class HallucinationAnalysis(BaseModel):
+    enabled: bool = True
+    source: str = "phoguard_boh_deloop"
+    research_basis_vi: list[str] = Field(default_factory=list)
+    raw_transcript: str | None = None
+    filtered_transcript: str | None = None
+    removed_count: int = 0
+    flagged_count: int = 0
+    review_required: bool = False
+    spans: list[HallucinationSpan] = Field(default_factory=list)
+    llm_status: str = "disabled"
+    summary_vi: str | None = None
+
+
 class LegacyView(BaseModel):
     nodes: list[dict[str, Any]] = Field(default_factory=list)
     edges: list[dict[str, Any]] = Field(default_factory=list)
@@ -1031,6 +1063,7 @@ class AnalysisGraphV2(BaseModel):
     template_version_refs: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     model_info: dict[str, Any] = Field(default_factory=dict)
+    hallucination_analysis: HallucinationAnalysis | None = None
     segments: list[SegmentUnit] = Field(default_factory=list)
     entities: list[EntityItem] = Field(default_factory=list)
     relations: list[RelationItem] = Field(default_factory=list)

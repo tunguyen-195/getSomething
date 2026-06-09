@@ -34,7 +34,7 @@ interface Case {
 }
 
 const drawerWidth = 320;
-type AnalysisView = 'overview' | 'visualization' | 'evidence';
+type AnalysisView = 'overview' | 'visualization' | 'evidence' | 'hallucination';
 
 interface RuntimeProfile {
   edition: string;

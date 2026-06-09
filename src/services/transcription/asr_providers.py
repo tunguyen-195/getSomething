@@ -154,6 +154,27 @@ def _avg_word_probability(words: list[dict[str, Any]]) -> float | None:
     return sum(probabilities) / len(probabilities)
 
 
+def _segments_text(segments: list[dict[str, Any]]) -> str:
+    return " ".join(
+        str(seg.get("text", "")).strip()
+        for seg in segments
+        if str(seg.get("text", "")).strip()
+    ).strip()
+
+
+def _copy_asr_segments(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    copied: list[dict[str, Any]] = []
+    for segment in segments:
+        words = segment.get("words")
+        copied.append(
+            {
+                **segment,
+                "words": [dict(word) for word in words] if isinstance(words, list) else [],
+            }
+        )
+    return copied
+
+
 def _merge_segment_pair(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
     words = list(left.get("words") or []) + list(right.get("words") or [])
     merged = {
@@ -257,9 +278,9 @@ def _normalize_asr_segments(segments: list[dict[str, Any]]) -> list[dict[str, An
     return normalized
 
 
-def _from_segments(segments: list[dict[str, Any]], *, duration: float, language: str, provider: str, model_info: dict[str, Any], warnings: list[str], processing_time: float) -> dict[str, Any]:
-    text = " ".join(str(seg.get("text", "")).strip() for seg in segments if str(seg.get("text", "")).strip()).strip()
-    return {
+def _from_segments(segments: list[dict[str, Any]], *, duration: float, language: str, provider: str, model_info: dict[str, Any], warnings: list[str], processing_time: float, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    text = _segments_text(segments)
+    result = {
         "text": text,
         "segments": segments,
         "duration": duration,
@@ -268,7 +289,14 @@ def _from_segments(segments: list[dict[str, Any]], *, duration: float, language:
         "model_info": model_info,
         "warnings": warnings,
         "processing_time": processing_time,
+        "raw_text": text,
+        "raw_segments": segments,
+        "filtered_text": text,
+        "hallucination_report": {"enabled": False},
     }
+    if extra:
+        result.update(extra)
+    return result
 
 
 def _is_oom(exc: Exception) -> bool:
@@ -421,6 +449,8 @@ def _faster_whisper_result(
         warnings.append(f"detected_language_unexpected:{detected_language}")
 
     segments = _normalize_asr_segments(segments)
+    raw_segments = _copy_asr_segments(segments)
+    raw_text = _segments_text(raw_segments)
     guard_report: dict[str, Any] | None = None
     if settings.ASR_GUARD_ENABLED:
         segments, guard_report = guard_transcript_segments(
@@ -433,7 +463,7 @@ def _faster_whisper_result(
         if guard_report.get("removed_segments"):
             warnings.append(f"asr_guard_removed_segments:{guard_report['removed_segments']}")
 
-    return _from_segments(
+    result = _from_segments(
         segments,
         duration=float(getattr(info, "duration", 0.0) or 0.0),
         language=detected_language,
@@ -451,7 +481,14 @@ def _faster_whisper_result(
         },
         warnings=warnings,
         processing_time=time.time() - start,
+        extra={
+            "raw_text": raw_text,
+            "raw_segments": raw_segments,
+            "filtered_text": _segments_text(segments),
+            "hallucination_report": guard_report or {"enabled": False},
+        },
     )
+    return result
 
 
 def transcribe_faster_whisper_ct2(audio_path: str, *, language: str, runtime: dict[str, Any], **_: Any) -> dict[str, Any]:

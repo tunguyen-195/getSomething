@@ -315,6 +315,8 @@ def test_asr_guard_drops_thai_script_hallucination_but_keeps_confident_short_vie
     assert [segment["text"] for segment in filtered] == ["xin chào"]
     assert report["removed_segments"] == 1
     assert report["removed"][0]["reasons"]
+    assert report["removed"][0]["text"] == "ขอบคุณครับ"
+    assert report["removed"][0]["filtered_text"] == ""
 
 
 def test_asr_guard_drops_contextual_phrase_only_when_low_quality():
@@ -343,6 +345,29 @@ def test_asr_guard_drops_contextual_phrase_only_when_low_quality():
 
     assert [segment["text"] for segment in filtered] == ["xin chào"]
     assert report["removed_segments"] == 1
+
+
+def test_asr_guard_reports_partial_filter_changes():
+    from src.services.hallucination_filter import guard_transcript_segments
+
+    segments = [
+        {
+            "start": 0.0,
+            "end": 1.5,
+            "text": "cảm ơn đã xem chương trình",
+            "avg_logprob": -0.1,
+            "no_speech_prob": 0.01,
+            "compression_ratio": 1.0,
+        }
+    ]
+
+    filtered, report = guard_transcript_segments(segments, language="vi")
+
+    assert [segment["text"] for segment in filtered] == ["chương trình"]
+    assert report["removed_segments"] == 0
+    assert report["changed_segments"] == 1
+    assert report["changed"][0]["text"] == "cảm ơn đã xem chương trình"
+    assert report["changed"][0]["filtered_text"] == "chương trình"
 
 
 def test_phowhisper_cpp_candidate_is_blocked_until_validated(monkeypatch):

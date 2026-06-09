@@ -343,8 +343,10 @@ async def get_transcription_detail_v2(
             "transcription": transcript,
             "raw_transcription": result_data.get("raw_transcription"),
             "review_transcription": result_data.get("review_transcription"),
+            "filtered_transcription": result_data.get("filtered_transcription") or transcript,
             "formatted_transcript": result_data.get("formatted_transcript"),
             "segments": result_data.get("segments") or [],
+            "raw_segments": result_data.get("raw_segments") or [],
             "language": result_data.get("language"),
             "duration": result_data.get("duration"),
             "num_speakers": result_data.get("num_speakers"),
@@ -353,6 +355,7 @@ async def get_transcription_detail_v2(
             "asr_profile": result_data.get("asr_profile"),
             "model_info": result_data.get("model_info") or {},
             "phoguard": result_data.get("phoguard"),
+            "hallucination_report": result_data.get("hallucination_report") or result_data.get("phoguard"),
             "asr_reliability": result_data.get("asr_reliability"),
             "warnings": result_data.get("warnings") or [],
         }

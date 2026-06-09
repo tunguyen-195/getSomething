@@ -42,8 +42,9 @@ import {
     getLegacyVisualizationData,
     stringifyAnalysisValue,
 } from '../utils/visualization';
+import HallucinationAnalysisView from './HallucinationAnalysisView';
 
-type AnalysisView = 'overview' | 'visualization' | 'evidence';
+type AnalysisView = 'overview' | 'visualization' | 'evidence' | 'hallucination';
 
 interface FileWithData {
     task_id: string;
@@ -398,6 +399,8 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
         () => filesWithViz.find(f => f.task_id === selectedAnalysisTaskId) || filesWithViz[0],
         [filesWithViz, selectedAnalysisTaskId],
     );
+    const selectedGraph = getCanonicalAnalysisGraph(selectedFile?.visualization_data);
+    const hallucinationAnalysis = selectedGraph?.hallucination_analysis || null;
 
     const stats = useMemo(() => {
         const people = new Set<string>();
@@ -492,6 +495,7 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
                 <Tab value="overview" label="Tổng quan" />
                 <Tab value="visualization" label="Graph" />
                 <Tab value="evidence" label="Evidence" />
+                <Tab value="hallucination" label="Ảo giác" />
             </Tabs>
 
             {currentView !== 'overview' && filesWithViz.length === 0 && (
@@ -672,6 +676,10 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
 
             {currentView === 'evidence' && filesWithViz.length > 0 && (
                 <EvidenceView file={selectedFile} />
+            )}
+
+            {currentView === 'hallucination' && filesWithViz.length > 0 && (
+                <HallucinationAnalysisView analysis={hallucinationAnalysis} />
             )}
         </Box>
     );

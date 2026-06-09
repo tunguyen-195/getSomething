@@ -372,6 +372,7 @@ class HallucinationFilter:
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         filtered: list[dict[str, Any]] = []
         removed: list[dict[str, Any]] = []
+        changed: list[dict[str, Any]] = []
 
         for index, seg in enumerate(segments):
             text = str(seg.get("text", "")).strip()
@@ -395,6 +396,17 @@ class HallucinationFilter:
                 guarded = {**seg, "text": cleaned_text}
                 if reasons:
                     guarded["guard_flags"] = reasons
+                if cleaned_text != text:
+                    changed.append(
+                        {
+                            "index": index,
+                            "start": seg.get("start"),
+                            "end": seg.get("end"),
+                            "text": text,
+                            "filtered_text": cleaned_text,
+                            "reasons": reasons or ["partial_filter"],
+                        }
+                    )
                 filtered.append(guarded)
             else:
                 removed.append(
@@ -402,6 +414,8 @@ class HallucinationFilter:
                         "index": index,
                         "start": seg.get("start"),
                         "end": seg.get("end"),
+                        "text": text,
+                        "filtered_text": "",
                         "reasons": reasons or ["empty_after_filter"],
                     }
                 )
@@ -410,6 +424,8 @@ class HallucinationFilter:
             "enabled": True,
             "removed_segments": len(removed),
             "removed": removed[:20],
+            "changed_segments": len(changed),
+            "changed": changed[:20],
         }
         if removed:
             logger.info("[HallucinationFilter] Guard removed %s segment(s)", len(removed))

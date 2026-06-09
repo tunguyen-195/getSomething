@@ -98,10 +98,10 @@ const VisualizationDialog: React.FC<VisualizationDialogProps> = ({ open, onClose
         ) : error ? (
           <Alert severity="error">{error}</Alert>
         ) : data ? (
-          data.result?.summary || data.result?.context_analysis ? (
+          data.result?.summary || data.result?.visualization_data || data.result?.context_analysis ? (
             <InvestigationSummaryCard
               summary={data.result.summary}
-              contextAnalysis={data.result.context_analysis}
+              contextAnalysis={data.result.visualization_data || data.result.context_analysis}
               taskId={taskId || data.id}
             />
           ) : (

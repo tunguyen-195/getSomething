@@ -13,6 +13,7 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import EventIcon from '@mui/icons-material/Event';
 import PlaceIcon from '@mui/icons-material/Place';
 import LabelIcon from '@mui/icons-material/Label';
+import HallucinationAnalysisView from './HallucinationAnalysisView';
 import { apiFetch } from '../api/client';
 
 // Kiểu dữ liệu cho props
@@ -93,7 +94,7 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
 
   // Đảm bảo tab luôn hợp lệ
   useEffect(() => {
-    if (tab == null || isNaN(tab) || tab < 0 || tab > 5) setTab(0);
+    if (tab == null || isNaN(tab) || tab < 0 || tab > 6) setTab(0);
   }, [tab]);
 
   // Khi có lỗi backend hoặc context_analysis không hợp lệ, hiển thị lỗi rõ ràng và reset tab về 0
@@ -111,6 +112,7 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
       parsedAnalysis = { ...parsedAnalysis, ...inner };
     }
   }
+  const hallucinationAnalysis = parsedAnalysis?.hallucination_analysis || null;
   // Mapping lại các trường tổng quan từ parsedAnalysis
   const mappedOverview = {
     title: parsedAnalysis?.summary || parsedAnalysis?.context?.topic || parsedAnalysis?.context?.purpose || '',
@@ -187,13 +189,14 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
   return (
     <Card sx={{ mb: 3, borderRadius: 2, boxShadow: '0 2px 8px #b388ff11', background: '#fff', border: '1px solid #e0e7ef' }}>
       <CardContent>
-        <Tabs value={typeof tab === 'number' && tab >= 0 && tab <= 5 ? tab : 0} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
+        <Tabs value={typeof tab === 'number' && tab >= 0 && tab <= 6 ? tab : 0} onChange={handleTabChange} sx={{ mb: 2 }}>
           <Tab label="Tổng quan" />
           <Tab label="Sơ đồ quan hệ" />
           <Tab label="Timeline" />
           <Tab label="Insight" />
           <Tab label="Nhạy cảm" />
           <Tab label="Cảm xúc" />
+          <Tab label="Ảo giác" />
         </Tabs>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -406,6 +409,11 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
               {sentimentIcon(sentiment)}
               <Typography fontWeight={600}>{sentiment || 'Không rõ'}</Typography>
             </Box>
+          </Box>
+        )}
+        {tab === 6 && (
+          <Box>
+            <HallucinationAnalysisView analysis={hallucinationAnalysis} />
           </Box>
         )}
         {/* Cảnh báo risk, notes, slang, hidden_relationships */}

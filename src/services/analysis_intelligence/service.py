@@ -8,6 +8,7 @@ from src.core.config import settings
 from src.services.task_service import get_task
 
 from .extractor import CORE_EXTRACTOR_VERSION, extract_core_analysis
+from .hallucination import build_hallucination_analysis
 from .event_synthesizer import synthesize_events
 from .insight_engine import generate_insights
 from .schemas import AnalysisGraphV2, EvidenceRef, EntityItem, SegmentUnit, sha256_text, stable_id
@@ -121,16 +122,29 @@ def generate_task_graph(
             if warning_text.startswith(("detected_language_unexpected", "asr_guard_removed_segments")):
                 warnings.append(f"ASR warning: {warning_text}")
 
+    hallucination_analysis = build_hallucination_analysis(
+        result,
+        segments,
+        transcript=transcript,
+        language=str(result.get("language") or settings.DEFAULT_LANGUAGE or "vi"),
+    )
+    if hallucination_analysis.review_required:
+        warnings.append("Hallucination analysis phát hiện span cần review; xem tab Ảo giác.")
+
+    model_info = _model_info()
+    model_info["hallucination_llm_status"] = hallucination_analysis.llm_status
+
     graph = AnalysisGraphV2(
         task_id=task_id,
         audio_id=result.get("audio_id") if isinstance(result, dict) else None,
         source_file=task.get("filename"),
-        model_info=_model_info(),
+        model_info=model_info,
         analysis_mode=normalized_mode,  # type: ignore[arg-type]
         extractor_versions={"core": CORE_EXTRACTOR_VERSION},
         selected_template_ids=selected_template_ids,
         template_version_refs=template_refs,
         warnings=warnings,
+        hallucination_analysis=hallucination_analysis,
         segments=segments,
         entities=core.entities,
         relations=[],

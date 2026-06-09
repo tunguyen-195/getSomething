@@ -49,12 +49,46 @@ export type SegmentUnit = {
   [key: string]: any;
 };
 
+export type HallucinationSpan = {
+  id: string;
+  text: string;
+  filtered_text?: string | null;
+  status?: 'filtered' | 'flagged' | 'kept_for_review';
+  source?: string;
+  reason_codes?: string[];
+  reason_vi?: string;
+  confidence?: number;
+  start_time?: number | null;
+  end_time?: number | null;
+  segment_id?: string | null;
+  word_index?: number | null;
+  char_start?: number | null;
+  char_end?: number | null;
+  llm_review?: Record<string, any> | null;
+};
+
+export type HallucinationAnalysis = {
+  enabled?: boolean;
+  source?: string;
+  research_basis_vi?: string[];
+  raw_transcript?: string | null;
+  filtered_transcript?: string | null;
+  removed_count?: number;
+  flagged_count?: number;
+  review_required?: boolean;
+  spans?: HallucinationSpan[];
+  llm_status?: string;
+  summary_vi?: string | null;
+  [key: string]: any;
+};
+
 export type AnalysisGraphV2 = {
   schema_version: 'analysis_intelligence.v2';
   graph_revision?: number;
   task_id?: string | null;
   audio_id?: number | string | null;
   source_file?: string | null;
+  hallucination_analysis?: HallucinationAnalysis | null;
   segments?: SegmentUnit[];
   entities?: EvidenceItem[];
   relations?: RelationItem[];

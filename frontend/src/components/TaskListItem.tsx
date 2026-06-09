@@ -108,7 +108,7 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
   const transcript = task.result?.transcription || task.result?.text || task.transcript || '';
   const summary = task.result?.summary || task.summary || '';
   const [tab, setTab] = React.useState(
-    (task.result?.summary || task.result?.context_analysis) ? 0 : 1
+    (task.result?.summary || task.result?.context_analysis || task.result?.visualization_data) ? 0 : 1
   );
   const [copiedTranscript, setCopiedTranscript] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
@@ -183,7 +183,7 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
             <Tab label="Details" />
           </Tabs>
           {tab === 0 && (
-            <InvestigationSummaryCard summary={task.result?.summary} contextAnalysis={task.result?.context_analysis} taskId={task.result?.task_id || task.id} />
+            <InvestigationSummaryCard summary={task.result?.summary} contextAnalysis={task.result?.visualization_data || task.result?.context_analysis} taskId={task.result?.task_id || task.id} />
           )}
           {tab === 1 && (
             <Grid container spacing={2}>

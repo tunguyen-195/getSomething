@@ -120,6 +120,73 @@ def test_visualization_service_import_does_not_load_asr_stack():
     }
 
 
+def test_build_hallucination_analysis_exposes_raw_filtered_and_spans():
+    from src.services.analysis_intelligence.hallucination import build_hallucination_analysis
+
+    raw_segments = [
+        {
+            "id": "seg_1",
+            "start": 0.0,
+            "end": 1.5,
+            "text": "cảm ơn đã xem chương trình",
+            "words": [
+                {"word": "cảm", "start": 0.0, "end": 0.2, "probability": 0.12},
+                {"word": "ơn", "start": 0.2, "end": 0.4, "probability": 0.15},
+                {"word": "đã", "start": 0.4, "end": 0.6, "probability": 0.98},
+                {"word": "xem", "start": 0.6, "end": 0.8, "probability": 0.98},
+                {"word": "chương", "start": 0.8, "end": 1.0, "probability": 0.96},
+                {"word": "trình", "start": 1.0, "end": 1.2, "probability": 0.96},
+            ],
+        }
+    ]
+    filtered_segments = [
+        {
+            "id": "seg_1",
+            "start": 0.0,
+            "end": 1.5,
+            "text": "chương trình",
+            "words": [
+                {"word": "chương", "start": 0.8, "end": 1.0, "probability": 0.96},
+                {"word": "trình", "start": 1.0, "end": 1.2, "probability": 0.96},
+            ],
+        }
+    ]
+    result = {
+        "raw_segments": raw_segments,
+        "segments": filtered_segments,
+        "raw_transcription": "cảm ơn đã xem chương trình",
+        "transcription": "chương trình",
+        "filtered_transcription": "chương trình",
+        "hallucination_report": {
+            "enabled": True,
+            "removed_segments": 0,
+            "removed": [],
+            "changed_segments": 1,
+            "changed": [
+                {
+                    "index": 0,
+                    "start": 0.0,
+                    "end": 1.5,
+                    "text": "cảm ơn đã xem chương trình",
+                    "filtered_text": "chương trình",
+                    "reasons": ["partial_filter"],
+                }
+            ],
+        },
+        "language": "vi",
+    }
+
+    analysis = build_hallucination_analysis(result, filtered_segments, transcript="chương trình")
+
+    assert analysis.raw_transcript == "cảm ơn đã xem chương trình"
+    assert analysis.filtered_transcript == "chương trình"
+    assert analysis.review_required is True
+    assert analysis.removed_count >= 1
+    assert any(span.status == "filtered" for span in analysis.spans)
+    assert any(span.source == "word_probability" for span in analysis.spans)
+    assert any("boh_phrase" in span.reason_codes for span in analysis.spans)
+
+
 def test_context_analysis_parse_failure_log_is_redacted():
     source = Path("src/speech_to_text/transcriber.py").read_text(encoding="utf-8")
     assert "context_analysis={context_analysis}" not in source
