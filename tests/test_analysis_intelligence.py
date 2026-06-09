@@ -185,6 +185,20 @@ def test_build_hallucination_analysis_exposes_raw_filtered_and_spans():
     assert any(span.status == "filtered" for span in analysis.spans)
     assert any(span.source == "word_probability" for span in analysis.spans)
     assert any("boh_phrase" in span.reason_codes for span in analysis.spans)
+    visible_reason_text = " ".join(span.reason_vi for span in analysis.spans)
+    assert "PhoGuard" not in visible_reason_text
+    assert "BoH" not in visible_reason_text
+    assert "LLM" not in visible_reason_text
+
+
+def test_hallucination_analysis_ui_hides_filter_source_labels():
+    source = Path("frontend/src/components/HallucinationAnalysisView.tsx").read_text(encoding="utf-8")
+
+    assert "LLM" not in source
+    assert "PhoGuard" not in source
+    assert "BoH" not in source
+    assert "Cơ sở nghiên cứu" not in source
+    assert "`hallucination_analysis`" not in source
 
 
 def test_context_analysis_parse_failure_log_is_redacted():

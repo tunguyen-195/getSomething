@@ -97,7 +97,6 @@ const renderHighlightedTranscript = (text: string, spans: HallucinationSpan[]) =
     const tooltip = [
       statusLabel(span.status),
       span.reason_vi,
-      span.llm_review?.verdict ? `LLM: ${span.llm_review.verdict}` : '',
     ].filter(Boolean).join(' | ');
     nodes.push(
       <Box
@@ -140,7 +139,7 @@ const HallucinationAnalysisView: React.FC<HallucinationAnalysisViewProps> = ({ a
   if (!analysis) {
     return (
       <Alert severity="info">
-        Chưa có `hallucination_analysis` từ backend.
+        Chưa có dữ liệu lọc ảo giác cho bản phân tích này.
       </Alert>
     );
   }
@@ -155,11 +154,11 @@ const HallucinationAnalysisView: React.FC<HallucinationAnalysisViewProps> = ({ a
         <Box display="flex" alignItems="center" gap={1} mb={1}>
           <WarningAmberIcon color="warning" />
           <Typography variant="subtitle1" fontWeight={700}>
-            Lọc ảo giác / sai ngữ cảnh
+            Đoạn nghi ảo giác / sai ngữ cảnh
           </Typography>
         </Box>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          Phần này hiển thị rõ đoạn nào đã bị lọc, đoạn nào còn nghi ảo giác, và transcript sau khi guard đã xử lý.
+          Phần này hiển thị rõ đoạn nào đã bị lọc, đoạn nào còn nghi ảo giác, và transcript sau khi xử lý.
         </Typography>
         {analysis.summary_vi && (
           <Alert severity={analysis.review_required ? 'warning' : 'success'} sx={{ mb: 1.5 }}>
@@ -170,22 +169,6 @@ const HallucinationAnalysisView: React.FC<HallucinationAnalysisViewProps> = ({ a
           <Chip label={`Đã lọc ${analysis.removed_count || 0}`} color="error" size="small" />
           <Chip label={`Nghi ngờ ${analysis.flagged_count || 0}`} color="warning" size="small" />
           <Chip label={analysis.review_required ? 'Cần rà soát' : 'Không cần rà soát'} color={analysis.review_required ? 'warning' : 'success'} size="small" />
-          <Chip label={`LLM: ${analysis.llm_status || 'disabled'}`} size="small" variant="outlined" />
-        </Box>
-      </Paper>
-
-      <Paper sx={{ p: 2, mb: 2, borderRadius: 2, border: '1px solid rgba(33, 150, 243, 0.15)' }}>
-        <Typography variant="subtitle2" fontWeight={700} mb={1}>
-          Cơ sở nghiên cứu
-        </Typography>
-        <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
-          {(analysis.research_basis_vi || []).map((item, idx) => (
-            <li key={idx}>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                {item}
-              </Typography>
-            </li>
-          ))}
         </Box>
       </Paper>
 
@@ -225,7 +208,6 @@ const HallucinationAnalysisView: React.FC<HallucinationAnalysisViewProps> = ({ a
                 <TableCell>Đã lọc</TableCell>
                 <TableCell>Lý do</TableCell>
                 <TableCell>Thời gian</TableCell>
-                <TableCell>LLM</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -244,20 +226,6 @@ const HallucinationAnalysisView: React.FC<HallucinationAnalysisViewProps> = ({ a
                     {span.reason_vi}
                   </TableCell>
                   <TableCell>{formatSpanTime(span)}</TableCell>
-                  <TableCell sx={{ maxWidth: 240, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
-                    {span.llm_review ? (
-                      <Box>
-                        <Typography variant="body2" fontWeight={600}>
-                          {span.llm_review.verdict || 'unknown'}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {span.llm_review.reason_vi || ''}
-                        </Typography>
-                      </Box>
-                    ) : (
-                      '-'
-                    )}
-                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -267,7 +235,7 @@ const HallucinationAnalysisView: React.FC<HallucinationAnalysisViewProps> = ({ a
 
       <Box mt={2}>
         <Typography variant="caption" color="text.secondary">
-          Các span này chỉ là gợi ý lọc ảo giác. Nếu transcript rất ngắn hoặc nói ngắt quãng, nên mở raw transcript và nghe lại audio gốc.
+          Các đoạn này là gợi ý lọc ảo giác. Nếu transcript rất ngắn hoặc nói ngắt quãng, nên nghe lại audio gốc.
         </Typography>
       </Box>
     </Box>

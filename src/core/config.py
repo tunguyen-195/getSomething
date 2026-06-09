@@ -108,7 +108,7 @@ class Settings(BaseSettings):
 
     # Evidence-grounded analysis intelligence
     ANALYSIS_INTELLIGENCE_V2_ENABLED: bool = True
-    ANALYSIS_INTELLIGENCE_LLM_ENABLED: bool = False
+    ANALYSIS_INTELLIGENCE_LLM_ENABLED: bool = True
     ANALYSIS_CLIP_MAX_DURATION_SECONDS: int = 60
     ANALYSIS_LLM_PROVIDER: str = "ollama"  # ollama, openrouter, openai, openai_compatible, llama_cpp_server
     ANALYSIS_LLM_BASE_URL: str = "http://localhost:11434"

@@ -13,18 +13,18 @@ from .schemas import HallucinationAnalysis, HallucinationSpan, stable_id
 
 REASON_VI = {
     "script_mismatch": "Đoạn này lệch script/ngôn ngữ mục tiêu, thường là tín hiệu ASR nhận sai.",
-    "known_or_low_quality_hallucination": "Guard đã loại vì khớp BoH hoặc tín hiệu chất lượng thấp.",
+    "known_or_low_quality_hallucination": "Đoạn đã bị loại vì khớp mẫu ảo giác hoặc tín hiệu chất lượng thấp.",
     "empty_after_filter": "Đoạn bị lọc sạch sau hậu xử lý.",
     "partial_filter": "Đoạn được làm sạch một phần sau hậu xử lý.",
-    "boh_phrase": "Cụm này nằm trong Bag of Hallucinations của Cherry2/PhoGuard.",
+    "boh_phrase": "Cụm này thường xuất hiện khi mô hình nhận nhầm lời nói.",
     "contextual_boh": "Cụm ngắn có thể là hallucination trong ngữ cảnh im lặng hoặc no-speech.",
     "looping_pattern": "Mẫu lặp từ/cụm bất thường, thuộc nhóm looping hallucination.",
     "low_word_probability": "Từ có xác suất thấp, cần nghe lại.",
     "low_avg_logprob": "Độ tin cậy trung bình của đoạn thấp.",
     "high_no_speech_prob": "Mô hình nghi đoạn này không phải lời nói thật.",
     "high_compression_ratio": "Đầu ra bị nén bất thường, thường là hallucination.",
-    "llm_flagged": "LLM đánh dấu đây là đoạn nghi ảo giác hoặc sai ngữ cảnh.",
-    "llm_clean": "LLM cho rằng đoạn này có thể là ngữ cảnh hợp lệ, cần xem lại thủ công.",
+    "llm_flagged": "Đoạn được đánh dấu là nghi ảo giác hoặc sai ngữ cảnh.",
+    "llm_clean": "Đoạn này có thể thuộc ngữ cảnh hợp lệ, cần xem lại thủ công.",
 }
 
 
@@ -157,6 +157,8 @@ def _attach_llm_review(
 
     try:
         llm = get_llm_manager()
+        if not llm.check_availability():
+            return "unavailable"
         prompt = _build_candidate_prompt(
             raw_transcript=raw_transcript,
             filtered_transcript=filtered_transcript,
@@ -312,7 +314,7 @@ def build_hallucination_analysis(
                         status="filtered" if filtered_text and filtered_text != segment_text else "flagged",
                         source="boh_phrase",
                         reason_codes=reason_codes,
-                        reason_vi=_reason_vi(reason_codes, "Cụm nằm trong Bag of Hallucinations."),
+                        reason_vi=_reason_vi(reason_codes, "Cụm này thường xuất hiện khi mô hình nhận nhầm lời nói."),
                         confidence=0.92,
                         start_time=float(start_time) if isinstance(start_time, (int, float)) else None,
                         end_time=float(end_time) if isinstance(end_time, (int, float)) else None,
@@ -465,9 +467,9 @@ def build_hallucination_analysis(
     )
 
     basis = [
-        "BoH + delooping được port từ Cherry2/PhoGuard để bắt các cụm hay xuất hiện khi ASR gặp silence/no-speech.",
+        "Hệ thống đối chiếu các cụm hay xuất hiện khi ASR gặp silence/no-speech và mẫu lặp bất thường.",
         "Các tín hiệu như avg_logprob, no_speech_prob, compression_ratio và xác suất từng từ chỉ là proxy, không phải kết luận tuyệt đối.",
-        "Nếu bật LLM, hệ thống sẽ gắn nhãn lại các span nghi ngờ để người dùng thấy rõ phần nào đã bị lọc và phần nào cần nghe lại.",
+        "Các đoạn nghi ngờ được đánh dấu để người dùng thấy rõ phần nào đã bị lọc và phần nào cần nghe lại.",
     ]
 
     return HallucinationAnalysis(
