@@ -1,238 +1,376 @@
+import copy
 import logging
-from typing import Dict, Any, Optional, List
-from datetime import datetime
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from src.core.logging import logger
-from src.database.config.database import get_db
-from src.database.models.models import Task as DBTask, Case, CaseStatus, CasePriority, User
 import uuid
-import json
-from src.database.models.schemas import TaskResult
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
+
+from src.database.config.database import SessionLocal
+from src.database.models.models import (
+    AudioFile,
+    Case,
+    CaseParticipant,
+    CasePriority,
+    CaseStatus,
+    ParticipantRole,
+    Task as DBTask,
+    User,
+)
 
 logger = logging.getLogger(__name__)
 
-def create_task(filename: str, case_id: int = None, db: Session = None) -> Dict[str, Any]:
-    """Create a new task and save to DB. Chỉ tạo task nếu case_id hợp lệ hoặc tự tạo case mới nếu không truyền case_id."""
-    logger.debug(f"[create_task] INPUT filename={filename}, case_id={case_id}")
-    close_db = False
-    if db is None:
-        db = next(get_db())
-        close_db = True
-    real_case_id = None
-    user_id = None
-    try:
-        # Only use transaction context if we created the session
-        if close_db:
-            with db.begin():
-                if case_id is not None:
-                    case = db.query(Case).filter(Case.id == case_id).first()
-                    if not case:
-                        logger.error(f"Case with id {case_id} does not exist. Cannot create task.")
-                        if close_db:
-                            db.close()
-                        return None
-                    real_case_id = case.id
-                    user_id = case.created_by
-                else:
-                    status = db.query(CaseStatus).filter(CaseStatus.status_name == "active").first()
-                    priority = db.query(CasePriority).filter(CasePriority.priority_name == "high").first()
-                    user = db.query(User).filter(User.username == "admin").first()
-                    if not status or not priority or not user:
-                        logger.error(f"Missing default: status={status}, priority={priority}, user={user}")
-                        if close_db:
-                            db.close()
-                        return None
-                    case = Case(
-                        title=filename,
-                        case_code=str(uuid.uuid4()),
-                        description=None,
-                        status_id=status.id,
-                        priority_id=priority.id,
-                        created_by=user.id
-                    )
-                    db.add(case)
-                    db.flush()
-                    real_case_id = case.id
-                    user_id = user.id
-                task_id = str(uuid.uuid4())
-                db_task = DBTask(
-                    id=task_id,
-                    filename=filename,
-                    status="pending",
-                    case_id=real_case_id,
-                    user_id=user_id,
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow(),
-                )
-                db.add(db_task)
-                db.flush()
-                db.refresh(db_task)
-                db.commit()
+CANONICAL_STATUSES = {
+    "uploaded",
+    "transcribing",
+    "transcribed",
+    "summarizing",
+    "summarized",
+    "visualizing",
+    "visualized",
+    "failed",
+}
+
+LEGACY_STATUS_ALIASES = {
+    "pending": "uploaded",
+    "processing": "transcribing",
+}
+
+RESULT_FIELD_ALIASES = {
+    "transcript": "transcription",
+    "context": "context_analysis",
+    "visualization": "visualization_data",
+}
+
+RESULT_FIELDS = {
+    "transcription",
+    "summary",
+    "segments",
+    "duration",
+    "context_analysis",
+    "visualization_data",
+    "has_visualization",
+    "audio_id",
+    "download_url",
+    "language",
+    "confidence",
+    "processing_time",
+    "formatted_transcript",
+    "transcript_file",
+    "has_diarization",
+    "num_speakers",
+    "speed_factor",
+    "diarization_method",
+    "transcription_time",
+    "diarization_time",
+    "fast_mode",
+    "caption",
+    "model_name",
+    "summary_model",
+    "summary_type",
+}
+
+
+def _as_dict(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return copy.deepcopy(value)
+    return {}
+
+
+def extract_visualization_payload(value: Any) -> Any:
+    """Return the raw visualization graph/timeline payload from wrapper-shaped results."""
+    if not isinstance(value, dict):
+        return value
+    if value.get("schema_version") == "analysis_intelligence.v2":
+        return value
+    if "visualization_data" in value:
+        return extract_visualization_payload(value["visualization_data"])
+    if "data" in value and (
+        "visualization_type" in value
+        or value.get("status") in {"visualization_ready", "visualized", "success"}
+        or "task_id" in value
+    ):
+        return extract_visualization_payload(value["data"])
+    if "result" in value and value.get("status") == "success":
+        return extract_visualization_payload(value["result"])
+    return value
+
+
+def _deep_merge(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
+    merged = copy.deepcopy(base)
+    for key, value in patch.items():
+        if key == "visualization_data":
+            merged[key] = extract_visualization_payload(value)
+            continue
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
         else:
-            # Use db directly, no transaction context (assume caller manages transaction)
-            if case_id is not None:
-                case = db.query(Case).filter(Case.id == case_id).first()
-                if not case:
-                    logger.error(f"Case with id {case_id} does not exist. Cannot create task.")
-                    return None
-                real_case_id = case.id
-                user_id = case.created_by
-            else:
-                status = db.query(CaseStatus).filter(CaseStatus.status_name == "active").first()
-                priority = db.query(CasePriority).filter(CasePriority.priority_name == "high").first()
-                user = db.query(User).filter(User.username == "admin").first()
-                if not status or not priority or not user:
-                    logger.error(f"Missing default: status={status}, priority={priority}, user={user}")
-                    return None
-                case = Case(
-                    title=filename,
-                    case_code=str(uuid.uuid4()),
-                    description=None,
-                    status_id=status.id,
-                    priority_id=priority.id,
-                    created_by=user.id
-                )
-                db.add(case)
-                db.flush()
-                real_case_id = case.id
-                user_id = user.id
-            task_id = str(uuid.uuid4())
-            db_task = DBTask(
-                id=task_id,
-                filename=filename,
-                status="pending",
-                case_id=real_case_id,
-                user_id=user_id,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
-            )
-            db.add(db_task)
-            db.flush()
-            db.refresh(db_task)
-            db.commit()
-        logger.info(f"Created task {task_id} for file {filename}")
-        logger.debug(f"[create_task] OUTPUT: {db_task.__dict__}")
-        if close_db:
-            db.close()
-        return {
-            "id": db_task.id,
-            "filename": db_task.filename,
-            "status": db_task.status,
-            "created_at": db_task.created_at.isoformat(),
-            "updated_at": db_task.updated_at.isoformat(),
-            "result": db_task.result,
-            "error": db_task.error,
-            "case_id": db_task.case_id,
-        }
-    except Exception as e:
-        logger.error(f"Error creating task: {str(e)}")
-        db.rollback()
-        if close_db:
-            db.close()
-        return None
+            merged[key] = value
+    return merged
 
-def get_task(task_id: str, db: Session = None) -> Optional[Dict[str, Any]]:
-    logger.debug(f"[get_task] INPUT task_id={task_id}")
-    close_db = False
-    if db is None:
-        db = next(get_db())
-        close_db = True
+
+def canonical_status(status: str | None, result: Dict[str, Any] | None = None) -> str | None:
+    if not status:
+        return status
+    if status in CANONICAL_STATUSES:
+        return status
+    if status == "completed":
+        result = result or {}
+        if result.get("has_visualization") or result.get("visualization_data"):
+            return "visualized"
+        if result.get("summary"):
+            return "summarized"
+        if result.get("transcription") or result.get("transcript") or result.get("text"):
+            return "transcribed"
+        return "transcribed"
+    return LEGACY_STATUS_ALIASES.get(status, status)
+
+
+def effective_task_status(task_status: str | None, audio_status: str | None = None, result: Dict[str, Any] | None = None) -> str | None:
+    status = canonical_status(task_status, result)
+    if status:
+        return status
+    return canonical_status(audio_status, result)
+
+
+def _sync_audio_status(db: Session, task: DBTask, status: str | None) -> None:
+    if not status:
+        return
+    normalized = canonical_status(status, _as_dict(task.result))
+    audio_files = list(task.audio_files or [])
+    if not audio_files:
+        audio_files = db.query(AudioFile).filter(AudioFile.task_id == task.id).all()
+    for audio in audio_files:
+        audio.status = normalized
+        audio.updated_at = datetime.utcnow()
+
+
+def _task_to_dict(task: DBTask) -> Dict[str, Any]:
+    result = _as_dict(task.result)
+    audio = task.audio_files[0] if task.audio_files else None
+    if audio:
+        result.setdefault("audio_id", audio.id)
+        result.setdefault("download_url", f"/api/v1/audio/{audio.id}/download")
+
+    data = {
+        "id": task.id,
+        "filename": task.filename,
+        "status": effective_task_status(task.status, audio.status if audio else None, result),
+        "created_at": task.created_at.isoformat() if task.created_at else None,
+        "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+        "result": result,
+        "error": task.error,
+        "case_id": task.case_id,
+        "user_id": task.user_id,
+    }
+    for key, value in result.items():
+        data.setdefault(key, value)
+    data.setdefault("transcript", result.get("transcription"))
+    return data
+
+
+def _get_actor(db: Session, user_id: int | None) -> User | None:
+    if user_id:
+        return db.query(User).filter(User.id == user_id).first()
+    return db.query(User).filter(User.username == "admin").first()
+
+
+def create_task(
+    filename: str,
+    case_id: int | None = None,
+    db: Session | None = None,
+    user_id: int | None = None,
+    commit: bool = True,
+) -> Optional[Dict[str, Any]]:
+    own_session = db is None
+    db = db or SessionLocal()
     try:
-        db_task = db.query(DBTask).filter(DBTask.id == task_id).first()
-        if not db_task:
-            logger.warning(f"Task {task_id} not found")
-            if close_db:
-                db.close()
+        actor = _get_actor(db, user_id)
+        if not actor:
+            logger.error("Cannot create task without a valid actor/admin user")
             return None
-        result = {
-            "id": db_task.id,
-            "filename": db_task.filename,
-            "status": db_task.status,
-            "created_at": db_task.created_at.isoformat() if db_task.created_at else None,
-            "updated_at": db_task.updated_at.isoformat() if db_task.updated_at else None,
-            "result": db_task.result,
-            "error": db_task.error,
-            "case_id": db_task.case_id,
-        }
-        logger.debug(f"[get_task] OUTPUT: {result}")
-        if close_db:
-            db.close()
-        return result
-    except Exception as e:
-        logger.error(f"Error getting task {task_id}: {str(e)}")
-        if close_db:
-            db.close()
-        return None
 
-def update_task(task_id: str, data: Dict[str, Any]) -> bool:
-    logger.debug(f"[update_task] INPUT task_id={task_id}, data={data}")
+        if case_id is not None:
+            case = db.query(Case).filter(Case.id == case_id).first()
+            if not case:
+                logger.error("Case with id %s does not exist", case_id)
+                return None
+        else:
+            status = db.query(CaseStatus).filter(CaseStatus.status_name == "active").first()
+            priority = db.query(CasePriority).filter(CasePriority.priority_name == "high").first()
+            if not status or not priority:
+                logger.error("Missing default case status or priority")
+                return None
+            case = Case(
+                title=filename,
+                case_code=str(uuid.uuid4()),
+                description=None,
+                status_id=status.id,
+                priority_id=priority.id,
+                created_by=actor.id,
+            )
+            db.add(case)
+            db.flush()
+            owner_role = db.query(ParticipantRole).filter(ParticipantRole.role_name == "owner").first()
+            if owner_role:
+                db.add(
+                    CaseParticipant(
+                        case_id=case.id,
+                        user_id=actor.id,
+                        role_id=owner_role.id,
+                        is_active=True,
+                    )
+                )
+
+        now = datetime.utcnow()
+        task = DBTask(
+            id=str(uuid.uuid4()),
+            filename=filename,
+            status="pending",
+            case_id=case.id,
+            user_id=actor.id,
+            created_at=now,
+            updated_at=now,
+            result={},
+        )
+        db.add(task)
+        db.flush()
+        if own_session or commit:
+            db.commit()
+            db.refresh(task)
+        return _task_to_dict(task)
+    except Exception:
+        if own_session or commit:
+            db.rollback()
+        logger.exception("Error creating task")
+        return None
+    finally:
+        if own_session:
+            db.close()
+
+
+def get_task(task_id: str, db: Session | None = None) -> Optional[Dict[str, Any]]:
+    own_session = db is None
+    db = db or SessionLocal()
     try:
-        db: Session = next(get_db())
-        db_task = db.query(DBTask).filter(DBTask.id == task_id).first()
-        if not db_task:
-            logger.warning(f"Task {task_id} not found")
+        task = db.query(DBTask).filter(DBTask.id == task_id).first()
+        if not task:
+            return None
+        return _task_to_dict(task)
+    except Exception:
+        logger.exception("Error getting task %s", task_id)
+        return None
+    finally:
+        if own_session:
+            db.close()
+
+
+def resolve_task_id(identifier: str | int, db: Session | None = None) -> str | None:
+    """Resolve a task id, accepting an AudioFile id for legacy/frontend compatibility."""
+    own_session = db is None
+    db = db or SessionLocal()
+    raw = str(identifier)
+    try:
+        if db.query(DBTask.id).filter(DBTask.id == raw).first():
+            return raw
+
+        try:
+            audio_id = int(raw)
+        except (TypeError, ValueError):
+            return None
+
+        audio = db.query(AudioFile.task_id).filter(AudioFile.id == audio_id).first()
+        if audio and audio.task_id:
+            return audio.task_id
+        return None
+    finally:
+        if own_session:
+            db.close()
+
+
+def update_task(task_id: str, data: Dict[str, Any], db: Session | None = None) -> bool:
+    own_session = db is None
+    db = db or SessionLocal()
+    try:
+        query = db.query(DBTask).filter(DBTask.id == task_id)
+        if db.bind and db.bind.dialect.name != "sqlite":
+            query = query.with_for_update()
+        task = query.first()
+        if not task:
+            logger.warning("Task %s not found", task_id)
             return False
-        for k, v in data.items():
-            if k == "result":
-                # Validate result schema
-                try:
-                    validated = TaskResult(**v)
-                    db_task.result = validated.dict()
-                except Exception as e:
-                    logger.error(f"Result schema invalid for task {task_id}: {e}")
+
+        result_patch: Dict[str, Any] = {}
+        status_update: str | None = None
+        for key, value in data.items():
+            normalized_key = RESULT_FIELD_ALIASES.get(key, key)
+            if normalized_key == "result":
+                if not isinstance(value, dict):
+                    logger.error("Task result update must be a dict")
                     return False
-            elif hasattr(db_task, k):
-                setattr(db_task, k, v)
-        db_task.updated_at = datetime.utcnow()
-        db.commit()
-        logger.info(f"Updated task {task_id}")
-        logger.debug(f"[update_task] OUTPUT: {db_task.__dict__}")
+                result_patch = _deep_merge(result_patch, value)
+            elif hasattr(task, normalized_key):
+                if normalized_key == "status":
+                    status_update = value
+                else:
+                    setattr(task, normalized_key, value)
+            elif normalized_key in RESULT_FIELDS:
+                if normalized_key == "visualization_data":
+                    result_patch[normalized_key] = extract_visualization_payload(value)
+                    result_patch["has_visualization"] = bool(result_patch[normalized_key])
+                else:
+                    result_patch[normalized_key] = value
+            else:
+                result_patch[normalized_key] = value
+
+        if result_patch:
+            task.result = _deep_merge(_as_dict(task.result), result_patch)
+        if status_update:
+            task.status = canonical_status(status_update, _as_dict(task.result))
+            _sync_audio_status(db, task, task.status)
+        task.updated_at = datetime.utcnow()
+        if own_session:
+            db.commit()
+        else:
+            db.flush()
         return True
-    except Exception as e:
-        logger.error(f"Error updating task {task_id}: {str(e)}")
+    except Exception:
+        if own_session:
+            db.rollback()
+        logger.exception("Error updating task %s", task_id)
         return False
+    finally:
+        if own_session:
+            db.close()
+
 
 def delete_task(task_id: str) -> bool:
+    db = SessionLocal()
     try:
-        db: Session = next(get_db())
-        db_task = db.query(DBTask).filter(DBTask.id == task_id).first()
-        if not db_task:
-            logger.warning(f"Task {task_id} not found")
+        task = db.query(DBTask).filter(DBTask.id == task_id).first()
+        if not task:
             return False
-        db.delete(db_task)
+        db.delete(task)
         db.commit()
-        logger.info(f"Deleted task {task_id}")
         return True
-    except Exception as e:
-        logger.error(f"Error deleting task {task_id}: {str(e)}")
+    except Exception:
+        db.rollback()
+        logger.exception("Error deleting task %s", task_id)
         return False
+    finally:
+        db.close()
 
-def list_tasks(case_id: str = None) -> List[Dict[str, Any]]:
-    logger.debug(f"[list_tasks] INPUT case_id={case_id}")
+
+def list_tasks(case_id: str | None = None) -> List[Dict[str, Any]]:
+    db = SessionLocal()
     try:
-        db: Session = next(get_db())
         query = db.query(DBTask)
         if case_id:
             query = query.filter(DBTask.case_id == case_id)
-        db_tasks = query.order_by(desc(DBTask.created_at)).all()
-        results = [
-            {
-                "id": t.id,
-                "filename": t.filename,
-                "status": t.status,
-                "created_at": t.created_at.isoformat() if t.created_at else None,
-                "updated_at": t.updated_at.isoformat() if t.updated_at else None,
-                "result": t.result,
-                "error": t.error,
-                "case_id": t.case_id,
-            }
-            for t in db_tasks
-        ]
-        print(f"[list_tasks] Số lượng task trả về: {len(results)}")
-        print(f"[list_tasks] Dữ liệu trả về: {json.dumps(results, ensure_ascii=False, indent=2)}")
-        logger.debug(f"[list_tasks] OUTPUT: {results}")
-        return results
-    except Exception as e:
-        logger.error(f"Error listing tasks: {str(e)}")
-        return [] 
+        return [_task_to_dict(task) for task in query.order_by(desc(DBTask.created_at)).all()]
+    except Exception:
+        logger.exception("Error listing tasks")
+        return []
+    finally:
+        db.close()

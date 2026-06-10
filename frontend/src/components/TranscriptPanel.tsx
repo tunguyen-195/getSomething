@@ -3,6 +3,7 @@ import { Box, Typography, CircularProgress, IconButton, Button, Tooltip } from '
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DownloadIcon from '@mui/icons-material/Download';
 import AnimationIcon from '@mui/icons-material/GraphicEq'; // SVG animation placeholder
+import { apiFetch } from '../api/client';
 
 interface TranscriptPanelProps {
   fileId: string;
@@ -21,21 +22,33 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({ fileId }) => {
     setLoading(true);
     setError(null);
     setTranscript(null);
-    fetch(`${API_BASE_URL}/api/v1/files/${fileId}/transcript`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.result && (data.result.transcription || data.result.text)) {
-          setTranscript(data.result.transcription || data.result.text);
-        } else if (data.transcription) {
-          setTranscript(data.transcription);
-        } else if (data.transcript) {
-          setTranscript(data.transcript);
-        } else {
-          setTranscript(null);
+    // Use correct route: /api/v1/audio/files/{file_id}/transcript
+    apiFetch(`${API_BASE_URL}/api/v1/audio/files/${fileId}/transcript`)
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
         }
+        return res.json();
+      })
+      .then(data => {
+        // Extract transcript from response (check multiple locations for compatibility)
+        // Priority: data.transcript > data.result.transcription > data.result.text
+        let transcriptText = null;
+        if (data.transcript) {
+          transcriptText = data.transcript;
+        } else if (data.result) {
+          if (typeof data.result === 'object') {
+            transcriptText = data.result.transcription || data.result.transcript || data.result.text;
+          }
+        } else if (data.transcription) {
+          transcriptText = data.transcription;
+        }
+
+        setTranscript(transcriptText);
         setLoading(false);
       })
-      .catch(() => {
+      .catch((error) => {
+        console.error('Failed to load transcript:', error);
         setError('Failed to load transcript');
         setLoading(false);
       });
@@ -103,4 +116,4 @@ const TranscriptPanel: React.FC<TranscriptPanelProps> = ({ fileId }) => {
   );
 };
 
-export default TranscriptPanel; 
+export default TranscriptPanel;

@@ -1,0 +1,288 @@
+{
+  "schema_version": "sti.model_artifacts.v1",
+  "updated_at": "2026-05-06",
+  "distribution_decision": {
+    "pull_ready_profile": "lite_rtx2050",
+    "unavailable_model_distribution": "manual_copy_bundle",
+    "git_policy": "Do not commit model binaries, public model cache, or manual-copy bundles under models/ or other runtime cache folders."
+  },
+  "profiles": {
+    "lite_rtx2050": {
+      "description": "Pull-ready Vietnamese-quality target for a new RTX2050 Windows machine.",
+      "required": [
+        "faster_whisper_medium"
+      ],
+      "optional": [
+        "faster_whisper_small",
+        "pyannote_community_1",
+        "whisper_cpp_small_q5",
+        "phowhisper_cpp_large_q5_internal"
+      ]
+    },
+    "full_offline": {
+      "description": "Optional Cherry/PhoWhisper offline workflow. Not required for pull-ready Lite.",
+      "required": [
+        "cherry_whisper_large_v2_pt",
+        "silero_vad_jit",
+        "phowhisper_safe_internal"
+      ],
+      "optional": [
+        "phowhisper_cpp_large_q5_internal",
+        "pyannote_community_1"
+      ]
+    }
+  },
+  "artifacts": [
+    {
+      "id": "faster_whisper_small",
+      "kind": "hf_snapshot",
+      "required_for": [],
+      "optional_for": [
+        "lite_rtx2050"
+      ],
+      "source": "huggingface",
+      "source_type": "public_hf",
+      "repo_id": "Systran/faster-whisper-small",
+      "revision": "536b0662742c02347bc0e980a01041f333bce120",
+      "layout": "hf_cache",
+      "allow_patterns": [
+        "config.json",
+        "model.bin",
+        "tokenizer.json",
+        "vocabulary.txt"
+      ],
+      "files": [
+        {
+          "path": "config.json",
+          "required": true,
+          "size_bytes": 2370,
+          "hf_blob_id": "e5047537059bd8f182d9ca64c470201585015187"
+        },
+        {
+          "path": "model.bin",
+          "required": true,
+          "size_bytes": 483546902,
+          "lfs_sha256": "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671"
+        },
+        {
+          "path": "tokenizer.json",
+          "required": true,
+          "size_bytes": 2203239,
+          "hf_blob_id": "7818adb6de9fa3064d3ff81226fdd675be1f6344"
+        },
+        {
+          "path": "vocabulary.txt",
+          "required": true,
+          "size_bytes": 459861,
+          "hf_blob_id": "c9074644d9d1205686f16d411564729461324b75"
+        }
+      ],
+      "license": "MIT",
+      "cache_root": "models/whisper",
+      "runtime_env": {
+        "ASR_PROVIDER": "faster_whisper_ct2",
+        "ASR_PROFILE": "rtx2050_safe",
+        "WHISPER_MODEL": "small",
+        "WHISPER_MODEL_PATH": "models/whisper",
+        "WHISPER_DEVICE": "cuda",
+        "WHISPER_COMPUTE_TYPE": "int8"
+      },
+      "setup_command": "python scripts/precache_lite_models.py --model small",
+      "verify_command": "python scripts/verify_models.py --profile lite_rtx2050"
+    },
+    {
+      "id": "faster_whisper_medium",
+      "kind": "hf_snapshot",
+      "required_for": [
+        "lite_rtx2050"
+      ],
+      "source": "huggingface",
+      "source_type": "public_hf",
+      "repo_id": "Systran/faster-whisper-medium",
+      "revision": "08e178d48790749d25932bbc082711ddcfdfbc4f",
+      "layout": "hf_cache",
+      "allow_patterns": [
+        "config.json",
+        "model.bin",
+        "tokenizer.json",
+        "vocabulary.txt"
+      ],
+      "files": [
+        {
+          "path": "config.json",
+          "required": true,
+          "size_bytes": 2257,
+          "hf_blob_id": "242aa06a480a7b5509375c645097e87af5136774"
+        },
+        {
+          "path": "model.bin",
+          "required": true,
+          "size_bytes": 1527906378,
+          "lfs_sha256": "9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae"
+        },
+        {
+          "path": "tokenizer.json",
+          "required": true,
+          "size_bytes": 2203239,
+          "hf_blob_id": "7818adb6de9fa3064d3ff81226fdd675be1f6344"
+        },
+        {
+          "path": "vocabulary.txt",
+          "required": true,
+          "size_bytes": 459861,
+          "hf_blob_id": "c9074644d9d1205686f16d411564729461324b75"
+        }
+      ],
+      "license": "MIT",
+      "cache_root": "models/whisper",
+      "runtime_env": {
+        "ASR_PROVIDER": "faster_whisper_ct2",
+        "ASR_PROFILE": "balanced",
+        "WHISPER_MODEL": "medium",
+        "WHISPER_MODEL_PATH": "models/whisper",
+        "WHISPER_DEVICE": "cuda",
+        "WHISPER_COMPUTE_TYPE": "int8"
+      },
+      "setup_command": "python scripts/precache_lite_models.py --model medium",
+      "verify_command": "python scripts/verify_models.py --profile lite_rtx2050",
+      "notes": "Default Lite ASR artifact. Medium is preferred over small for Vietnamese accuracy; small remains available as a fast fallback."
+    },
+    {
+      "id": "pyannote_community_1",
+      "kind": "hf_snapshot_gated",
+      "required_for": [],
+      "optional_for": [
+        "lite_rtx2050",
+        "full_offline"
+      ],
+      "source": "huggingface",
+      "source_type": "gated_hf",
+      "repo_id": "pyannote/speaker-diarization-community-1",
+      "revision": "3533c8cf8e369892e6b79ff1bf80f7b0286a54ee",
+      "layout": "local_dir",
+      "allow_patterns": [
+        "config.yaml",
+        "embedding/pytorch_model.bin",
+        "plda/plda.npz",
+        "plda/xvec_transform.npz",
+        "segmentation/pytorch_model.bin"
+      ],
+      "files": [
+        {
+          "path": "config.yaml",
+          "required": true,
+          "size_bytes": 444,
+          "hf_blob_id": "4022db43960736338378fdb6b5a85cfdae198910"
+        },
+        {
+          "path": "embedding/pytorch_model.bin",
+          "required": true,
+          "size_bytes": 26646242,
+          "lfs_sha256": "6f10ff60898a1d185fa22e1d11e0bfa8a92efec811f11bca48cb8cafebefd929"
+        },
+        {
+          "path": "plda/plda.npz",
+          "required": true,
+          "size_bytes": 133852,
+          "lfs_sha256": "9b77bcd840692710dd3496f62ecfeed8d8e5f002fd991b785079b244eab7d255"
+        },
+        {
+          "path": "plda/xvec_transform.npz",
+          "required": true,
+          "size_bytes": 134376,
+          "lfs_sha256": "325f1ce8e48f7e55e9c8aa47e05d2766b7c48c4b25b8de8dd751e7a4cc5fbe8f"
+        },
+        {
+          "path": "segmentation/pytorch_model.bin",
+          "required": true,
+          "size_bytes": 5906507,
+          "lfs_sha256": "7ad24338d844fb95985486eb1a464e32d229f6d7a03c9abe60f978bacf3f816e"
+        }
+      ],
+      "license": "gated_huggingface_terms",
+      "cache_root": "models/pyannote",
+      "setup_command": "python download_pyannote_model.py",
+      "notes": "Requires accepting model terms and setting HF_TOKEN. Diarization is optional for Lite."
+    },
+    {
+      "id": "whisper_cpp_small_q5",
+      "kind": "file",
+      "required_for": [],
+      "optional_for": [
+        "lite_rtx2050"
+      ],
+      "source": "manual_copy_or_upstream",
+      "source_type": "manual_copy",
+      "path": "models/asr/whisper_cpp/ggml-small-q5_0.bin",
+      "license": "upstream_model_license",
+      "notes": "Optional offline CPP ASR profile. Not required by rtx2050_safe."
+    },
+    {
+      "id": "phowhisper_cpp_large_q5_internal",
+      "kind": "file_with_manifest",
+      "required_for": [],
+      "optional_for": [
+        "lite_rtx2050",
+        "full_offline"
+      ],
+      "source": "manual_copy_bundle",
+      "source_type": "manual_copy",
+      "path": "models/asr/phowhisper_cpp/ggml-phowhisper-large-q5_0.bin",
+      "sha256": "1ECFF4DB87EF84AD1356D2955D2ECEA03E6C240B46FE1CA87F07EA8390E3109C",
+      "size_bytes": 1080732108,
+      "manifest_path": "models/asr/phowhisper_cpp/ggml-phowhisper-large-q5_0.bin.manifest.json",
+      "license": "internal_review_required",
+      "copy_instructions": "Copy the binary and sidecar manifest from the internal manual bundle into the exact paths above, then run python scripts/verify_models.py --profile full_offline --include-optional.",
+      "notes": "Model binary is not online-downloadable by repo scripts. Manual bundle must include binary and sidecar manifest."
+    },
+    {
+      "id": "cherry_whisper_large_v2_pt",
+      "kind": "file",
+      "required_for": [
+        "full_offline"
+      ],
+      "source": "manual_copy_bundle",
+      "source_type": "manual_copy",
+      "path": "models/large-v2.pt",
+      "alternate_paths": [
+        "models/whisper-large-v2/large-v2.pt"
+      ],
+      "license": "internal_review_required",
+      "copy_instructions": "Copy large-v2.pt from the internal/manual model bundle into models/large-v2.pt or models/whisper-large-v2/large-v2.pt, then run python scripts/verify_models.py --profile full_offline.",
+      "notes": "Required only by cherry_whisper_v2 full/offline adapter. If this artifact is sourced from an official public URL later, update this manifest and add a downloader."
+    },
+    {
+      "id": "phowhisper_safe_internal",
+      "kind": "directory",
+      "required_for": [
+        "full_offline"
+      ],
+      "source": "manual_copy_bundle",
+      "source_type": "manual_copy",
+      "path": "models/phowhisper-safe",
+      "alternate_paths": [
+        "models/phowhisper",
+        "models/phowhisper-full"
+      ],
+      "license": "internal_review_required",
+      "copy_instructions": "Copy one complete directory from the internal/manual model bundle into models/phowhisper-safe, models/phowhisper, or models/phowhisper-full, then run python scripts/verify_models.py --profile full_offline.",
+      "notes": "Required only by PhoWhisper full/offline adapter. If this is only a public vinai/PhoWhisper-large snapshot, prefer a downloader instead of manual copy."
+    },
+    {
+      "id": "silero_vad_jit",
+      "kind": "file_set",
+      "required_for": [
+        "full_offline"
+      ],
+      "source": "manual_copy_bundle_or_upstream",
+      "source_type": "manual_copy",
+      "paths": [
+        "models/silero/silero_vad.jit",
+        "models/silero/utils_vad.py"
+      ],
+      "license": "upstream_model_license",
+      "copy_instructions": "Copy models/silero/silero_vad.jit and models/silero/utils_vad.py from a prepared bundle, then run python scripts/verify_models.py --profile full_offline.",
+      "notes": "Required by the Cherry Silero VAD adapter when using that full/offline path. If a stable upstream download script is added later, change source_type to public_url."
+    }
+  ]
+}

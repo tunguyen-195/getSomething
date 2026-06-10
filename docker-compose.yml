@@ -1,94 +1,227 @@
-version: '3.8'
+x-gpu-reservation: &gpu_reservation
+  resources:
+    reservations:
+      devices:
+        - driver: nvidia
+          count: all
+          capabilities: [gpu]
+
+x-backend-volumes: &backend_volumes
+  - ./models:/app/models
+  - ./uploads:/app/uploads
+  - ./storage/audio:/app/storage/audio
+  - ./logs:/app/logs
+  - ./data:/app/data
+
+x-backend-env: &backend_env
+  BACKEND_HOST: 0.0.0.0
+  BACKEND_PORT: 8000
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  DEBUG: ${DEBUG:-true}
+  AUTH_ENABLED: ${AUTH_ENABLED:-false}
+  INIT_DB_ON_STARTUP: ${INIT_DB_ON_STARTUP:-true}
+  ENABLE_API_DOCS: ${ENABLE_API_DOCS:-true}
+  APP_EDITION: ${APP_EDITION:-lite}
+  APP_DISPLAY_NAME: ${APP_DISPLAY_NAME:-cherry2}
+  RUNTIME_PROFILE: ${RUNTIME_PROFILE:-single_machine_lite}
+  PROCESSING_RUNNER: ${PROCESSING_RUNNER:-single_job_db_lease}
+  MAX_ACTIVE_JOBS: ${MAX_ACTIVE_JOBS:-1}
+  LITE_JOB_LEASE_TTL_SECONDS: ${LITE_JOB_LEASE_TTL_SECONDS:-900}
+  LITE_JOB_HEARTBEAT_SECONDS: ${LITE_JOB_HEARTBEAT_SECONDS:-15}
+  UVICORN_RELOAD: ${UVICORN_RELOAD:-false}
+  SECRET_KEY: ${SECRET_KEY:-change-me-generate-with-secrets-token-urlsafe}
+  INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
+  DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-speech_to_info}
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/0
+  CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:3000","http://localhost:8000"]}'
+  COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+  RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-false}
+  ASR_PROVIDER: ${ASR_PROVIDER:-faster_whisper_ct2}
+  ASR_PROFILE: ${ASR_PROFILE:-balanced}
+  ENABLE_DIARIZATION_DEFAULT: ${ENABLE_DIARIZATION_DEFAULT:-false}
+  WHISPER_MODEL: ${WHISPER_MODEL:-medium}
+  WHISPER_MODEL_PATH: ${WHISPER_MODEL_PATH:-models/whisper}
+  WHISPER_DEVICE: ${WHISPER_DEVICE:-cuda}
+  WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-int8}
+  WHISPER_BATCH_SIZE: ${WHISPER_BATCH_SIZE:-1}
+  WHISPER_BEAM_SIZE: ${WHISPER_BEAM_SIZE:-5}
+  WHISPER_INITIAL_PROMPT: ${WHISPER_INITIAL_PROMPT:-Cuoc hoi thoai tieng Viet, co the xen ke thuat ngu tieng Anh, ten rieng, so dien thoai, ngay gio, dia chi va so tien. Giu nguyen thuat ngu tieng Anh khi nghe ro.}
+  WHISPER_HOTWORDS: ${WHISPER_HOTWORDS:-SpeechToInformation, Speech to Information, so dien thoai, ngay mai, hom nay, dia chi, khach hang, cong ty, hop dong, thanh toan}
+  DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-vi}
+  WHISPER_VAD_FILTER: ${WHISPER_VAD_FILTER:-true}
+  WHISPER_VAD_THRESHOLD: ${WHISPER_VAD_THRESHOLD:-0.4}
+  WHISPER_VAD_MIN_SPEECH_MS: ${WHISPER_VAD_MIN_SPEECH_MS:-200}
+  WHISPER_VAD_MIN_SILENCE_MS: ${WHISPER_VAD_MIN_SILENCE_MS:-1500}
+  WHISPER_VAD_SPEECH_PAD_MS: ${WHISPER_VAD_SPEECH_PAD_MS:-800}
+  WHISPER_CONDITION_ON_PREVIOUS_TEXT: ${WHISPER_CONDITION_ON_PREVIOUS_TEXT:-false}
+  WHISPER_COMPRESSION_RATIO_THRESHOLD: ${WHISPER_COMPRESSION_RATIO_THRESHOLD:-2.4}
+  WHISPER_LOG_PROB_THRESHOLD: ${WHISPER_LOG_PROB_THRESHOLD:--1.0}
+  WHISPER_NO_SPEECH_THRESHOLD: ${WHISPER_NO_SPEECH_THRESHOLD:-0.5}
+  ASR_GUARD_ENABLED: ${ASR_GUARD_ENABLED:-true}
+  ASR_GUARD_MIN_AVG_LOGPROB: ${ASR_GUARD_MIN_AVG_LOGPROB:--1.25}
+  ASR_GUARD_MAX_NO_SPEECH_PROB: ${ASR_GUARD_MAX_NO_SPEECH_PROB:-0.75}
+  ASR_GUARD_MAX_COMPRESSION_RATIO: ${ASR_GUARD_MAX_COMPRESSION_RATIO:-2.6}
+  ASR_SEGMENT_MAX_SECONDS: ${ASR_SEGMENT_MAX_SECONDS:-18}
+  ASR_SEGMENT_MERGE_GAP_SECONDS: ${ASR_SEGMENT_MERGE_GAP_SECONDS:-0.7}
+  WHISPER_CPP_BIN: ${WHISPER_CPP_BIN:-tools/whisper.cpp/whisper-cli.exe}
+  WHISPER_CPP_MODEL: ${WHISPER_CPP_MODEL:-models/asr/whisper_cpp/ggml-small-q5_0.bin}
+  WHISPER_CPP_THREADS: ${WHISPER_CPP_THREADS:-6}
+  WHISPER_CPP_LANGUAGE: ${WHISPER_CPP_LANGUAGE:-vi}
+  WHISPER_CPP_TIMEOUT_SECONDS: ${WHISPER_CPP_TIMEOUT_SECONDS:-3600}
+  PHOWHISPER_CPP_MODEL: ${PHOWHISPER_CPP_MODEL:-models/asr/phowhisper_cpp/ggml-phowhisper-large-q5_0.bin}
+  PHOWHISPER_CPP_SHA256: ${PHOWHISPER_CPP_SHA256:-1ECFF4DB87EF84AD1356D2955D2ECEA03E6C240B46FE1CA87F07EA8390E3109C}
+  PHOWHISPER_CPP_SIZE_BYTES: ${PHOWHISPER_CPP_SIZE_BYTES:-1080732108}
+  HF_TOKEN: ${HF_TOKEN:-}
+  PYANNOTE_MODEL_ID: ${PYANNOTE_MODEL_ID:-pyannote/speaker-diarization-community-1}
+  PYANNOTE_FALLBACK_MODEL_ID: ${PYANNOTE_FALLBACK_MODEL_ID:-pyannote/speaker-diarization-3.1}
+  PYANNOTE_CACHE_DIR: /app/models/pyannote
+  PYANNOTE_AUTO_DOWNLOAD: ${PYANNOTE_AUTO_DOWNLOAD:-false}
+  ANALYSIS_INTELLIGENCE_V2_ENABLED: ${ANALYSIS_INTELLIGENCE_V2_ENABLED:-true}
+  ANALYSIS_INTELLIGENCE_LLM_ENABLED: ${ANALYSIS_INTELLIGENCE_LLM_ENABLED:-false}
+  ANALYSIS_CLIP_MAX_DURATION_SECONDS: ${ANALYSIS_CLIP_MAX_DURATION_SECONDS:-60}
+  ANALYSIS_LLM_PROVIDER: ${ANALYSIS_LLM_PROVIDER:-openrouter}
+  ANALYSIS_LLM_BASE_URL: ${ANALYSIS_LLM_BASE_URL:-https://openrouter.ai/api/v1}
+  ANALYSIS_LLM_MODEL: ${ANALYSIS_LLM_MODEL:-google/gemini-2.5-flash}
+  ANALYSIS_LLM_FALLBACK_MODEL: ${ANALYSIS_LLM_FALLBACK_MODEL:-openai/gpt-5-mini}
+  ANALYSIS_LLM_API_KEY: ${ANALYSIS_LLM_API_KEY:-}
+  ANALYSIS_LLM_HTTP_REFERER: ${ANALYSIS_LLM_HTTP_REFERER:-http://localhost:3000}
+  ANALYSIS_LLM_APP_TITLE: ${ANALYSIS_LLM_APP_TITLE:-SpeechToInformation}
+  ANALYSIS_LLM_TIMEOUT_SECONDS: ${ANALYSIS_LLM_TIMEOUT_SECONDS:-60}
+  ANALYSIS_LLM_MAX_INPUT_CHARS: ${ANALYSIS_LLM_MAX_INPUT_CHARS:-24000}
+  ANALYSIS_LLM_MAX_OUTPUT_TOKENS: ${ANALYSIS_LLM_MAX_OUTPUT_TOKENS:-2000}
+  ANALYSIS_LLM_DAILY_BUDGET_USD: ${ANALYSIS_LLM_DAILY_BUDGET_USD:-}
 
 services:
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
+    deploy: *gpu_reservation
+    restart: unless-stopped
     ports:
-      - "8000:8000"
-    volumes:
-      - .:/app
-      - ./models:/app/models
-      - ./uploads:/app/uploads
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes: *backend_volumes
     environment:
-      - BACKEND_HOST=0.0.0.0
-      - BACKEND_PORT=8000
-      - DEBUG=True
-      - DATABASE_URL=postgresql://user:password@db:5432/speech_to_information
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      <<: *backend_env
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=5)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
-      - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    environment:
-      - VITE_API_URL=http://localhost:8000
+      - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  model_sync:
+    profiles: ["setup"]
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    deploy: *gpu_reservation
+    command: >
+      sh -c "python3 scripts/precache_lite_models.py --model ${WHISPER_MODEL:-medium}
+      && python3 scripts/verify_models.py --profile lite_rtx2050"
+    volumes: *backend_volumes
+    environment:
+      <<: *backend_env
 
   db:
     image: postgres:15
-    ports:
-      - "5432:5432"
+    restart: unless-stopped
     environment:
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=speech_to_information
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-speech_to_info}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   celery_worker:
+    profiles: ["full", "dev"]
     build:
       context: .
       dockerfile: Dockerfile.backend
+    deploy: *gpu_reservation
+    restart: unless-stopped
     command: celery -A src.worker worker --loglevel=info
-    volumes:
-      - .:/app
-      - ./models:/app/models
-      - ./uploads:/app/uploads
+    volumes: *backend_volumes
     environment:
-      - DATABASE_URL=postgresql://user:password@db:5432/speech_to_information
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      <<: *backend_env
+      APP_EDITION: ${APP_EDITION:-full}
+      RUNTIME_PROFILE: ${RUNTIME_PROFILE:-full}
+      PROCESSING_RUNNER: ${PROCESSING_RUNNER:-celery}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      ASR_PROVIDER: ${ASR_PROVIDER:-cherry_whisper_v2}
+      ASR_PROFILE: ${ASR_PROFILE:-full}
+      ENABLE_DIARIZATION_DEFAULT: ${ENABLE_DIARIZATION_DEFAULT:-true}
+      WHISPER_MODEL: ${WHISPER_MODEL:-large-v3-turbo}
+      WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-float16}
+      WHISPER_BATCH_SIZE: ${WHISPER_BATCH_SIZE:-8}
+      WHISPER_BEAM_SIZE: ${WHISPER_BEAM_SIZE:-10}
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   celery_flower:
+    profiles: ["dev"]
     build:
       context: .
       dockerfile: Dockerfile.backend
-    command: celery -A src.worker flower --port=5555
+    restart: unless-stopped
+    command: celery -A src.worker flower --port=5555 --basic_auth=${FLOWER_USER:-}:${FLOWER_PASSWORD:-}
     ports:
-      - "5555:5555"
+      - "${FLOWER_PORT:-5555}:5555"
     environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
     depends_on:
-      - redis
-      - celery_worker
+      redis:
+        condition: service_healthy
+      celery_worker:
+        condition: service_started
 
 volumes:
   postgres_data:
-  redis_data: 
+  redis_data:

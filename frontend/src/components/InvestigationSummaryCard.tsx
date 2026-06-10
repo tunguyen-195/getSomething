@@ -13,6 +13,8 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import EventIcon from '@mui/icons-material/Event';
 import PlaceIcon from '@mui/icons-material/Place';
 import LabelIcon from '@mui/icons-material/Label';
+import HallucinationAnalysisView from './HallucinationAnalysisView';
+import { apiFetch } from '../api/client';
 
 // Kiểu dữ liệu cho props
 interface InvestigationSummaryCardProps {
@@ -57,7 +59,7 @@ const ANALYZE_ENDPOINT = API_BASE_URL + '/api/v1/summaries/analyze';
 
 // Helper gọi API với model fallback
 async function analyzeSummaryWithFallback(summary: string, taskId?: string) {
-  let res = await fetch(ANALYZE_ENDPOINT, {
+  let res = await apiFetch(ANALYZE_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ summary, task_id: taskId })
@@ -70,7 +72,7 @@ async function analyzeSummaryWithFallback(summary: string, taskId?: string) {
 const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ summary, contextAnalysis, taskId }) => {
   const [showSensitive, setShowSensitive] = useState(false);
   const [tab, setTab] = useState(0);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<string | false>(false);
   const [analysis, setAnalysis] = useState<any>(contextAnalysis || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,7 +94,7 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
 
   // Đảm bảo tab luôn hợp lệ
   useEffect(() => {
-    if (tab == null || isNaN(tab) || tab < 0 || tab > 5) setTab(0);
+    if (tab == null || isNaN(tab) || tab < 0 || tab > 6) setTab(0);
   }, [tab]);
 
   // Khi có lỗi backend hoặc context_analysis không hợp lệ, hiển thị lỗi rõ ràng và reset tab về 0
@@ -110,6 +112,7 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
       parsedAnalysis = { ...parsedAnalysis, ...inner };
     }
   }
+  const hallucinationAnalysis = parsedAnalysis?.hallucination_analysis || null;
   // Mapping lại các trường tổng quan từ parsedAnalysis
   const mappedOverview = {
     title: parsedAnalysis?.summary || parsedAnalysis?.context?.topic || parsedAnalysis?.context?.purpose || '',
@@ -141,9 +144,9 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
 
   // Nhạy cảm: lấy từ sensitive_info, đồng thời gom các entity có is_sensitive=true
   const sensitiveEntities = [
-    ...(Array.isArray(parsedAnalysis?.entities?.people) ? parsedAnalysis.entities.people.filter(e => e.is_sensitive) : []),
-    ...(Array.isArray(parsedAnalysis?.entities?.locations) ? parsedAnalysis.entities.locations.filter(e => e.is_sensitive) : []),
-    ...(Array.isArray(parsedAnalysis?.entities?.time) ? parsedAnalysis.entities.time.filter(e => e.is_sensitive) : []),
+    ...(Array.isArray(parsedAnalysis?.entities?.people) ? parsedAnalysis.entities.people.filter((e: any) => e.is_sensitive) : []),
+    ...(Array.isArray(parsedAnalysis?.entities?.locations) ? parsedAnalysis.entities.locations.filter((e: any) => e.is_sensitive) : []),
+    ...(Array.isArray(parsedAnalysis?.entities?.time) ? parsedAnalysis.entities.time.filter((e: any) => e.is_sensitive) : []),
     ...(parsedAnalysis?.entities?.contact?.phone?.is_sensitive ? [parsedAnalysis.entities.contact.phone] : []),
     ...(parsedAnalysis?.entities?.contact?.email?.is_sensitive ? [parsedAnalysis.entities.contact.email] : []),
     ...(parsedAnalysis?.entities?.contact?.id?.is_sensitive ? [parsedAnalysis.entities.contact.id] : []),
@@ -186,13 +189,14 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
   return (
     <Card sx={{ mb: 3, borderRadius: 2, boxShadow: '0 2px 8px #b388ff11', background: '#fff', border: '1px solid #e0e7ef' }}>
       <CardContent>
-        <Tabs value={typeof tab === 'number' && tab >= 0 && tab <= 5 ? tab : 0} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
+        <Tabs value={typeof tab === 'number' && tab >= 0 && tab <= 6 ? tab : 0} onChange={handleTabChange} sx={{ mb: 2 }}>
           <Tab label="Tổng quan" />
           <Tab label="Sơ đồ quan hệ" />
           <Tab label="Timeline" />
           <Tab label="Insight" />
           <Tab label="Nhạy cảm" />
           <Tab label="Cảm xúc" />
+          <Tab label="Ảo giác" />
         </Tabs>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -407,6 +411,11 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
             </Box>
           </Box>
         )}
+        {tab === 6 && (
+          <Box>
+            <HallucinationAnalysisView analysis={hallucinationAnalysis} />
+          </Box>
+        )}
         {/* Cảnh báo risk, notes, slang, hidden_relationships */}
         {(risk.length > 0 || notes || slang || hiddenRelationships.length > 0) && (
           <Box mb={2}>
@@ -492,4 +501,4 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
   );
 };
 
-export default InvestigationSummaryCard; 
+export default InvestigationSummaryCard;

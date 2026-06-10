@@ -25,6 +25,6 @@ exports.default = (0, vite_1.defineConfig)({
     },
     build: {
         outDir: 'dist',
-        sourcemap: true,
+        sourcemap: false,
     },
 });

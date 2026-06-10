@@ -1,5 +1,5 @@
 # Build stage
-FROM node:18-alpine as build
+FROM node:22-alpine AS build
 
 # Set working directory
 WORKDIR /app
@@ -8,7 +8,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci
 
 # Copy source code
 COPY . .
@@ -29,4 +29,4 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 3000
 
 # Start nginx
-CMD ["nginx", "-g", "daemon off;"] 
+CMD ["nginx", "-g", "daemon off;"]

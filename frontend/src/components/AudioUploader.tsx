@@ -29,42 +29,54 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AudioFileIcon from '@mui/icons-material/AudioFile';
 import CloseIcon from '@mui/icons-material/Close';
+import { apiFetch } from '../api/client';
 
 interface AudioUploaderProps {
-  onNewTask: (task: any) => void;
+  onNewTask?: (task: any) => void;
+  caseId?: string; // If provided, will use this case ID and hide case selector
+  onUploadComplete?: () => void; // Callback when upload completes successfully
 }
 
 // Helper lấy API base URL
 const API_BASE_URL = typeof window !== 'undefined' && (window as any).API_BASE_URL ? (window as any).API_BASE_URL : '';
 
-const AudioUploader = ({ onNewTask }: AudioUploaderProps) => {
+const AudioUploader = ({ onNewTask, caseId, onUploadComplete }: AudioUploaderProps) => {
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const [cases, setCases] = useState<any[]>([]);
-  const [selectedCase, setSelectedCase] = useState<string>('');
+  const [selectedCase, setSelectedCase] = useState<string>(caseId || ''); // Use prop if provided
   const [openDialog, setOpenDialog] = useState(false);
   const [newCaseName, setNewCaseName] = useState('');
   const [newCaseDesc, setNewCaseDesc] = useState('');
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [diarizationMethod, setDiarizationMethod] = useState<string>("whisperx");
+  const [transcriptionMode, setTranscriptionMode] = useState<string>("fast");  // "fast" or "full"
+
+  // Update selectedCase when caseId prop changes
+  useEffect(() => {
+    if (caseId) {
+      setSelectedCase(caseId);
+    }
+  }, [caseId]);
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/api/v1/cases/`).then(res => res.json()).then(setCases).catch(e => console.error('Error fetching cases:', e));
+    apiFetch(`${API_BASE_URL}/api/v1/cases/`).then(res => res.json()).then(setCases).catch(e => console.error('Error fetching cases:', e));
   }, []);
 
   const handleCreateCase = async () => {
     if (!newCaseName) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/cases/`, {
+      const res = await apiFetch(`${API_BASE_URL}/api/v1/cases/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: newCaseName, description: newCaseDesc })
       });
       const data = await res.json();
-      fetch(`${API_BASE_URL}/api/v1/cases/`).then(res => res.json()).then(setCases);
+      apiFetch(`${API_BASE_URL}/api/v1/cases/`).then(res => res.json()).then(setCases);
       setSelectedCase(data.id);
       setOpenDialog(false);
       setNewCaseName('');
@@ -133,48 +145,46 @@ const AudioUploader = ({ onNewTask }: AudioUploaderProps) => {
         formData.append('file', file);
         formData.append('options', JSON.stringify({
           language: 'vi',
-          model_type: 'whisper'
+          model_type: 'whisper',
+          fast_mode: transcriptionMode === 'fast',
+          enable_diarization: diarizationMethod !== 'none'
         }));
         formData.append('case_id', selectedCase);
         formData.append('model_name', 'gemma2:9b');
-
+        formData.append('diarization_method', diarizationMethod);
         const totalSize = files.reduce((sum, f) => sum + f.size, 0);
         let uploadedSize = 0;
-
         await new Promise(resolve => setTimeout(resolve, 500));
         uploadedSize += file.size;
         setUploadProgress(Math.round((uploadedSize / totalSize) * 100));
-
-        const response = await fetch(`${API_BASE_URL}/api/v1/audio/upload`, {
+        const response = await apiFetch(`${API_BASE_URL}/api/v1/audio/upload`, {
           method: 'POST',
           body: formData,
         });
-
         if (!response.ok) {
           throw new Error('Xử lý thất bại cho file: ' + file.name);
         }
         const data = await response.json();
-        // Gọi xử lý file sau khi upload thành công
-        const processRes = await fetch(`${API_BASE_URL}/api/v1/audio/process-task/${data.task_id}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model_name: 'gemma2:9b' })
-        });
-        if (!processRes.ok) {
-          throw new Error('Xử lý file thất bại sau khi upload: ' + file.name);
+        // V2 API: Only upload, user manually triggers transcribe/summarize from UI
+        // No automatic processing - modular workflow
+        if (onNewTask) {
+          onNewTask({
+            id: data.task_id,
+            status: 'uploaded',  // Changed from 'completed' to 'uploaded'
+            filename: file.name,
+            case_id: selectedCase,
+          });
         }
-        const processData = await processRes.json();
-        onNewTask({
-          id: data.task_id,
-          status: 'completed',
-          filename: file.name,
-          case_id: selectedCase,
-        });
         completed++;
       }
       setFiles([]);
       if (inputRef.current) inputRef.current.value = '';
       setSnackbarOpen(true);
+
+      // Call onUploadComplete callback if provided
+      if (onUploadComplete) {
+        onUploadComplete();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Xử lý thất bại');
     } finally {
@@ -208,39 +218,79 @@ const AudioUploader = ({ onNewTask }: AudioUploaderProps) => {
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
         <Box display="flex" alignItems="center" mb={3} gap={2}>
-          <FormControl sx={{ minWidth: 300 }} disabled={uploading}>
-            <InputLabel id="case-select-label">Chọn vụ việc (Case)</InputLabel>
-            <Select
-              labelId="case-select-label"
-              value={selectedCase}
-              label="Chọn vụ việc (Case)"
-              onChange={e => setSelectedCase(e.target.value)}
-              error={!selectedCase && files.length > 0}
-            >
-              {!cases.length && (
-                <MenuItem value="" disabled>
-                  <em>Bạn cần tạo vụ việc trước</em>
-                </MenuItem>
+          {/* Hide case selector if caseId is provided via props */}
+          {!caseId && (
+            <FormControl sx={{ minWidth: 300 }} disabled={uploading}>
+              <InputLabel id="case-select-label">Chọn vụ việc (Case)</InputLabel>
+              <Select
+                labelId="case-select-label"
+                value={selectedCase}
+                label="Chọn vụ việc (Case)"
+                onChange={e => setSelectedCase(e.target.value)}
+                error={!selectedCase && files.length > 0}
+              >
+                {!cases.length && (
+                  <MenuItem value="" disabled>
+                    <em>Bạn cần tạo vụ việc trước</em>
+                  </MenuItem>
+                )}
+                {cases.map((c: any) => (
+                  <MenuItem key={c.id} value={c.id}>
+                    <Box>
+                      <Typography fontWeight={600}>{c.title}</Typography>
+                      {c.description && <Typography variant="caption" color="text.secondary">{c.description}</Typography>}
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+              {!selectedCase && files.length > 0 && (
+                <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1 }}>
+                  Vui lòng chọn vụ việc
+                </Typography>
               )}
-              {cases.map((c: any) => (
-                <MenuItem key={c.id} value={c.id}>
-                  <Box>
-                    <Typography fontWeight={600}>{c.title}</Typography>
-                    {c.description && <Typography variant="caption" color="text.secondary">{c.description}</Typography>}
-                  </Box>
-                </MenuItem>
-              ))}
+            </FormControl>
+          )}
+          <FormControl sx={{ minWidth: 220 }} disabled={uploading}>
+            <InputLabel id="diarization-method-label">Tách người nói</InputLabel>
+            <Select
+              labelId="diarization-method-label"
+              value={diarizationMethod}
+              label="Tách người nói"
+              onChange={e => setDiarizationMethod(e.target.value)}
+            >
+              <MenuItem value="none">Không tách</MenuItem>
+              <MenuItem value="whisperx">WhisperX (Pyannote)</MenuItem>
+              <MenuItem value="nemo">NeMo</MenuItem>
             </Select>
-            {!selectedCase && files.length > 0 && (
-              <Typography variant="caption" color="error" sx={{ mt: 0.5, ml: 1 }}>
-                Vui lòng chọn vụ việc
-              </Typography>
-            )}
           </FormControl>
-
-          <Button variant="outlined" onClick={() => setOpenDialog(true)} disabled={uploading} sx={{ px: 3, py: 1.5, fontWeight: 600 }}>
-            Tạo vụ việc mới
-          </Button>
+          <FormControl sx={{ minWidth: 200 }} disabled={uploading}>
+            <InputLabel id="transcription-mode-label">Chế độ xử lý</InputLabel>
+            <Select
+              labelId="transcription-mode-label"
+              value={transcriptionMode}
+              label="Chế độ xử lý"
+              onChange={e => setTranscriptionMode(e.target.value)}
+            >
+              <MenuItem value="fast">
+                <Box>
+                  <Typography fontWeight={600}>⚡ Fast Mode</Typography>
+                  <Typography variant="caption" color="text.secondary">Nhanh (31x real-time)</Typography>
+                </Box>
+              </MenuItem>
+              <MenuItem value="full">
+                <Box>
+                  <Typography fontWeight={600}>🧠 Full Mode</Typography>
+                  <Typography variant="caption" color="text.secondary">Đầy đủ (phân tích + tóm tắt)</Typography>
+                </Box>
+              </MenuItem>
+            </Select>
+          </FormControl>
+          {/* Hide create case button if caseId is provided via props */}
+          {!caseId && (
+            <Button variant="outlined" onClick={() => setOpenDialog(true)} disabled={uploading} sx={{ px: 3, py: 1.5, fontWeight: 600 }}>
+              Tạo vụ việc mới
+            </Button>
+          )}
         </Box>
 
         <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
@@ -395,4 +445,4 @@ const AudioUploader = ({ onNewTask }: AudioUploaderProps) => {
   );
 };
 
-export default AudioUploader; 
+export default AudioUploader;

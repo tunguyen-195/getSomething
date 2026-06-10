@@ -1,0 +1,882 @@
+import logging
+import sys
+from types import SimpleNamespace
+
+import pytest
+from fastapi import Response
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from src.core.config import settings
+from src.database.models.models import AudioFile, Language, RuntimeJobLease, Task
+from src.services import lite_runtime
+from src.services.lite_runtime import lite_runner_enabled
+from src.services.task_service import update_task
+from src.services.transcription.asr_providers import resolve_asr_runtime, transcribe_with_provider
+
+
+def _lite_test_session():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Task.__table__.create(engine, checkfirst=True)
+    AudioFile.__table__.create(engine, checkfirst=True)
+    RuntimeJobLease.__table__.create(engine, checkfirst=True)
+    return sessionmaker(bind=engine, expire_on_commit=False)
+
+
+def _wait_for(predicate, timeout: float = 5.0):
+    import time
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        value = predicate()
+        if value:
+            return value
+        time.sleep(0.02)
+    return predicate()
+
+
+def test_full_mode_keeps_configured_runner_and_asr_provider(monkeypatch):
+    monkeypatch.setattr(settings, "PROCESSING_RUNNER", "celery")
+    monkeypatch.setattr(settings, "ASR_PROVIDER", "cherry_whisper_v2")
+    monkeypatch.setattr(settings, "ASR_PROFILE", "full")
+    monkeypatch.setattr(settings, "WHISPER_MODEL", "large-v3-turbo")
+    monkeypatch.setattr(settings, "WHISPER_DEVICE", "cuda")
+    monkeypatch.setattr(settings, "WHISPER_COMPUTE_TYPE", "float16")
+
+    runtime = resolve_asr_runtime(None)
+
+    assert lite_runner_enabled() is False
+    assert runtime["profile"] == "full"
+    assert runtime["provider"] == "cherry_whisper_v2"
+    assert runtime["model"] == "large-v3-turbo"
+    assert runtime["compute_type"] == "float16"
+
+
+def test_rtx2050_safe_profile_uses_int8_batch_safe_provider(monkeypatch):
+    monkeypatch.setattr(settings, "ASR_PROVIDER", "cherry_whisper_v2")
+    monkeypatch.setattr(settings, "ASR_PROFILE", "full")
+
+    runtime = resolve_asr_runtime("rtx2050_safe")
+
+    assert runtime["provider"] == "faster_whisper_ct2"
+    assert runtime["model"] == "small"
+    assert runtime["device"] == "cuda"
+    assert runtime["compute_type"] == "int8"
+    assert runtime["beam_size"] == 5
+    assert runtime["enable_diarization"] is False
+
+
+def test_faster_whisper_runtime_passes_verified_local_path_to_model(monkeypatch, tmp_path):
+    from src.services.transcription import asr_providers
+
+    calls = []
+    transcribe_calls = []
+    verified_path = tmp_path / "models" / "whisper" / "models--Systran--faster-whisper-small" / "snapshots" / "rev"
+    verified_path.mkdir(parents=True)
+
+    class FakeSegment:
+        start = 0.0
+        end = 1.0
+        text = "xin chao"
+        avg_logprob = -0.1
+        words = []
+
+    class FakeInfo:
+        duration = 1.0
+        language = "vi"
+
+    class FakeWhisperModel:
+        def __init__(self, *args, **kwargs):
+            calls.append((args, kwargs))
+
+        def transcribe(self, *args, **kwargs):
+            transcribe_calls.append((args, kwargs))
+            return iter([FakeSegment()]), FakeInfo()
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=FakeWhisperModel))
+    monkeypatch.setattr(asr_providers, "require_faster_whisper_runtime_ready", lambda *args, **kwargs: verified_path)
+    monkeypatch.setattr(settings, "WHISPER_MODEL", "configured-different-model")
+    monkeypatch.setattr(settings, "WHISPER_DEVICE", "cpu")
+    monkeypatch.setattr(settings, "WHISPER_COMPUTE_TYPE", "int8")
+
+    result = asr_providers._faster_whisper_result(
+        "audio.wav",
+        language="vi",
+        runtime={
+            "profile": "test",
+            "model": "small",
+            "device": "cpu",
+            "compute_type": "int8",
+            "beam_size": 1,
+        },
+    )
+
+    assert result["text"] == "xin chao"
+    assert calls
+    args, kwargs = calls[0]
+    assert args == (str(verified_path),)
+    assert args[0] != "small"
+    assert "download_root" not in kwargs
+    _, transcribe_kwargs = transcribe_calls[0]
+    assert transcribe_kwargs["task"] == "transcribe"
+    assert transcribe_kwargs["language"] == "vi"
+    assert "tiếng Việt" in transcribe_kwargs["initial_prompt"]
+    assert "SpeechToInformation" in transcribe_kwargs["hotwords"]
+    assert transcribe_kwargs["vad_filter"] == settings.WHISPER_VAD_FILTER
+
+
+def test_faster_whisper_explicit_auto_language_still_uses_detection(monkeypatch, tmp_path):
+    from src.services.transcription import asr_providers
+
+    transcribe_calls = []
+    verified_path = tmp_path / "models" / "whisper" / "models--Systran--faster-whisper-medium" / "snapshots" / "rev"
+    verified_path.mkdir(parents=True)
+
+    class FakeSegment:
+        start = 0.0
+        end = 1.0
+        text = "xin chao hello"
+        avg_logprob = -0.1
+        words = []
+
+    class FakeInfo:
+        duration = 1.0
+        language = "vi"
+
+    class FakeWhisperModel:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def transcribe(self, *args, **kwargs):
+            transcribe_calls.append((args, kwargs))
+            return iter([FakeSegment()]), FakeInfo()
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=FakeWhisperModel))
+    monkeypatch.setattr(asr_providers, "require_faster_whisper_runtime_ready", lambda *args, **kwargs: verified_path)
+    monkeypatch.setattr(settings, "WHISPER_MODEL", "small")
+    monkeypatch.setattr(settings, "WHISPER_DEVICE", "cpu")
+    monkeypatch.setattr(settings, "WHISPER_COMPUTE_TYPE", "int8")
+
+    result = asr_providers._faster_whisper_result(
+        "audio.wav",
+        language="auto",
+        runtime={
+            "profile": "balanced",
+            "model": "medium",
+            "device": "cpu",
+            "compute_type": "int8",
+            "beam_size": 1,
+        },
+    )
+
+    assert result["text"] == "xin chao hello"
+    _, transcribe_kwargs = transcribe_calls[0]
+    assert transcribe_kwargs["language"] is None
+    assert transcribe_kwargs["multilingual"] is True
+    assert result["model_info"]["requested_language"] == "auto"
+
+
+def test_transcribe_defaults_are_vietnamese_language():
+    import inspect
+
+    from src.api.endpoints.audio_v2 import transcribe_v2
+    from src.services.transcription.transcribe_service_v2 import transcribe_audio_v2
+
+    api_default = inspect.signature(transcribe_v2).parameters["language"].default
+    assert getattr(api_default, "default", None) == "vi"
+    assert inspect.signature(transcribe_audio_v2).parameters["language"].default == "vi"
+
+
+def test_lite_gpu_smoke_maps_auto_language_to_detection():
+    from scripts.check_lite_runtime import transcribe_language_arg
+
+    assert transcribe_language_arg("auto") is None
+    assert transcribe_language_arg("mixed") is None
+    assert transcribe_language_arg("vi") == "vi"
+
+
+def test_unmanifested_faster_whisper_model_fails_before_model_load(monkeypatch):
+    from src.services.model_artifacts import ModelArtifactError
+    from src.services.transcription import asr_providers
+
+    calls = []
+
+    class FakeWhisperModel:
+        def __init__(self, *args, **kwargs):
+            calls.append((args, kwargs))
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=FakeWhisperModel))
+    monkeypatch.setattr(settings, "WHISPER_MODEL", "small")
+    monkeypatch.setattr(settings, "WHISPER_DEVICE", "cpu")
+    monkeypatch.setattr(settings, "WHISPER_COMPUTE_TYPE", "int8")
+
+    with pytest.raises(ModelArtifactError) as exc:
+        asr_providers._faster_whisper_result(
+            "audio.wav",
+            language="vi",
+            runtime={
+                "profile": "test",
+                "model": "large-v3-turbo",
+                "device": "cpu",
+                "compute_type": "int8",
+                "beam_size": 1,
+            },
+        )
+
+    assert exc.value.reason_code == "model_artifact_not_manifested"
+    assert calls == []
+
+
+def test_model_artifact_error_is_not_retried_as_oom(monkeypatch):
+    from src.services.model_artifacts import ModelArtifactError
+    from src.services.transcription import asr_providers
+
+    def fail_artifact(*args, **kwargs):
+        raise ModelArtifactError("model_cache_missing_or_unverified", "setup")
+
+    monkeypatch.setattr(asr_providers, "_faster_whisper_result", fail_artifact)
+
+    with pytest.raises(ModelArtifactError) as exc:
+        asr_providers.transcribe_faster_whisper_ct2(
+            "audio.wav",
+            language="vi",
+            runtime={"profile": "test"},
+        )
+
+    assert exc.value.reason_code == "model_cache_missing_or_unverified"
+
+
+def test_provider_health_marks_unmanifested_faster_whisper_profiles_unavailable(monkeypatch):
+    from pathlib import Path
+
+    from src.services.model_artifacts import ArtifactVerification
+    from src.services.transcription import asr_providers
+
+    calls = []
+
+    def fake_health(model_name: str, **kwargs):
+        calls.append(model_name)
+        if model_name == "small":
+            return ArtifactVerification(True, "faster_whisper_small", Path("verified-small"))
+        if model_name == "medium":
+            return ArtifactVerification(True, "faster_whisper_medium", Path("verified-medium"))
+        return ArtifactVerification(False, model_name, errors=["model_artifact_not_manifested"])
+
+    monkeypatch.setattr(asr_providers, "verify_faster_whisper_runtime_health", fake_health)
+    monkeypatch.setattr(asr_providers, "_artifact_result_reason", lambda artifact_id: "artifact_integrity_metadata_missing")
+
+    health = asr_providers.provider_health()
+    profiles = {profile["value"]: profile for profile in health["profiles"]}
+
+    assert calls.count("small") == 1
+    assert profiles["rtx2050_safe"]["available"] is True
+    assert profiles["rtx2050_fast"]["available"] is True
+    assert profiles["cpu_safe"]["available"] is True
+    assert profiles["balanced"]["available"] is True
+    assert profiles["quality_local"]["available"] is False
+    assert profiles["quality_local"]["availability_reason"] == "model_artifact_not_manifested"
+    assert profiles["offline_cpp"]["available"] is False
+    assert profiles["offline_cpp"]["availability_reason"] == "artifact_integrity_metadata_missing"
+    assert health["default_language"] == settings.DEFAULT_LANGUAGE
+    assert any(option["value"] == "auto" for option in health["language_options"])
+
+
+def test_asr_guard_drops_thai_script_hallucination_but_keeps_confident_short_vietnamese():
+    from src.services.hallucination_filter import guard_transcript_segments
+
+    segments = [
+        {
+            "start": 0.0,
+            "end": 1.0,
+            "text": "ขอบคุณครับ",
+            "confidence": -1.8,
+            "avg_logprob": -1.8,
+            "no_speech_prob": 0.91,
+            "compression_ratio": 1.0,
+        },
+        {
+            "start": 1.2,
+            "end": 2.0,
+            "text": "xin chào",
+            "confidence": -0.1,
+            "avg_logprob": -0.1,
+            "no_speech_prob": 0.02,
+            "compression_ratio": 1.0,
+        },
+    ]
+
+    filtered, report = guard_transcript_segments(segments, language="vi")
+
+    assert [segment["text"] for segment in filtered] == ["xin chào"]
+    assert report["removed_segments"] == 1
+    assert report["removed"][0]["reasons"]
+    assert report["removed"][0]["text"] == "ขอบคุณครับ"
+    assert report["removed"][0]["filtered_text"] == ""
+
+
+def test_asr_guard_drops_contextual_phrase_only_when_low_quality():
+    from src.services.hallucination_filter import guard_transcript_segments
+
+    segments = [
+        {
+            "start": 0.0,
+            "end": 0.5,
+            "text": "xin chào",
+            "avg_logprob": -1.7,
+            "no_speech_prob": 0.82,
+            "compression_ratio": 1.0,
+        },
+        {
+            "start": 1.0,
+            "end": 2.0,
+            "text": "xin chào",
+            "avg_logprob": -0.2,
+            "no_speech_prob": 0.01,
+            "compression_ratio": 1.0,
+        },
+    ]
+
+    filtered, report = guard_transcript_segments(segments, language="vi")
+
+    assert [segment["text"] for segment in filtered] == ["xin chào"]
+    assert report["removed_segments"] == 1
+
+
+def test_asr_guard_reports_partial_filter_changes():
+    from src.services.hallucination_filter import guard_transcript_segments
+
+    segments = [
+        {
+            "start": 0.0,
+            "end": 1.5,
+            "text": "cảm ơn đã xem chương trình",
+            "avg_logprob": -0.1,
+            "no_speech_prob": 0.01,
+            "compression_ratio": 1.0,
+        }
+    ]
+
+    filtered, report = guard_transcript_segments(segments, language="vi")
+
+    assert [segment["text"] for segment in filtered] == ["chương trình"]
+    assert report["removed_segments"] == 0
+    assert report["changed_segments"] == 1
+    assert report["changed"][0]["text"] == "cảm ơn đã xem chương trình"
+    assert report["changed"][0]["filtered_text"] == "chương trình"
+
+
+def test_phowhisper_cpp_candidate_is_blocked_until_validated(monkeypatch):
+    monkeypatch.setattr("src.services.transcription.asr_providers.provider_health", lambda: {
+        "phowhisper_cpp_candidate_valid": False,
+    })
+
+    with pytest.raises(RuntimeError, match="PhoWhisper.cpp candidate is not valid"):
+        transcribe_with_provider(
+            audio_path="missing.wav",
+            language="vi",
+            profile="phowhisper_cpp_candidate",
+            enable_diarization=False,
+            diarization_method="none",
+            task_id="test-task",
+        )
+
+
+def test_lite_db_lease_rejects_second_active_job(monkeypatch):
+    Session = _lite_test_session()
+    db = Session()
+    monkeypatch.setattr(lite_runtime, "SessionLocal", Session)
+    monkeypatch.setattr(settings, "LITE_JOB_LEASE_TTL_SECONDS", 900)
+
+    db.add(Task(id="task-a", filename="a.wav", status="uploaded", result={}))
+    db.add(Task(id="task-b", filename="b.wav", status="uploaded", result={}))
+    db.commit()
+
+    lite_runtime.acquire_lease(db, task_id="task-a", operation="transcribe")
+    db.commit()
+
+    with pytest.raises(Exception) as exc:
+        lite_runtime.acquire_lease(db, task_id="task-b", operation="summarize")
+    assert getattr(exc.value, "status_code", None) == 409
+
+    db.close()
+
+
+def test_lite_background_job_sets_initial_status_before_thread_and_preserves_terminal_status(monkeypatch):
+    Session = _lite_test_session()
+    monkeypatch.setattr(lite_runtime, "SessionLocal", Session)
+    monkeypatch.setattr(settings, "LITE_JOB_HEARTBEAT_SECONDS", 0.05)
+    monkeypatch.setattr(settings, "LITE_JOB_LEASE_TTL_SECONDS", 900)
+
+    request_db = Session()
+    request_db.add(Task(id="task-race", filename="race.wav", status="uploaded", result={}))
+    request_db.commit()
+
+    def quick_success(task_id: str, *, db):
+        update_task(task_id, {"status": "transcribed", "result": {"transcription": "ok"}}, db=db)
+        db.commit()
+
+    lite_runtime.start_lite_job(
+        db=request_db,
+        task_id="task-race",
+        operation="transcribe",
+        target=quick_success,
+        args=("task-race",),
+        queued_status="transcribing",
+    )
+
+    def terminal_status():
+        db = Session()
+        try:
+            task = db.query(Task).filter(Task.id == "task-race").first()
+            return task.status == "transcribed"
+        finally:
+            db.close()
+
+    assert _wait_for(terminal_status)
+    request_db.close()
+
+
+def test_lite_background_job_persists_failed_status(monkeypatch, caplog):
+    Session = _lite_test_session()
+    monkeypatch.setattr(lite_runtime, "SessionLocal", Session)
+    monkeypatch.setattr(settings, "LITE_JOB_HEARTBEAT_SECONDS", 0.05)
+    monkeypatch.setattr(settings, "LITE_JOB_LEASE_TTL_SECONDS", 900)
+
+    request_db = Session()
+    request_db.add(Task(id="task-fail", filename="fail.wav", status="uploaded", result={}))
+    request_db.commit()
+    sensitive = "SECRET_TRANSCRIPT graph={'segments':[{'text':'private evidence'}]}"
+    caplog.set_level(logging.ERROR)
+
+    def fail_fast(task_id: str, *, db):
+        raise RuntimeError(sensitive)
+
+    lite_runtime.start_lite_job(
+        db=request_db,
+        task_id="task-fail",
+        operation="transcribe",
+        target=fail_fast,
+        args=("task-fail",),
+        queued_status="transcribing",
+    )
+
+    def failed_status():
+        db = Session()
+        try:
+            task = db.query(Task).filter(Task.id == "task-fail").first()
+            return task.status == "failed" and task.error == "background_job_failed"
+        finally:
+            db.close()
+
+    assert _wait_for(failed_status)
+    assert sensitive not in caplog.text
+    assert "private evidence" not in caplog.text
+    assert "error_class=RuntimeError" in caplog.text
+    request_db.close()
+
+
+def test_lite_background_job_rolls_back_broken_session_before_marking_failed(monkeypatch):
+    Session = _lite_test_session()
+    monkeypatch.setattr(lite_runtime, "SessionLocal", Session)
+    monkeypatch.setattr(settings, "LITE_JOB_HEARTBEAT_SECONDS", 0.05)
+    monkeypatch.setattr(settings, "LITE_JOB_LEASE_TTL_SECONDS", 900)
+
+    request_db = Session()
+    request_db.add(Task(id="task-sql-fail", filename="fail.wav", status="uploaded", result={}))
+    request_db.commit()
+
+    def fail_with_db_error(task_id: str, *, db):
+        db.add(Task(id=task_id, filename="duplicate.wav", status="uploaded", result={}))
+        db.flush()
+
+    lite_runtime.start_lite_job(
+        db=request_db,
+        task_id="task-sql-fail",
+        operation="transcribe",
+        target=fail_with_db_error,
+        args=("task-sql-fail",),
+        queued_status="transcribing",
+    )
+
+    def failed_status():
+        db = Session()
+        try:
+            task = db.query(Task).filter(Task.id == "task-sql-fail").first()
+            return bool(task and task.status == "failed" and task.error)
+        finally:
+            db.close()
+
+    assert _wait_for(failed_status)
+    request_db.close()
+
+
+def test_v2_status_polling_does_not_return_transcript_or_full_result(monkeypatch):
+    import asyncio
+    from src.api.endpoints import audio_v2
+    from src.services import task_service
+
+    monkeypatch.setattr(
+        task_service,
+        "get_task",
+        lambda task_id: {
+            "status": "transcribed",
+            "result": {
+                "transcription": "sensitive transcript",
+                "formatted_transcript": "sensitive formatted transcript",
+                "segments": [{"text": "sensitive segment"}],
+                "summary": "summary",
+                "visualization_data": {"nodes": []},
+                "duration": 12.3,
+            },
+            "filename": "audio.wav",
+        },
+    )
+    monkeypatch.setattr(audio_v2, "assert_task_access", lambda *args, **kwargs: True)
+
+    response = asyncio.run(audio_v2.get_status_v2("task-privacy", db=None, current_user=object()))
+
+    assert response["status"] == "transcribed"
+    assert response["transcript_available"] is True
+    assert "transcript" not in response
+    assert "formatted_transcript" not in response
+    assert "segments" not in response
+    assert "visualization_data" not in response
+    assert "result" not in response
+
+
+def test_v2_transcription_detail_is_transcript_only_and_no_store(monkeypatch):
+    import asyncio
+    from src.api.endpoints import audio_v2
+    from src.services import task_service
+
+    monkeypatch.setattr(
+        task_service,
+        "get_task",
+        lambda task_id: {
+            "status": "transcribed",
+            "result": {
+                "transcription": "selected transcript",
+                "raw_transcription": "raw transcript",
+                "review_transcription": "review transcript",
+                "segments": [{"text": "selected transcript"}],
+                "summary": "must not leak",
+                "visualization_data": {"nodes": ["must not leak"]},
+            },
+            "filename": "audio.wav",
+        },
+    )
+    monkeypatch.setattr(audio_v2, "assert_task_access", lambda *args, **kwargs: True)
+    response_obj = Response()
+
+    response = asyncio.run(
+        audio_v2.get_transcription_detail_v2(
+            "task-detail",
+            response=response_obj,
+            db=None,
+            current_user=object(),
+        )
+    )
+
+    assert response["transcription"] == "selected transcript"
+    assert response["raw_transcription"] == "raw transcript"
+    assert response_obj.headers["Cache-Control"] == "no-store"
+    assert response_obj.headers["Pragma"] == "no-cache"
+    assert "summary" not in response
+    assert "visualization_data" not in response
+
+
+def test_v2_summary_detail_is_summary_only_and_no_store(monkeypatch):
+    import asyncio
+    from src.api.endpoints import audio_v2
+    from src.services import task_service
+
+    monkeypatch.setattr(
+        task_service,
+        "get_task",
+        lambda task_id: {
+            "status": "summarized",
+            "result": {
+                "transcription": "must not leak",
+                "segments": [{"text": "must not leak"}],
+                "summary": "safe summary detail",
+                "summary_model": "test-model",
+                "visualization_data": {"nodes": ["must not leak"]},
+            },
+            "summary": "fallback summary",
+            "filename": "audio.wav",
+        },
+    )
+    monkeypatch.setattr(audio_v2, "assert_task_access", lambda *args, **kwargs: True)
+    response_obj = Response()
+
+    response = asyncio.run(
+        audio_v2.get_summary_detail_v2(
+            "task-summary",
+            response=response_obj,
+            db=None,
+            current_user=object(),
+        )
+    )
+
+    assert response["summary"] == "safe summary detail"
+    assert response["summary_model"] == "test-model"
+    assert response_obj.headers["Cache-Control"] == "no-store"
+    assert response_obj.headers["Pragma"] == "no-cache"
+    assert "transcription" not in response
+    assert "segments" not in response
+    assert "visualization_data" not in response
+
+
+def test_v2_analysis_detail_is_graph_only_and_no_store(monkeypatch):
+    import asyncio
+    from src.api.endpoints import audio_v2
+    from src.services import task_service
+
+    graph = {
+        "schema_version": "analysis_intelligence.v2",
+        "analysis_mode": "general",
+        "nodes": [],
+        "warnings": ["deterministic"],
+    }
+    monkeypatch.setattr(
+        task_service,
+        "get_task",
+        lambda task_id: {
+            "status": "visualized",
+            "result": {
+                "transcription": "must not leak",
+                "segments": [{"text": "must not leak"}],
+                "summary": "must not leak",
+                "has_visualization": True,
+                "visualization_data": graph,
+            },
+            "filename": "audio.wav",
+        },
+    )
+    monkeypatch.setattr(audio_v2, "assert_task_access", lambda *args, **kwargs: True)
+    response_obj = Response()
+
+    response = asyncio.run(
+        audio_v2.get_analysis_detail_v2(
+            "task-analysis",
+            response=response_obj,
+            db=None,
+            current_user=object(),
+        )
+    )
+
+    assert response["visualization_data"] == graph
+    assert response["schema_version"] == "analysis_intelligence.v2"
+    assert response_obj.headers["Cache-Control"] == "no-store"
+    assert response_obj.headers["Pragma"] == "no-cache"
+    assert "transcription" not in response
+    assert "segments" not in response
+    assert "summary" not in response
+
+
+def test_lite_audio_list_returns_metadata_not_transcript_payload(monkeypatch):
+    from src.api.endpoints import audio
+
+    Session = _lite_test_session()
+    db = Session()
+    monkeypatch.setattr(settings, "APP_EDITION", "lite")
+    monkeypatch.setattr(settings, "PROCESSING_RUNNER", "single_job_db_lease")
+    monkeypatch.setattr(audio, "accessible_case_ids", lambda *args, **kwargs: None)
+
+    db.add(Task(
+        id="task-list",
+        filename="list.wav",
+        status="transcribed",
+        result={
+            "transcription": "sensitive transcript",
+            "formatted_transcript": "sensitive formatted",
+            "segments": [{"text": "sensitive segment"}],
+            "summary": "summary",
+            "visualization_data": {"nodes": ["sensitive"]},
+            "context_analysis": {"topic": "sensitive"},
+        },
+    ))
+    db.add(AudioFile(
+        id=10,
+        filename="list.wav",
+        file_path="list.wav",
+        status="transcribed",
+        task_id="task-list",
+        case_id=1,
+        language_id=1,
+        uploaded_by=1,
+        is_archived=False,
+    ))
+    db.commit()
+
+    response = audio.read_audio(case_id=None, db=db, current_user=object())
+
+    assert len(response) == 1
+    item = response[0]
+    assert item["transcript_available"] is True
+    assert item["segments_available"] is True
+    assert item["analysis_available"] is True
+    assert "transcript" not in item
+    assert "formatted_transcript" not in item
+    assert "segments" not in item
+    assert "visualization_data" not in item
+    assert "context_analysis" not in item
+    db.close()
+
+
+def test_audio_upload_resolves_language_by_code_not_fixed_id():
+    from src.services.audio_service import _resolve_language_id
+
+    class FakeQuery:
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def order_by(self, *_args, **_kwargs):
+            return self
+
+        def first(self):
+            return SimpleNamespace(id=7, language_code="vi")
+
+    class FakeDb:
+        def query(self, model):
+            assert model is Language
+            return FakeQuery()
+
+    assert _resolve_language_id(FakeDb()) == 7
+
+
+def test_llm_provider_error_does_not_include_response_body(monkeypatch):
+    import requests
+    from src.services.summarization.models.llm_manager import LLMManager
+
+    sensitive = "transcript 0978 711 253 should not appear"
+
+    class FakeResponse:
+        status_code = 500
+        reason = "Internal Server Error"
+        text = sensitive
+
+        def json(self):
+            return {}
+
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_PROVIDER", "openai")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_BASE_URL", "https://api.example.test/v1")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MODEL", "test-model")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MAX_INPUT_CHARS", 24000)
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MAX_OUTPUT_TOKENS", 2000)
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_TIMEOUT_SECONDS", 60)
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: type("ModelResponse", (), {
+        "status_code": 200,
+        "json": lambda self: {"data": [{"id": "test-model"}]},
+    })())
+    monkeypatch.setattr(requests, "post", lambda *args, **kwargs: FakeResponse())
+
+    monkeypatch.setattr(LLMManager, "_instance", None)
+    monkeypatch.setattr(LLMManager, "_initialized", False)
+    manager = LLMManager()
+    with pytest.raises(Exception) as exc:
+        manager.generate("hello", model="test-model")
+
+    message = str(exc.value)
+    assert "status=500" in message
+    assert sensitive not in message
+
+
+def test_openrouter_provider_uses_openai_compatible_headers(monkeypatch):
+    import requests
+    from src.services.summarization.models.llm_manager import LLMManager, llm_provider_configured
+
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        reason = "OK"
+
+        def json(self):
+            return {"choices": [{"message": {"content": "Tóm tắt ổn định"}}]}
+
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_PROVIDER", "openrouter")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_BASE_URL", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MODEL", "google/gemini-2.5-flash")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_HTTP_REFERER", "http://localhost:3000")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_APP_TITLE", "SpeechToInformation Lite")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MAX_INPUT_CHARS", 24000)
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MAX_OUTPUT_TOKENS", 2000)
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_TIMEOUT_SECONDS", 60)
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: type("ModelResponse", (), {
+        "status_code": 200,
+        "json": lambda self: {"data": [{"id": "google/gemini-2.5-flash"}]},
+    })())
+
+    def fake_post(*args, **kwargs):
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.setattr(LLMManager, "_instance", None)
+    monkeypatch.setattr(LLMManager, "_initialized", False)
+
+    assert llm_provider_configured() is True
+    manager = LLMManager()
+    assert manager.generate("Tóm tắt hội thoại", model=None) == "Tóm tắt ổn định"
+
+    headers = captured["headers"]
+    assert headers["Authorization"] == "Bearer test-key"
+    assert headers["HTTP-Referer"] == "http://localhost:3000"
+    assert headers["X-Title"] == "SpeechToInformation Lite"
+    assert captured["json"]["model"] == "google/gemini-2.5-flash"
+
+
+def test_openrouter_provider_retries_configured_fallback(monkeypatch):
+    import requests
+    from src.services.summarization.models.llm_manager import LLMManager
+
+    posted_models = []
+
+    class FailedResponse:
+        status_code = 503
+        reason = "Service Unavailable"
+
+        def json(self):
+            return {}
+
+    class OkResponse:
+        status_code = 200
+        reason = "OK"
+
+        def json(self):
+            return {"choices": [{"message": {"content": "Fallback summary"}}]}
+
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_PROVIDER", "openrouter")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_BASE_URL", "https://openrouter.ai/api/v1")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MODEL", "google/gemini-2.5-flash")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_FALLBACK_MODEL", "openai/gpt-5-mini")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_HTTP_REFERER", "http://localhost:3000")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_APP_TITLE", "SpeechToInformation Lite")
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MAX_INPUT_CHARS", 24000)
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_MAX_OUTPUT_TOKENS", 2000)
+    monkeypatch.setattr(settings, "ANALYSIS_LLM_TIMEOUT_SECONDS", 60)
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: type("ModelResponse", (), {
+        "status_code": 200,
+        "json": lambda self: {"data": [{"id": "google/gemini-2.5-flash"}, {"id": "openai/gpt-5-mini"}]},
+    })())
+
+    def fake_post(*args, **kwargs):
+        posted_models.append(kwargs["json"]["model"])
+        return FailedResponse() if len(posted_models) == 1 else OkResponse()
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.setattr(LLMManager, "_instance", None)
+    monkeypatch.setattr(LLMManager, "_initialized", False)
+
+    manager = LLMManager()
+    assert manager.generate("Tóm tắt hội thoại") == "Fallback summary"
+    assert posted_models == ["google/gemini-2.5-flash", "openai/gpt-5-mini"]

@@ -47,6 +47,7 @@ import { AlertColor } from '@mui/material/Alert';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
+import { apiFetch } from '../api/client';
 
 interface Task {
   id: string;
@@ -102,7 +103,7 @@ const TaskList = () => {
 
   const fetchCases = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/cases`);
+      const res = await apiFetch(`${API_BASE_URL}/api/v1/cases/`);
       const data = await res.json();
       setCases(data);
       if (data.length > 0) {
@@ -130,7 +131,7 @@ const TaskList = () => {
 
     try {
       console.log('[fetchTasks] Fetching:', url);
-      const res = await fetch(url);
+      const res = await apiFetch(url);
       console.log('[fetchTasks] Response:', res);
       const data = await res.json();
       console.log('[fetchTasks] Data:', data);
@@ -159,7 +160,6 @@ const TaskList = () => {
       fetchCases();
       fetchTasks(date);
     }
-    // eslint-disable-next-line
   }, [processSuccess]);
 
   // Polling tự động cập nhật trạng thái task
@@ -238,7 +238,7 @@ const TaskList = () => {
         : task
     ));
     try {
-      await fetch(`${API_BASE_URL}/api/v1/audio/tasks/${editingTaskId}/context`, {
+      await apiFetch(`${API_BASE_URL}/api/v1/audio/tasks/${editingTaskId}/context`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_context_prompt: userContextPrompt }),
@@ -256,7 +256,7 @@ const TaskList = () => {
     if (!editingTaskId) return;
     setResummarizing(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/audio/tasks/${editingTaskId}/resummarize`, { method: 'POST' });
+      const res = await apiFetch(`${API_BASE_URL}/api/v1/audio/tasks/${editingTaskId}/resummarize`, { method: 'POST' });
       const data = await res.json();
       setTasks(prevTasks => prevTasks.map(task =>
         task.id === editingTaskId
@@ -279,10 +279,10 @@ const TaskList = () => {
     try {
       const selectedTasksData = tasks.filter(t => selectedTasks.includes(t.id) && t.result && (t.result.transcription || t.result.text));
       const transcripts = selectedTasksData.map(t => t.result.transcription || t.result.text || '');
-      const res = await fetch(`${API_BASE_URL}/api/v1/audio/summarize-multi`, {
+      const res = await apiFetch(`${API_BASE_URL}/api/v1/audio/summarize-multi`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcripts, model_name: 'gemma2:9b' }),
+        body: JSON.stringify({ transcripts, model_name: 'configured_api' }),
       });
       const data = await res.json();
       setMultiSummary(data.summary || data.result || '');
@@ -301,10 +301,10 @@ const TaskList = () => {
     setCaseSummarizing(true);
     setCaseSummary(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/audio/summarize-case`, {
+      const res = await apiFetch(`${API_BASE_URL}/api/v1/audio/summarize-case`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ case_id: selectedCaseForSummary, model_name: 'gemma2:9b' }),
+        body: JSON.stringify({ case_id: selectedCaseForSummary, model_name: 'configured_api' }),
       });
       const data = await res.json();
       setCaseSummary(data.summary || data.result || '');
@@ -339,7 +339,7 @@ const TaskList = () => {
     if (!newCaseName) return;
     setCreatingCase(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/cases/`, {
+      const res = await apiFetch(`${API_BASE_URL}/api/v1/cases/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: newCaseName, description: newCaseDesc })
@@ -613,4 +613,4 @@ const TaskList = () => {
   );
 };
 
-export default TaskList; 
+export default TaskList;
