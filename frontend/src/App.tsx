@@ -707,6 +707,9 @@ function App() {
             if (statusData.num_speakers !== undefined) {
               updated.num_speakers = statusData.num_speakers;
             }
+            if (statusData.has_diarization !== undefined) {
+              updated.has_diarization = statusData.has_diarization;
+            }
             if (statusData.duration !== undefined) {
               updated.duration = statusData.duration;
             }

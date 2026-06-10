@@ -94,8 +94,9 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
   duration,
   runtimeProfile,
 }) => {
-  const [enableDiarization, setEnableDiarization] = useState(false);
-  const [diarizationMethod, setDiarizationMethod] = useState('none');
+  const preferredDiarizationMethod = runtimeProfile?.diarization?.preferred_method || 'pyannote';
+  const [enableDiarization, setEnableDiarization] = useState(Boolean(runtimeProfile?.diarization?.default_enabled));
+  const [diarizationMethod, setDiarizationMethod] = useState(preferredDiarizationMethod);
   const [fastMode, setFastMode] = useState(true);
   const [asrProfile, setAsrProfile] = useState(runtimeProfile?.asr?.asr_profile || DEFAULT_ASR_PROFILE);
   const [language, setLanguage] = useState(runtimeProfile?.asr?.default_language || DEFAULT_LANGUAGE);
@@ -129,19 +130,24 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
     } else {
       setAsrProfile(nextProfile);
     }
-    if (runtimeProfile?.edition === 'lite') {
-      setEnableDiarization(false);
-      setDiarizationMethod('none');
-    }
+    const defaultDiarizationEnabled = Boolean(runtimeProfile?.diarization?.default_enabled);
+    setEnableDiarization(defaultDiarizationEnabled);
+    setDiarizationMethod(defaultDiarizationEnabled ? preferredDiarizationMethod : 'none');
     setLanguage(runtimeProfile?.asr?.default_language || DEFAULT_LANGUAGE);
-  }, [open, runtimeProfile, asrProfiles]);
+  }, [open, runtimeProfile, asrProfiles, preferredDiarizationMethod]);
 
   const handleProfileChange = (value: string) => {
     setAsrProfile(value);
-    if (['rtx2050_safe', 'rtx2050_fast', 'balanced', 'offline_cpp', 'phowhisper_cpp_candidate'].includes(value)) {
-      setEnableDiarization(false);
-      setDiarizationMethod('none');
-    }
+  };
+
+  const handleDiarizationToggle = (checked: boolean) => {
+    setEnableDiarization(checked);
+    setDiarizationMethod(checked ? (diarizationMethod === 'none' ? preferredDiarizationMethod : diarizationMethod) : 'none');
+  };
+
+  const handleDiarizationMethodChange = (value: string) => {
+    setDiarizationMethod(value);
+    setEnableDiarization(value !== 'none');
   };
 
   const handleConfirm = () => {
@@ -327,7 +333,7 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
             control={
               <Checkbox
                 checked={enableDiarization}
-                onChange={(e) => setEnableDiarization(e.target.checked)}
+                onChange={(e) => handleDiarizationToggle(e.target.checked)}
                 sx={{
                   color: '#43a047',
                   '&.Mui-checked': { color: '#43a047' },
@@ -344,7 +350,7 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
               </Typography>
               <Select
                 value={diarizationMethod}
-                onChange={(e) => setDiarizationMethod(e.target.value)}
+                onChange={(e) => handleDiarizationMethodChange(e.target.value)}
                 size="small"
                 sx={{
                   borderRadius: '8px',
@@ -357,7 +363,7 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
                   <Box>
                     <Typography fontWeight={600}>Pyannote</Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Best quality, most accurate
+                      Best quality; falls back to SimpleVAD if the local model is missing
                     </Typography>
                   </Box>
                 </MenuItem>

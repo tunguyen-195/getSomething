@@ -28,6 +28,15 @@ async def runtime_profile(
         "max_active_jobs": settings.MAX_ACTIVE_JOBS,
         "active_job": active_lease,
         "asr": provider_health(),
+        "diarization": {
+            "default_enabled": settings.ENABLE_DIARIZATION_DEFAULT,
+            "preferred_method": "pyannote",
+            "fallback_method": "simple_vad",
+            "pyannote_model_id": settings.PYANNOTE_MODEL_ID,
+            "pyannote_fallback_model_id": settings.PYANNOTE_FALLBACK_MODEL_ID,
+            "pyannote_cache_dir": settings.PYANNOTE_CACHE_DIR,
+            "pyannote_auto_download": settings.PYANNOTE_AUTO_DOWNLOAD,
+        },
         "llm": {
             "provider": settings.ANALYSIS_LLM_PROVIDER,
             "model": settings.ANALYSIS_LLM_MODEL,

@@ -522,3 +522,20 @@ def test_verify_models_cli_supports_temp_root(tmp_path):
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "[OK] faster_whisper_small" in result.stdout
+
+
+def test_transcribe_dialog_diarization_toggle_sends_real_method():
+    source = (ROOT / "frontend" / "src" / "components" / "TranscribeDialog.tsx").read_text(encoding="utf-8")
+
+    assert "const preferredDiarizationMethod = runtimeProfile?.diarization?.preferred_method || 'pyannote';" in source
+    assert "onChange={(e) => handleDiarizationToggle(e.target.checked)}" in source
+    assert "onChange={(e) => handleDiarizationMethodChange(e.target.value)}" in source
+    assert "setDiarizationMethod(defaultDiarizationEnabled ? preferredDiarizationMethod : 'none');" in source
+    assert "['rtx2050_safe', 'rtx2050_fast', 'balanced'" not in source
+
+
+def test_file_polling_preserves_has_diarization_flag():
+    source = (ROOT / "frontend" / "src" / "App.tsx").read_text(encoding="utf-8")
+
+    assert "if (statusData.has_diarization !== undefined)" in source
+    assert "updated.has_diarization = statusData.has_diarization;" in source

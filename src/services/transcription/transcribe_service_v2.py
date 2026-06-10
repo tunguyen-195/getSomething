@@ -16,6 +16,138 @@ from src.core.config import settings
 from src.services.transcription.asr_providers import transcribe_with_provider
 
 
+def _speaker_set(segments: list[dict]) -> set[str]:
+    return {
+        str(seg.get("speaker"))
+        for seg in segments
+        if isinstance(seg, dict) and seg.get("speaker")
+    }
+
+
+def _assign_default_speakers(segments: list[dict]) -> set[str]:
+    for seg in segments:
+        if isinstance(seg, dict) and not seg.get("speaker"):
+            seg["speaker"] = "SPEAKER_00"
+    return _speaker_set(segments)
+
+
+def _assign_speakers_from_diarization_segments(
+    transcript_segments: list[dict],
+    diarization_segments: list[dict],
+    *,
+    min_overlap_ratio: float = 0.3,
+) -> set[str]:
+    speakers_found: set[str] = set()
+    for seg in transcript_segments:
+        try:
+            start = float(seg["start"])
+            end = float(seg["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+
+        best_overlap, best_spk = 0.0, None
+        for dia_seg in diarization_segments:
+            try:
+                dia_start = float(dia_seg["start"])
+                dia_end = float(dia_seg["end"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            o_start = max(start, dia_start)
+            o_end = min(end, dia_end)
+            if o_end <= o_start:
+                continue
+            ratio = (o_end - o_start) / (end - start) if end > start else 0.0
+            if ratio > best_overlap:
+                best_overlap = ratio
+                best_spk = dia_seg.get("speaker")
+
+        if best_spk and best_overlap > min_overlap_ratio:
+            seg["speaker"] = str(best_spk)
+            speakers_found.add(str(best_spk))
+        elif seg.get("speaker"):
+            speakers_found.add(str(seg["speaker"]))
+    return speakers_found
+
+
+def _run_simple_vad_diarization(
+    transcript_segments: list[dict],
+    audio_path: Path,
+    *,
+    num_speakers: int = 2,
+) -> tuple[list[dict], set[str]]:
+    from src.audio_processing.diarization.simple_vad import get_simple_diarizer
+
+    diarizer = get_simple_diarizer(num_speakers=num_speakers)
+    assigned = diarizer.assign_speakers_to_segments(transcript_segments, str(audio_path))
+    return assigned, _speaker_set(assigned)
+
+
+def _run_requested_diarization(
+    *,
+    segments: list[dict],
+    audio_path: Path,
+    requested_method: str,
+    warnings: list[str],
+) -> tuple[list[dict], bool, int, str, float]:
+    method = (requested_method or "pyannote").strip().lower()
+    if method not in {"pyannote", "simple_vad"}:
+        warnings.append(f"diarization_method_unsupported:{method}")
+        method = "pyannote"
+
+    if not segments:
+        warnings.append("diarization_no_transcript_segments")
+        return segments, False, 1, "unavailable", 0.0
+
+    elapsed = 0.0
+    if method == "simple_vad":
+        start = time.time()
+        try:
+            assigned, speakers = _run_simple_vad_diarization(segments, audio_path)
+            elapsed += time.time() - start
+            return assigned, bool(speakers), len(speakers) if speakers else 1, "simple_vad", elapsed
+        except Exception as exc:
+            elapsed += time.time() - start
+            logger.warning("[DIARIZATION] SimpleVAD failed: %s", exc, exc_info=True)
+            warnings.append(f"diarization_simple_vad_failed:{exc.__class__.__name__}")
+            return segments, False, 1, "unavailable", elapsed
+
+    start = time.time()
+    try:
+        from .models.pyannote_manager import get_pyannote_manager
+
+        pyannote_mgr = get_pyannote_manager()
+        if pyannote_mgr.is_available():
+            diarization_segments = pyannote_mgr.diarize(str(audio_path))
+            if diarization_segments:
+                speakers = _assign_speakers_from_diarization_segments(segments, diarization_segments)
+                elapsed += time.time() - start
+                if speakers:
+                    return segments, True, len(speakers), "pyannote", elapsed
+                warnings.append("diarization_pyannote_no_overlap")
+            else:
+                warnings.append("diarization_pyannote_no_segments")
+        else:
+            warnings.append("diarization_pyannote_unavailable")
+    except Exception as exc:
+        logger.warning("[DIARIZATION] Pyannote failed: %s", exc, exc_info=True)
+        warnings.append(f"diarization_pyannote_failed:{exc.__class__.__name__}")
+    elapsed += time.time() - start
+
+    fallback_start = time.time()
+    try:
+        assigned, speakers = _run_simple_vad_diarization(segments, audio_path)
+        elapsed += time.time() - fallback_start
+        if speakers:
+            warnings.append("diarization_fallback_simple_vad")
+            return assigned, True, len(speakers), "simple_vad_fallback", elapsed
+    except Exception as exc:
+        logger.warning("[DIARIZATION] SimpleVAD fallback failed: %s", exc, exc_info=True)
+        warnings.append(f"diarization_fallback_failed:{exc.__class__.__name__}")
+        elapsed += time.time() - fallback_start
+
+    return segments, False, 1, "unavailable", elapsed
+
+
 def _asr_reliability_report(
     segments: list[dict],
     *,
@@ -154,36 +286,32 @@ def transcribe_audio_v2(
             warnings=warnings,
             model_info=model_info,
         )
-        num_speakers = 1
+        speakers_found = _speaker_set(segments)
+        diarization_used = bool(enable_diarization and speakers_found)
+        effective_diarization_method = diarization_method if enable_diarization else "none"
+        num_speakers = len(speakers_found) if speakers_found else 1
 
-        speakers_found = {seg.get("speaker") for seg in segments if seg.get("speaker")}
-        if speakers_found:
-            num_speakers = len(speakers_found)
+        if enable_diarization and diarization_method != "none" and not diarization_used:
+            (
+                segments,
+                diarization_used,
+                num_speakers,
+                effective_diarization_method,
+                extra_diarization_time,
+            ) = _run_requested_diarization(
+                segments=segments,
+                audio_path=audio_path,
+                requested_method=diarization_method,
+                warnings=warnings,
+            )
+            diarization_time += extra_diarization_time
 
-        if enable_diarization and num_speakers <= 1 and diarization_method != "none":
-            from .models.pyannote_manager import get_pyannote_manager
-
-            pyannote_mgr = get_pyannote_manager()
-            if pyannote_mgr.is_available():
-                diar_start = time.time()
-                diarization_segments = pyannote_mgr.diarize(str(audio_path))
-                if diarization_segments:
-                    speakers_found = set()
-                    for seg in segments:
-                        start, end = seg['start'], seg['end']
-                        best_overlap, best_spk = 0, None
-                        for dia_seg in diarization_segments:
-                            o_start = max(start, dia_seg["start"])
-                            o_end = min(end, dia_seg["end"])
-                            if o_end > o_start:
-                                ratio = (o_end - o_start) / (end - start) if end > start else 0
-                                if ratio > best_overlap:
-                                    best_overlap, best_spk = ratio, dia_seg["speaker"]
-                        if best_spk and best_overlap > 0.3:
-                            seg['speaker'] = best_spk
-                            speakers_found.add(best_spk)
-                    num_speakers = len(speakers_found) if speakers_found else 1
-                    diarization_time = time.time() - diar_start
+        if enable_diarization and diarization_used and not _speaker_set(segments):
+            speakers_found = _assign_default_speakers(segments)
+            num_speakers = len(speakers_found) if speakers_found else 1
+        elif diarization_used:
+            speakers_found = _speaker_set(segments)
+            num_speakers = len(speakers_found) if speakers_found else 1
 
         # Step 3: Format output (Common)
         formatted_transcript = ""
@@ -191,7 +319,7 @@ def transcribe_audio_v2(
             str(seg.get("text", "")).strip() for seg in segments if str(seg.get("text", "")).strip()
         )
 
-        if enable_diarization and num_speakers > 1:
+        if diarization_used:
             for seg in segments:
                 speaker_label = seg.get('speaker', 'Unknown')
                 # Format time HH:MM:SS.mmm
@@ -216,14 +344,14 @@ def transcribe_audio_v2(
             "formatted_transcript": formatted_transcript,
             "segments": segments,
             "raw_segments": raw_segments,
-            "has_diarization": enable_diarization and num_speakers > 1,
+            "has_diarization": bool(enable_diarization and diarization_used),
             "num_speakers": num_speakers,
             "duration": duration,
             "processing_time": total_time,
             "transcription_time": total_time - diarization_time,
             "diarization_time": diarization_time,
             "speed_factor": speed_factor,
-            "diarization_method": diarization_method if enable_diarization else "none",
+            "diarization_method": effective_diarization_method if enable_diarization else "none",
             "language": language,
             "transcript_file": transcript_file,
             "fast_mode": fast_mode,

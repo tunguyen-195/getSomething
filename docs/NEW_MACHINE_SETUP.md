@@ -286,8 +286,9 @@ Neu workflow can full/offline model, copy manual bundle vao `models/` tren may m
 
 ### 6.1. Optional Pyannote diarization
 
-Pyannote diarization la tuy chon. Neu khong co token/model, app van chay, nhung speaker diarization bang Pyannote se
-unavailable va workflow se tiep tuc voi fallback/no diarization.
+Pyannote diarization la tuy chon. Neu khong co token/model, app van chay va backend se fallback sang
+`SimpleVAD` khi nguoi dung bat Diarization. Fallback nay co speaker label de hien thi UI, nhung do chinh xac
+kem Pyannote va can review lai.
 
 De tai model:
 
@@ -309,7 +310,15 @@ PYANNOTE_AUTO_DOWNLOAD=false
 python download_pyannote_model.py
 ```
 
-5. Verify:
+5. Neu can gui model sang may offline, pack thanh zip:
+
+```powershell
+python scripts\pack_pyannote_model.py
+```
+
+Huong dan copy/extract chi tiet nam trong [PYANNOTE_DIARIZATION_TRANSFER.md](PYANNOTE_DIARIZATION_TRANSFER.md).
+
+6. Verify:
 
 ```powershell
 python -c "from src.services.transcription.models.pyannote_manager import get_pyannote_manager; print(get_pyannote_manager().is_available())"
