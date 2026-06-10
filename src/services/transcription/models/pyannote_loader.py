@@ -46,6 +46,10 @@ def model_local_dir(model_id: str, cache_dir: str | Path | None = None) -> Path:
 def _pipeline_from_pretrained(checkpoint_path: str | Path, hf_token: str | None = None):
     from pyannote.audio import Pipeline
 
+    checkpoint = Path(checkpoint_path)
+    if checkpoint.is_dir() and (checkpoint / "config.yaml").is_file():
+        checkpoint_path = checkpoint / "config.yaml"
+
     kwargs: dict[str, Any] = {}
     if hf_token:
         params = inspect.signature(Pipeline.from_pretrained).parameters
@@ -109,7 +113,7 @@ def load_pyannote_pipeline(
             logger.info("Loaded Pyannote model %s from %s", model_id, local_dir)
             return _move_to_device(pipeline, device=device)
         except Exception as exc:
-            logger.warning("Pyannote local load failed for %s: %s", model_id, exc.__class__.__name__)
+            logger.warning("Pyannote local load failed for %s: %s: %s", model_id, exc.__class__.__name__, exc)
 
     logger.warning("Pyannote unavailable; continuing without diarization")
     return None

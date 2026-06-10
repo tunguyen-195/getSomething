@@ -1,6 +1,7 @@
 import importlib
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 
@@ -44,6 +45,25 @@ def test_load_pyannote_pipeline_does_not_download_when_disabled(monkeypatch, tmp
     monkeypatch.setitem(sys.modules, "huggingface_hub", FakeHub)
 
     assert module.load_pyannote_pipeline() is None
+
+
+def test_pipeline_from_pretrained_uses_local_config_file(monkeypatch, tmp_path):
+    module = importlib.import_module("src.services.transcription.models.pyannote_loader")
+    model_dir = tmp_path / "pyannote--speaker-diarization-community-1"
+    model_dir.mkdir()
+    (model_dir / "config.yaml").write_text("pipeline:\n  name: fake\n", encoding="utf-8")
+    calls = []
+
+    class FakePipeline:
+        @staticmethod
+        def from_pretrained(checkpoint_path, **kwargs):
+            calls.append((checkpoint_path, kwargs))
+            return "pipeline"
+
+    monkeypatch.setitem(sys.modules, "pyannote.audio", types.SimpleNamespace(Pipeline=FakePipeline))
+
+    assert module._pipeline_from_pretrained(model_dir) == "pipeline"
+    assert calls == [(str(model_dir / "config.yaml"), {})]
 
 
 def test_load_pyannote_pipeline_does_not_runtime_download_when_enabled(monkeypatch, tmp_path):
