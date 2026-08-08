@@ -11,6 +11,7 @@ from pydantic import (
     BaseModel,
     Field,
     JsonValue,
+    ValidationError,
     ValidationInfo,
     field_validator,
     model_validator,
@@ -41,6 +42,7 @@ from .contracts import (
     sha256_canonical_json,
     sha256_utf8,
 )
+from .evidence_selector import VerifiedEvidenceSelectorArtifact
 from .reasoning_contracts import (
     EvidenceBackedInsight,
     Hypothesis,
@@ -65,12 +67,33 @@ class _TrustedEvidenceFingerprint:
     start_seconds: float | None
     end_seconds: float | None
     speaker_id: str | None
+    normalized_char_start: int | None = None
+    normalized_char_end: int | None = None
+    occurrence_index: int | None = None
+    case_id: str | None = None
+    file_id: str | None = None
+    source_id: str | None = None
+    source_revision_sha256: str | None = None
+    raw_transcript_sha256: str | None = None
+    segment_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if not self.segment_id.strip():
             raise ValueError("trusted evidence segment_id must be non-blank")
         _validate_sha256(self.quote_sha256, "trusted quote hash")
         _validate_sha256(self.source_sha256, "trusted source hash")
+        for value, label in (
+            (self.source_revision_sha256, "trusted source revision hash"),
+            (self.raw_transcript_sha256, "trusted raw transcript hash"),
+            (self.segment_sha256, "trusted segment hash"),
+        ):
+            if value is not None:
+                _validate_sha256(value, label)
+        if (
+            self.segment_sha256 is not None
+            and self.segment_sha256 != self.source_sha256
+        ):
+            raise ValueError("trusted EvidenceSpan source hash must match segment hash")
 
 
 @dataclass(frozen=True)
@@ -78,6 +101,12 @@ class _TrustedSelectorAttestation:
     artifact_ref: str
     source_revision_id: str
     evidence: Mapping[str, _TrustedEvidenceFingerprint]
+    source_provenance_verified: bool = False
+    source_revision_sha256: str | None = None
+    raw_transcript_sha256: str | None = None
+    normalized_transcript_sha256: str | None = None
+    audio_sha256: str | None = None
+    segment_count: int | None = None
 
     def __post_init__(self) -> None:
         if not self.artifact_ref.strip() or not self.source_revision_id.strip():
@@ -86,6 +115,35 @@ class _TrustedSelectorAttestation:
             raise ValueError("trusted selector attestation requires evidence")
         if any(not evidence_id.strip() for evidence_id in self.evidence):
             raise ValueError("trusted selector evidence IDs must be non-blank")
+        provenance_fields = (
+            self.source_revision_sha256,
+            self.raw_transcript_sha256,
+            self.normalized_transcript_sha256,
+            self.segment_count,
+        )
+        if self.source_provenance_verified:
+            if any(value is None for value in provenance_fields):
+                raise ValueError("verified selector source provenance is incomplete")
+            _validate_sha256(
+                self.source_revision_sha256 or "",
+                "trusted source revision hash",
+            )
+            _validate_sha256(
+                self.raw_transcript_sha256 or "",
+                "trusted raw transcript hash",
+            )
+            _validate_sha256(
+                self.normalized_transcript_sha256 or "",
+                "trusted normalized transcript hash",
+            )
+            if self.audio_sha256 is not None:
+                _validate_sha256(self.audio_sha256, "trusted audio hash")
+            if self.segment_count is None or self.segment_count < 1:
+                raise ValueError("trusted source segment count must be positive")
+        elif any(value is not None for value in provenance_fields) or (
+            self.audio_sha256 is not None
+        ):
+            raise ValueError("unverified selector cannot carry source provenance")
         object.__setattr__(self, "evidence", MappingProxyType(dict(self.evidence)))
 
 
@@ -141,6 +199,14 @@ def _verification_subject_sha256(
 class _TrustedInvestigationValidationContext:
     """Opaque in-process trust boundary populated by future T2/T4 services."""
 
+    selector_attestations: Mapping[str, _TrustedSelectorAttestation]
+    relationship_attestations: Mapping[str, _TrustedSelectorAttestation]
+    risk_assessments: Mapping[str, _TrustedRiskAssessment]
+    verification_eligibility: Mapping[str, _TrustedEligibilityAssessment]
+    relationship_eligibility: Mapping[str, _TrustedEligibilityAssessment]
+    reasoning_eligibility: Mapping[str, _TrustedEligibilityAssessment]
+    manifest_sha256: str
+    _sealed: bool
     __slots__ = (
         "selector_attestations",
         "relationship_attestations",
@@ -149,6 +215,7 @@ class _TrustedInvestigationValidationContext:
         "relationship_eligibility",
         "reasoning_eligibility",
         "manifest_sha256",
+        "_sealed",
     )
 
     def __init__(
@@ -165,16 +232,82 @@ class _TrustedInvestigationValidationContext:
     ) -> None:
         if _authority is not _TRUSTED_CONTEXT_AUTHORITY:
             raise TypeError("trusted validation context requires internal authority")
-        self.selector_attestations = MappingProxyType(dict(selector_attestations))
-        self.relationship_attestations = MappingProxyType(
-            dict(relationship_attestations)
+        object.__setattr__(
+            self,
+            "selector_attestations",
+            MappingProxyType(dict(selector_attestations)),
         )
-        self.risk_assessments = MappingProxyType(dict(risk_assessments))
-        self.verification_eligibility = MappingProxyType(dict(verification_eligibility))
-        self.relationship_eligibility = MappingProxyType(dict(relationship_eligibility))
-        self.reasoning_eligibility = MappingProxyType(dict(reasoning_eligibility))
+        object.__setattr__(
+            self,
+            "relationship_attestations",
+            MappingProxyType(dict(relationship_attestations)),
+        )
+        object.__setattr__(
+            self,
+            "risk_assessments",
+            MappingProxyType(dict(risk_assessments)),
+        )
+        object.__setattr__(
+            self,
+            "verification_eligibility",
+            MappingProxyType(dict(verification_eligibility)),
+        )
+        object.__setattr__(
+            self,
+            "relationship_eligibility",
+            MappingProxyType(dict(relationship_eligibility)),
+        )
+        object.__setattr__(
+            self,
+            "reasoning_eligibility",
+            MappingProxyType(dict(reasoning_eligibility)),
+        )
         _validate_sha256(manifest_sha256, "trusted manifest hash")
-        self.manifest_sha256 = manifest_sha256
+        object.__setattr__(self, "manifest_sha256", manifest_sha256)
+        object.__setattr__(self, "_sealed", True)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if getattr(self, "_sealed", False):
+            raise AttributeError("trusted validation context is immutable")
+        object.__setattr__(self, name, value)
+
+    def validate_source_provenance(self, provenance: SourceProvenance) -> None:
+        """Bind run provenance to every replayed production T2 artifact."""
+
+        try:
+            provenance = SourceProvenance.model_validate_json(
+                provenance.model_dump_json(exclude_none=True)
+            )
+        except ValidationError as exc:
+            raise ValueError("invalid run source provenance") from exc
+        attestations = (
+            *self.selector_attestations.values(),
+            *self.relationship_attestations.values(),
+        )
+        for attestation in attestations:
+            if not attestation.source_provenance_verified:
+                continue
+            if attestation.source_revision_id != provenance.source_revision_id:
+                raise ValueError("trusted selector source revision mismatch")
+            if provenance.source_revision_id != (
+                f"srcv1:{attestation.source_revision_sha256}"
+            ):
+                raise ValueError("trusted selector source revision ID is not canonical")
+            if attestation.raw_transcript_sha256 != provenance.raw_transcript_sha256:
+                raise ValueError(
+                    "run raw transcript hash does not match trusted source"
+                )
+            if (
+                attestation.normalized_transcript_sha256
+                != provenance.normalized_transcript_sha256
+            ):
+                raise ValueError(
+                    "run normalized transcript hash does not match trusted source"
+                )
+            if attestation.audio_sha256 != provenance.audio_sha256:
+                raise ValueError("run audio hash does not match trusted source")
+            if attestation.segment_count != provenance.segment_count:
+                raise ValueError("run segment count does not match trusted source")
 
 
 _TRUSTED_CONTEXT_AUTHORITY = object()
@@ -202,6 +335,89 @@ def _build_trusted_investigation_validation_context(
         reasoning_eligibility=reasoning_eligibility or {},
         manifest_sha256=manifest_sha256,
         _authority=_TRUSTED_CONTEXT_AUTHORITY,
+    )
+
+
+def _selector_attestations_from_verified_artifacts(
+    artifacts: Mapping[str, VerifiedEvidenceSelectorArtifact],
+    *,
+    subject_kind: Literal["verification", "relationship"],
+) -> dict[str, _TrustedSelectorAttestation]:
+    attestations: dict[str, _TrustedSelectorAttestation] = {}
+    for subject_ref, verified in artifacts.items():
+        if not isinstance(verified, VerifiedEvidenceSelectorArtifact):
+            raise TypeError("trusted selectors require a verified T2 artifact")
+        artifact = verified.artifact
+        if artifact.subject_ref != subject_ref:
+            raise ValueError(
+                "selector artifact subject_ref does not match registry key"
+            )
+        if artifact.subject_kind != subject_kind:
+            raise ValueError("selector artifact subject kind mismatch")
+        evidence = {
+            selector.evidence_id: _TrustedEvidenceFingerprint(
+                segment_id=selector.segment_id,
+                quote_sha256=selector.quote_sha256,
+                source_sha256=selector.source_sha256,
+                quote_prefix=selector.prefix or None,
+                quote_suffix=selector.suffix or None,
+                raw_char_start=selector.raw_char_start,
+                raw_char_end=selector.raw_char_end,
+                start_seconds=selector.start_seconds,
+                end_seconds=selector.end_seconds,
+                speaker_id=selector.speaker_id,
+                normalized_char_start=selector.normalized_char_start,
+                normalized_char_end=selector.normalized_char_end,
+                occurrence_index=selector.occurrence_index,
+                case_id=selector.scope.case_id,
+                file_id=selector.scope.file_id,
+                source_id=selector.scope.source_id,
+                source_revision_sha256=selector.source_revision_sha256,
+                raw_transcript_sha256=selector.raw_transcript_sha256,
+                segment_sha256=selector.segment_sha256,
+            )
+            for selector in artifact.selectors
+        }
+        attestations[subject_ref] = _TrustedSelectorAttestation(
+            artifact_ref=artifact.artifact_id,
+            source_revision_id=artifact.source_revision_id,
+            evidence=evidence,
+            source_provenance_verified=True,
+            source_revision_sha256=artifact.source_revision_sha256,
+            raw_transcript_sha256=artifact.raw_transcript_sha256,
+            normalized_transcript_sha256=artifact.normalized_source_sha256,
+            audio_sha256=artifact.audio_sha256,
+            segment_count=artifact.segment_count,
+        )
+    return attestations
+
+
+def build_trusted_investigation_validation_context_from_artifacts(
+    *,
+    selector_artifacts: Mapping[str, VerifiedEvidenceSelectorArtifact],
+    relationship_selector_artifacts: Mapping[str, VerifiedEvidenceSelectorArtifact],
+    risk_assessments: Mapping[str, _TrustedRiskAssessment],
+    verification_eligibility: Mapping[str, _TrustedEligibilityAssessment],
+    relationship_eligibility: Mapping[str, _TrustedEligibilityAssessment],
+    reasoning_eligibility: Mapping[str, _TrustedEligibilityAssessment] | None = None,
+    manifest_sha256: str,
+) -> _TrustedInvestigationValidationContext:
+    """Build the production T2 trust portion only from replayed artifacts."""
+
+    return _build_trusted_investigation_validation_context(
+        selector_attestations=_selector_attestations_from_verified_artifacts(
+            selector_artifacts,
+            subject_kind="verification",
+        ),
+        relationship_attestations=_selector_attestations_from_verified_artifacts(
+            relationship_selector_artifacts,
+            subject_kind="relationship",
+        ),
+        risk_assessments=risk_assessments,
+        verification_eligibility=verification_eligibility,
+        relationship_eligibility=relationship_eligibility,
+        reasoning_eligibility=reasoning_eligibility,
+        manifest_sha256=manifest_sha256,
     )
 
 
@@ -725,6 +941,7 @@ class InvestigationRun(StrictEnvelope):
         trusted_context = _trusted_release_context(info)
         if trusted_context.manifest_sha256 != _semantic_subject_sha256(self.manifest):
             raise ValueError("run manifest changed after trusted preflight")
+        trusted_context.validate_source_provenance(self.provenance)
         self._validate_source_revision(self.ledger)
         self._validate_released_projections(
             self.ledger,
@@ -1490,6 +1707,11 @@ def validate_investigation_run(
     )
     if isinstance(value, str):
         return InvestigationRun.model_validate_json(value, context=context)
+    if isinstance(value, InvestigationRun):
+        return InvestigationRun.model_validate_json(
+            value.model_dump_json(exclude_none=True),
+            context=context,
+        )
     return InvestigationRun.model_validate(value, context=context)
 
 
@@ -1505,6 +1727,7 @@ __all__ = [
     "InvestigationSummaryProjection",
     "SummaryProjection",
     "VerificationDecision",
+    "build_trusted_investigation_validation_context_from_artifacts",
     "build_investigation_run_manifest",
     "investigation_run_json_schema",
     "investigation_run_schema_sha256",
