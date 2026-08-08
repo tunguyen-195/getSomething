@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from src.core.config import settings
 from src.core.auth import (
+    authenticate_request,
     audit_security_event,
     check_rate_limit,
     clear_auth_cookies,
@@ -32,7 +33,24 @@ def _generic_login_error():
 
 
 @router.get("/csrf")
-def get_csrf(response: Response):
+def get_csrf(request: Request, response: Response, db: Session = Depends(get_db)):
+    existing_token = request.cookies.get(settings.CSRF_COOKIE_NAME)
+    if existing_token:
+        try:
+            _, session = authenticate_request(request, db)
+        except HTTPException:
+            # Pre-login clients can safely reuse their double-submit token.
+            return {"csrf_token": existing_token}
+
+        if session.csrf_token_hash == hash_value(existing_token):
+            return {"csrf_token": existing_token}
+
+        # Recover sessions whose readable CSRF cookie was rotated after reload.
+        token = issue_csrf_cookie(response)
+        session.csrf_token_hash = hash_value(token)
+        db.commit()
+        return {"csrf_token": token}
+
     token = issue_csrf_cookie(response)
     return {"csrf_token": token}
 

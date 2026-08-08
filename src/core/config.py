@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Literal
 from pydantic_settings import BaseSettings
 from pydantic import AnyHttpUrl, validator
 
@@ -11,7 +11,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "your-super-secret-key-here"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    AUTH_ENABLED: bool = False
+    AUTH_ENABLED: bool = True
+    DEV_AUTH_BYPASS: bool = False
+    DEV_USER_ID: int | None = None
     INIT_DB_ON_STARTUP: bool = False
     ENABLE_API_DOCS: bool = True
     VERSION: str = "0.1.0"
@@ -43,6 +45,10 @@ class Settings(BaseSettings):
     WHISPER_USE_LOCAL: bool = True  # Use local cached model for offline mode
     WHISPER_MODEL_PATH: str = "models/whisper"  # Local model cache directory
     WHISPER_FAST_MODE: bool = True  # Skip heavy LLM post-processing (31x speed vs 3x)
+    TRANSCRIPTION_ENGINE: Literal["legacy", "cherry", "auto"] = "auto"
+    ENABLE_HIGH_RISK_AI_FIELDS: bool = False
+    STORE_RAW_LLM_RESPONSES: bool = False
+    AI_CONTEXT_RETENTION_DAYS: int = 90
     HF_TOKEN: str = ""  # HuggingFace token for gated models (pyannote)
     VOSK_MODEL_PATH: str = "models/vosk-model-vn-0.4"
     T5_MODEL_PATH: str = "models/t5-base"
@@ -119,7 +125,25 @@ settings = Settings()
 
 def validate_security_settings() -> None:
     """Fail fast for production-grade security settings."""
-    production = settings.ENVIRONMENT.lower() in {"prod", "production"} or (
+    environment = settings.ENVIRONMENT.lower()
+    if not settings.AUTH_ENABLED:
+        if not settings.DEV_AUTH_BYPASS:
+            raise RuntimeError(
+                "AUTH_ENABLED=false requires explicit DEV_AUTH_BYPASS=true"
+            )
+        if environment not in {"dev", "development", "test"}:
+            raise RuntimeError("Development auth bypass is not allowed outside development/test")
+        if not settings.DEV_USER_ID or settings.DEV_USER_ID < 1:
+            raise RuntimeError("DEV_USER_ID is required when development auth bypass is enabled")
+        if environment != "test" and settings.BACKEND_HOST not in {
+            "127.0.0.1",
+            "localhost",
+            "::1",
+        }:
+            raise RuntimeError("Development auth bypass requires a loopback BACKEND_HOST")
+        return
+
+    production = environment in {"prod", "production"} or (
         settings.AUTH_ENABLED and not settings.DEBUG
     )
     if not production:

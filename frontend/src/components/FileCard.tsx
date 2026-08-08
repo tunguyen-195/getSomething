@@ -24,6 +24,7 @@ import {
   ContentCopy as ContentCopyIcon,
   Visibility as ViewIcon,
 } from '@mui/icons-material';
+import DateTimeText from './DateTimeText';
 
 interface FileCardProps {
   file: {
@@ -36,6 +37,8 @@ interface FileCardProps {
     num_speakers?: number;
     has_diarization?: boolean;
     created_at?: string;
+    updated_at?: string;
+    uploaded_at?: string;
     transcript?: string;
     summary?: string;
     visualization_data?: any;
@@ -162,13 +165,17 @@ const FileCard: React.FC<FileCardProps> = ({
     >
       <CardContent>
         {/* Header */}
-        <Box display="flex" alignItems="center" gap={2} mb={2}>
+        <Box display="flex" alignItems="center" gap={2} mb={2} flexWrap="wrap">
           <AudioIcon sx={{ fontSize: 40, color: '#d32f2f' }} />
-          <Box flex={1}>
-            <Typography variant="h6" fontWeight={700} color="#23272f">
+          <Box flex={1} minWidth={0}>
+            <Typography variant="h6" fontWeight={700} color="#23272f" sx={{ overflowWrap: 'anywhere' }}>
               {file.filename}
             </Typography>
-            <Box display="flex" gap={2} mt={0.5}>
+            <Box display="flex" columnGap={2} rowGap={0.5} mt={0.5} flexWrap="wrap">
+              <DateTimeText
+                value={file.uploaded_at || file.created_at}
+                label="Tải lên"
+              />
               <Typography variant="caption" color="text.secondary">
                 ⏱️ {formatDuration(file.duration)}
               </Typography>
@@ -185,6 +192,7 @@ const FileCard: React.FC<FileCardProps> = ({
           <Chip
             label={getStatusLabel(file.status)}
             sx={{
+              ml: { xs: 6.5, sm: 'auto' },
               bgcolor: getStatusColor(file.status),
               color: '#fff',
               fontWeight: 700,

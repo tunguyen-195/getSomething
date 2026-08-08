@@ -30,6 +30,8 @@ import {
     HourglassEmpty as PendingIcon,
     Error as ErrorIcon,
 } from '@mui/icons-material';
+import DateTimeText from './DateTimeText';
+import { apiDateTimeToEpoch } from '../utils/dateTime';
 
 interface FileData {
     task_id: string;
@@ -42,6 +44,8 @@ interface FileData {
     transcript?: string;
     summary?: string;
     created_at?: string;
+    updated_at?: string;
+    uploaded_at?: string;
     download_url?: string;
 }
 
@@ -109,9 +113,12 @@ const FileTable: React.FC<FileTableProps> = ({
 
     const sortedFiles = useMemo(() => {
         return [...files].sort((a, b) => {
-            // Handle undefined values
-            const aValue = a[orderBy] || '';
-            const bValue = b[orderBy] || '';
+            const aValue = orderBy === 'created_at'
+                ? apiDateTimeToEpoch(a.uploaded_at || a.created_at)
+                : a[orderBy] || '';
+            const bValue = orderBy === 'created_at'
+                ? apiDateTimeToEpoch(b.uploaded_at || b.created_at)
+                : b[orderBy] || '';
 
             if (bValue < aValue) {
                 return order === 'asc' ? 1 : -1;
@@ -134,8 +141,8 @@ const FileTable: React.FC<FileTableProps> = ({
     }
 
     return (
-        <TableContainer component={Paper} sx={{ borderRadius: '12px', overflow: 'hidden' }}>
-            <Table size="small">
+        <TableContainer component={Paper} sx={{ borderRadius: '12px', overflowX: 'auto' }}>
+            <Table size="small" sx={{ minWidth: 720 }}>
                 <TableHead>
                     <TableRow sx={{ bgcolor: 'rgba(0,0,0,0.02)' }}>
                         <TableCell width={40}></TableCell>
@@ -146,6 +153,15 @@ const FileTable: React.FC<FileTableProps> = ({
                                 onClick={() => handleRequestSort('filename')}
                             >
                                 <strong>File</strong>
+                            </TableSortLabel>
+                        </TableCell>
+                        <TableCell width={180}>
+                            <TableSortLabel
+                                active={orderBy === 'created_at'}
+                                direction={orderBy === 'created_at' ? order : 'asc'}
+                                onClick={() => handleRequestSort('created_at')}
+                            >
+                                <strong>Tải lên</strong>
                             </TableSortLabel>
                         </TableCell>
                         <TableCell width={100}><strong>Speakers</strong></TableCell>
@@ -192,6 +208,14 @@ const FileTable: React.FC<FileTableProps> = ({
                                         </Box>
                                     </TableCell>
                                     <TableCell>
+                                        <DateTimeText
+                                            value={file.uploaded_at || file.created_at}
+                                            label=""
+                                            showIcon={false}
+                                            sx={{ whiteSpace: 'nowrap' }}
+                                        />
+                                    </TableCell>
+                                    <TableCell>
                                         {file.num_speakers ? (
                                             <Chip label={`${file.num_speakers} speakers`} size="small" variant="outlined" />
                                         ) : '-'}
@@ -212,7 +236,7 @@ const FileTable: React.FC<FileTableProps> = ({
 
                                 {/* Expanded Row */}
                                 <TableRow>
-                                    <TableCell colSpan={5} sx={{ p: 0 }}>
+                                    <TableCell colSpan={6} sx={{ p: 0 }}>
                                         <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                                             <Box sx={{ p: 2, bgcolor: 'rgba(0,0,0,0.01)' }}>
                                                 {isProcessing && (

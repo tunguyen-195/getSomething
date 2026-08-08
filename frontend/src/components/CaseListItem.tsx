@@ -20,6 +20,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import FolderIcon from '@mui/icons-material/Folder';
 import TaskListItem from './TaskListItem';
+import DateTimeText from './DateTimeText';
 
 interface Task {
   id: string;
@@ -38,6 +39,8 @@ interface Case {
   case_code: string;
   title: string;
   description?: string;
+  created_at?: string;
+  updated_at?: string;
   tasks: Task[];
 }
 
@@ -99,15 +102,18 @@ const CaseListItem: React.FC<CaseListItemProps> = ({
             />
           </Grid>
           <Grid item xs={12} sm={8} md={9}>
-            <Typography fontWeight={700} fontSize={18}>{caseItem.title}</Typography>
+            <Typography fontWeight={700} fontSize={18} sx={{ overflowWrap: 'anywhere' }}>{caseItem.title}</Typography>
             {caseItem.description && (
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', overflowWrap: 'anywhere' }}>
                 {caseItem.description}
               </Typography>
             )}
-            <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
-              ({caseItem.tasks.length} file{caseItem.tasks.length !== 1 ? 's' : ''})
-            </Typography>
+            <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap' }}>
+              <DateTimeText value={caseItem.created_at} label="Ngày tạo" />
+              <Typography variant="caption" color="text.secondary">
+                ({caseItem.tasks.length} file{caseItem.tasks.length !== 1 ? 's' : ''})
+              </Typography>
+            </Box>
           </Grid>
           <Grid item xs={12} sm={2} md={1}>
             <IconButton size="large" sx={{ color: '#1976d2' }}>
@@ -149,4 +155,4 @@ const CaseListItem: React.FC<CaseListItemProps> = ({
   );
 };
 
-export default CaseListItem; 
+export default CaseListItem;

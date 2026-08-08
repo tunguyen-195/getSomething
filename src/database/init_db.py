@@ -28,9 +28,10 @@ def _get_or_create(db, model, defaults=None, **filters):
     return obj
 
 
-def init_db():
-    """Create schema and seed required lookup data idempotently."""
-    Base.metadata.create_all(bind=engine)
+def init_db(*, create_schema: bool = False):
+    """Seed required lookup data; schema creation is test/bootstrap-only."""
+    if create_schema:
+        Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         admin_role = _get_or_create(

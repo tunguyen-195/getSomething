@@ -1,6 +1,22 @@
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+
+class CaseUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    description: Optional[str] = Field(default=None, max_length=20_000)
+    status_id: Optional[int] = Field(default=None, gt=0)
+    priority_id: Optional[int] = Field(default=None, gt=0)
+
+    @field_validator("title", "status_id", "priority_id")
+    @classmethod
+    def required_when_present(cls, value):
+        if value is None:
+            raise ValueError("field cannot be null")
+        return value
 
 # User schemas
 class UserBase(BaseModel):

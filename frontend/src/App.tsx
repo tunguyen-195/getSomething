@@ -20,6 +20,7 @@ import FileTable from './components/FileTable';
 import VisualizationDialog from './components/VisualizationDialog';
 import AnalysisPanel from './components/AnalysisPanel';
 import DiarizationPanel from './components/DiarizationPanel';
+import DateTimeText from './components/DateTimeText';
 import { apiFetch, getCurrentUser, login, logout } from './api/client';
 
 interface Case {
@@ -707,7 +708,21 @@ function App() {
                   <FolderIcon sx={{ color: selectedCase?.id === c.id ? 'primary.main' : 'text.secondary', mr: 1.5 }} />
                   <ListItemText
                     primary={<Typography fontWeight={500} fontSize={14} color={selectedCase?.id === c.id ? 'primary.main' : 'text.primary'}>{c.title}</Typography>}
-                    secondary={c.description ? <Typography variant="caption" color="text.secondary" noWrap>{c.description}</Typography> : null}
+                    secondary={(
+                      <Box component="span" sx={{ display: 'flex', flexDirection: 'column', gap: 0.25, mt: 0.25, minWidth: 0 }}>
+                        {c.description && (
+                          <Typography component="span" variant="caption" color="text.secondary" noWrap>
+                            {c.description}
+                          </Typography>
+                        )}
+                        <DateTimeText
+                          value={c.created_at}
+                          label="Ngày tạo"
+                          showIcon={false}
+                        />
+                      </Box>
+                    )}
+                    secondaryTypographyProps={{ component: 'div' }}
                   />
                   <IconButton
                     size="small"
@@ -728,6 +743,11 @@ function App() {
             <Typography variant="h5" fontWeight={600} mb={1}>
               {selectedCase.title}
             </Typography>
+            <DateTimeText
+              value={selectedCase.created_at}
+              label="Ngày tạo"
+              sx={{ mb: selectedCase.description ? 0.75 : 2 }}
+            />
             {selectedCase.description && (
               <Typography variant="body2" color="text.secondary" mb={3}>
                 {selectedCase.description}

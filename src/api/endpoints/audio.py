@@ -18,8 +18,8 @@ from src.core.config import settings
 import uuid
 from datetime import datetime, timedelta
 from src.database.models.models import Case, AudioFile, Task, User
-from src.database.config.database import get_db
-from sqlalchemy.orm import Session
+from src.database.config.database import SessionLocal, get_db
+from sqlalchemy.orm import Session, joinedload
 import subprocess
 from src.speech_to_text.transcriber import OllamaProcessor
 from fastapi.responses import FileResponse
@@ -36,8 +36,73 @@ from src.core.auth import (
     get_current_user,
 )
 from src.services.audit_service import log_activity
+from src.core.time import LEGACY_DATABASE_TIMEZONE, utc_isoformat
 
 router = APIRouter()
+
+
+def _process_task_in_worker(task_id: str, model_name: str):
+    """Give each executor worker its own transaction and connection."""
+    with SessionLocal() as worker_db:
+        try:
+            return process_task(task_id, model_name, worker_db)
+        except Exception:
+            worker_db.rollback()
+            raise
+
+
+def _attach_audio_creation_metadata(result: Dict[str, Any], db: Session) -> Dict[str, Any]:
+    audio_id = result.get("audio_id")
+    if not audio_id:
+        return result
+    audio_file = db.query(AudioFile).filter(AudioFile.id == audio_id).first()
+    if not audio_file:
+        return result
+    result.update(
+        created_at=utc_isoformat(
+            audio_file.created_at,
+            naive_timezone=LEGACY_DATABASE_TIMEZONE,
+        ),
+        uploaded_at=utc_isoformat(
+            audio_file.uploaded_at,
+            naive_timezone=LEGACY_DATABASE_TIMEZONE,
+        ),
+    )
+    return result
+
+
+def _attach_batch_audio_creation_metadata(
+    results: List[Dict[str, Any]],
+    db: Session,
+) -> List[Dict[str, Any]]:
+    audio_ids = {
+        result.get("audio_id")
+        for result in results
+        if result.get("audio_id") is not None
+    }
+    if not audio_ids:
+        return results
+
+    audio_by_id = {
+        audio_file.id: audio_file
+        for audio_file in db.query(AudioFile).filter(AudioFile.id.in_(audio_ids)).all()
+    }
+    for result in results:
+        audio_file = audio_by_id.get(result.get("audio_id"))
+        if not audio_file:
+            continue
+        result.update(
+            created_at=utc_isoformat(
+                audio_file.created_at,
+                naive_timezone=LEGACY_DATABASE_TIMEZONE,
+            ),
+            uploaded_at=utc_isoformat(
+                audio_file.uploaded_at,
+                naive_timezone=LEGACY_DATABASE_TIMEZONE,
+            ),
+        )
+    return results
+
 
 @router.get("/")
 def read_audio(
@@ -47,7 +112,7 @@ def read_audio(
 ):
     """Get all audio files with transcript/summary from Task.result JSON"""
     try:
-        query = db.query(AudioFile)
+        query = db.query(AudioFile).options(joinedload(AudioFile.task))
         if case_id:
             assert_case_access(db, current_user, case_id, "read")
             query = query.filter(AudioFile.case_id == case_id)
@@ -57,7 +122,10 @@ def read_audio(
                 query = query.filter(AudioFile.case_id.in_(allowed_ids or {-1}))
         query = query.filter(AudioFile.is_archived.is_(False))
 
-        audio_files = query.order_by(AudioFile.created_at.desc()).all()
+        audio_files = query.order_by(
+            AudioFile.created_at.desc(),
+            AudioFile.id.desc(),
+        ).all()
 
         result = []
         for af in audio_files:
@@ -76,7 +144,7 @@ def read_audio(
 
             task_status = None
             if af.task_id:
-                task = db.query(Task).filter(Task.id == af.task_id).first()
+                task = af.task
                 if task:
                     task_status = task.status
                 if task and task.result:
@@ -117,7 +185,14 @@ def read_audio(
                 "has_visualization": has_visualization,
                 "visualization_data": visualization_data,
                 "download_url": f"/api/v1/audio/{af.id}/download",
-                "created_at": af.created_at.isoformat() if af.created_at else None,
+                "created_at": utc_isoformat(
+                    af.created_at,
+                    naive_timezone=LEGACY_DATABASE_TIMEZONE,
+                ),
+                "uploaded_at": utc_isoformat(
+                    af.uploaded_at,
+                    naive_timezone=LEGACY_DATABASE_TIMEZONE,
+                ),
                 "transcript": transcript,
                 "summary": summary,
                 "formatted_transcript": formatted_transcript,
@@ -171,6 +246,14 @@ async def get_file_transcript(
         return {
             "file_id": file_id,
             "task_id": audio_file.task_id,
+            "created_at": utc_isoformat(
+                audio_file.created_at,
+                naive_timezone=LEGACY_DATABASE_TIMEZONE,
+            ),
+            "uploaded_at": utc_isoformat(
+                audio_file.uploaded_at,
+                naive_timezone=LEGACY_DATABASE_TIMEZONE,
+            ),
             "transcript": transcript,
             "summary": summary,
             "result": result_data  # Include full result for compatibility
@@ -207,6 +290,7 @@ async def upload_audio(
             detail={"status": "pending", "file_size": result.get("file_size")},
         )
         db.commit()
+        _attach_audio_creation_metadata(result, db)
         logger.info(f"[UPLOAD] Hoàn thành upload audio | task_id={result.get('task_id')} | audio_id={result.get('audio_id')}")
         return result
     except Exception as e:
@@ -286,6 +370,9 @@ async def get_task_by_id(
             formatted_transcript = result_data.get("formatted_transcript")
             segments = result_data.get("segments", [])
             context_analysis = result_data.get("context_analysis", {})
+            requested_engine = result_data.get("requested_engine")
+            engine_used = result_data.get("engine_used")
+            fallback_reason = result_data.get("fallback_reason")
 
             # Add extracted fields to response
             if transcript:
@@ -303,6 +390,12 @@ async def get_task_by_id(
                 response["segments"] = segments
             if context_analysis:
                 response["context_analysis"] = context_analysis
+            if requested_engine:
+                response["requested_engine"] = requested_engine
+            if engine_used:
+                response["engine_used"] = engine_used
+            if fallback_reason:
+                response["fallback_reason"] = fallback_reason
 
             # Also include full result for backward compatibility
             response["result"] = result_data
@@ -457,7 +550,23 @@ def get_cases(
     allowed_ids = accessible_case_ids(db, current_user)
     if allowed_ids is not None:
         query = query.filter(Case.id.in_(allowed_ids or {-1}))
-    return query.all()
+    return [
+        {
+            "id": case.id,
+            "case_code": case.case_code,
+            "title": case.title,
+            "description": case.description,
+            "status_id": case.status_id,
+            "priority_id": case.priority_id,
+            "created_by": case.created_by,
+            "created_at": utc_isoformat(
+                case.created_at,
+                naive_timezone=LEGACY_DATABASE_TIMEZONE,
+            ),
+            "is_archived": case.is_archived,
+        }
+        for case in query.order_by(Case.created_at.desc(), Case.id.desc()).all()
+    ]
 
 @router.post("/cases")
 def create_case(
@@ -481,7 +590,20 @@ def create_case(
     db.add(case)
     db.commit()
     db.refresh(case)
-    return case
+    return {
+        "id": case.id,
+        "case_code": case.case_code,
+        "title": case.title,
+        "description": case.description,
+        "status_id": case.status_id,
+        "priority_id": case.priority_id,
+        "created_by": case.created_by,
+        "created_at": utc_isoformat(
+            case.created_at,
+            naive_timezone=LEGACY_DATABASE_TIMEZONE,
+        ),
+        "is_archived": case.is_archived,
+    }
 
 @router.patch("/tasks/{task_id}/context")
 def update_task_context(
@@ -702,7 +824,10 @@ async def process_multiple_tasks(
         batch = task_ids[i:i+batch_size]
         batch_start = time.time()
         with ThreadPoolExecutor(max_workers=min(batch_size, 8)) as executor:
-            future_to_task = {executor.submit(process_task, tid, model_name, db): tid for tid in batch}
+            future_to_task = {
+                executor.submit(_process_task_in_worker, tid, model_name): tid
+                for tid in batch
+            }
             for future in as_completed(future_to_task):
                 tid = future_to_task[future]
                 try:
@@ -737,7 +862,11 @@ async def batch_upload_audio(
         except Exception as e:
             status = "error"
             results.append({"error": str(e), "filename": file.filename})
-    return {"task_ids": task_ids, "results": results, "status": status}
+    return {
+        "task_ids": task_ids,
+        "results": _attach_batch_audio_creation_metadata(results, db),
+        "status": status,
+    }
 
 @router.get("/public/{filename}")
 def get_audio_public(filename: str):

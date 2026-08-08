@@ -83,7 +83,7 @@ class Case(BaseModel):
     is_archived = Column(Boolean, default=False)
     archive_reason = Column(Text)
     case_metadata = Column(JSON, default=dict)
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships
     status = relationship("CaseStatus", back_populates="cases")
@@ -102,6 +102,7 @@ class Case(BaseModel):
         Index('idx_case_priority', 'priority_id'),
         Index('idx_case_created_by', 'created_by'),
         Index('idx_case_archived', 'is_archived'),
+        Index('idx_case_archived_created_at', 'is_archived', 'created_at', 'id'),
     )
 
 class CaseStatus(BaseModel):
@@ -190,7 +191,7 @@ class AudioFile(BaseModel):
     audio_status = relationship("AudioStatus")
     processed_at = Column(DateTime)
     error_message = Column(Text)
-    created_at = Column(DateTime, server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, onupdate=func.now())
 
     task_id = Column(String, ForeignKey("tasks.id"))
@@ -219,7 +220,19 @@ class AudioFile(BaseModel):
         Index('idx_audio_uploaded_by', 'uploaded_by'),
         Index('idx_audio_archived', 'is_archived'),
         Index('idx_audio_storage', 'storage_type'),
+        Index(
+            'idx_audio_case_archived_created_at',
+            'case_id',
+            'is_archived',
+            'created_at',
+            'id',
+        ),
     )
+
+    @property
+    def uploaded_at(self):
+        """Canonical upload time; persisted once as created_at."""
+        return self.created_at
 
     @property
     def absolute_path(self) -> Path:

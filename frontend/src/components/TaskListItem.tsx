@@ -27,8 +27,8 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import SummarizeIcon from '@mui/icons-material/Summarize';
 import AudiotrackIcon from '@mui/icons-material/Audiotrack';
-import dayjs from 'dayjs';
 import InvestigationSummaryCard from './InvestigationSummaryCard';
+import DateTimeText from './DateTimeText';
 import AudioPlayer from 'react-h5-audio-player';
 import 'react-h5-audio-player/lib/styles.css';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -41,6 +41,7 @@ interface Task {
   result?: any;
   created_at?: string;
   updated_at?: string;
+  uploaded_at?: string;
   summary?: string;
   transcript?: string;
   case_id?: string;
@@ -107,6 +108,9 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
 }) => {
   const transcript = task.result?.transcription || task.result?.text || task.transcript || '';
   const summary = task.result?.summary || task.summary || '';
+  const requestedEngine = task.result?.requested_engine;
+  const engineUsed = task.result?.engine_used;
+  const fallbackReason = task.result?.fallback_reason;
   const [tab, setTab] = React.useState(
     (task.result?.summary || task.result?.context_analysis) ? 0 : 1
   );
@@ -143,9 +147,22 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
           </Grid>
           <Grid item xs={12} sm={3} md={2} lg={2}>
             <Typography fontWeight={600}>{task.filename}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              {task.created_at ? dayjs(task.created_at).format('HH:mm DD/MM/YYYY') : ''}
-            </Typography>
+            <DateTimeText
+              value={task.uploaded_at || task.created_at}
+              label="Tải lên"
+              sx={{ mt: 0.25 }}
+            />
+            {engineUsed && (
+              <Tooltip title={fallbackReason || `Requested engine: ${requestedEngine || engineUsed}`}>
+                <Chip
+                  size="small"
+                  label={`ASR: ${engineUsed === 'cherry' ? 'Cherry' : 'Legacy'}`}
+                  color={fallbackReason ? 'warning' : 'info'}
+                  variant="outlined"
+                  sx={{ mt: 0.75, maxWidth: '100%' }}
+                />
+              </Tooltip>
+            )}
           </Grid>
           <Grid item xs={12} sm={2} md={2} lg={2}>
             <Chip
@@ -223,7 +240,7 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
           {tab === 1 && task.type && (
             <Box mb={2}>
               <Chip label={task.type === 'case' ? 'Tóm tắt vụ việc' : 'Tóm tắt nhiều file'} color="secondary" sx={{ fontWeight: 700, fontSize: 15, mr: 2 }} />
-              <Typography variant="caption" color="text.secondary">{task.created_at ? new Date(task.created_at).toLocaleString() : ''}</Typography>
+              <DateTimeText value={task.created_at} sx={{ verticalAlign: 'middle' }} />
               {task.case && (
                 <Typography variant="body2" color="text.secondary">Vụ việc: {task.case.title}</Typography>
               )}

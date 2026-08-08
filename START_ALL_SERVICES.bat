@@ -13,11 +13,15 @@ cd /d "%PROJECT_DIR%"
 REM Local development defaults. Production must use .env / Docker secrets.
 if not defined ENVIRONMENT set ENVIRONMENT=development
 if not defined DEBUG set DEBUG=true
-if not defined AUTH_ENABLED set AUTH_ENABLED=false
+if not defined AUTH_ENABLED set AUTH_ENABLED=true
 if not defined INIT_DB_ON_STARTUP set INIT_DB_ON_STARTUP=true
 if not defined ENABLE_API_DOCS set ENABLE_API_DOCS=true
 if not defined SECRET_KEY set SECRET_KEY=local-dev-only-change-before-production-123456789
 if not defined INITIAL_ADMIN_PASSWORD set INITIAL_ADMIN_PASSWORD=local-dev-admin-change-me
+if not defined TRANSCRIPTION_ENGINE set TRANSCRIPTION_ENGINE=auto
+if not defined ENABLE_HIGH_RISK_AI_FIELDS set ENABLE_HIGH_RISK_AI_FIELDS=false
+if not defined STORE_RAW_LLM_RESPONSES set STORE_RAW_LLM_RESPONSES=false
+if not defined AI_CONTEXT_RETENTION_DAYS set AI_CONTEXT_RETENTION_DAYS=90
 
 REM ============================================================
 REM [1/6] Checking PostgreSQL

@@ -69,6 +69,11 @@ RESULT_FIELDS = {
     "model_name",
     "summary_model",
     "summary_type",
+    "requested_engine",
+    "engine_used",
+    "fallback_reason",
+    "audio_sha256",
+    "audio_integrity_status",
 }
 
 
@@ -303,6 +308,8 @@ def update_task(task_id: str, data: Dict[str, Any], db: Session | None = None) -
             task.result = _deep_merge(_as_dict(task.result), result_patch)
         if status_update:
             task.status = canonical_status(status_update, _as_dict(task.result))
+            if task.status != "failed" and "error" not in data:
+                task.error = None
             _sync_audio_status(db, task, task.status)
         task.updated_at = datetime.utcnow()
         if own_session:

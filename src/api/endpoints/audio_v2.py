@@ -1,5 +1,5 @@
 ﻿"""Audio API v2 - Modular"""
-from fastapi import APIRouter, UploadFile, File, HTTPException, Body, Depends, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, Body, Depends, Form, Query
 from typing import Dict, Any
 from src.core.logging import logger
 from src.database.config.database import get_db
@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 from src.services.audio_service import save_audio_and_create_task
 from src.core.auth import assert_case_access, assert_task_access, check_rate_limit, get_current_user
 from src.core.config import settings
-from src.database.models.models import User
-from src.services.task_service import extract_visualization_payload
+from src.database.models.models import AudioFile, User
+from src.core.time import LEGACY_DATABASE_TIMEZONE, utc_isoformat
+from src.services.task_service import effective_task_status, extract_visualization_payload
 
 router = APIRouter()
 
@@ -24,7 +25,25 @@ async def upload_audio_v2(
         if case_id:
             assert_case_access(db, current_user, int(case_id), "write")
         check_rate_limit(f"rl:upload:{current_user.id}", settings.UPLOAD_RATE_LIMIT_PER_HOUR, 3600)
-        return save_audio_and_create_task(file, db, case_id=int(case_id) if case_id else None, user_id=current_user.id)
+        result = save_audio_and_create_task(
+            file,
+            db,
+            case_id=int(case_id) if case_id else None,
+            user_id=current_user.id,
+        )
+        audio_file = db.query(AudioFile).filter(AudioFile.id == result.get("audio_id")).first()
+        if audio_file:
+            result.update(
+                created_at=utc_isoformat(
+                    audio_file.created_at,
+                    naive_timezone=LEGACY_DATABASE_TIMEZONE,
+                ),
+                uploaded_at=utc_isoformat(
+                    audio_file.uploaded_at,
+                    naive_timezone=LEGACY_DATABASE_TIMEZONE,
+                ),
+            )
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -93,17 +112,49 @@ async def summarize_v2(task_id: str, model_name: str = Body(None), summary_type:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/tasks/{task_id}/status")
-async def get_status_v2(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_status_v2(
+    task_id: str,
+    include_result: bool = Query(True),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
     Get task status with full data from task.result.
     Used for polling after async operations (transcribe, summarize).
     """
     try:
         from src.services.task_service import get_task
-        task = get_task(task_id)
+
+        authorized_task = assert_task_access(db, current_user, task_id, "read")
+        audio = (
+            db.query(AudioFile)
+            .filter(AudioFile.task_id == task_id)
+            .order_by(AudioFile.id.asc())
+            .first()
+        )
+        if not include_result:
+            audio_id = audio.id if audio else None
+            return {
+                "task_id": task_id,
+                "audio_id": audio_id,
+                "download_url": f"/api/v1/audio/{audio_id}/download" if audio_id else None,
+                "status": effective_task_status(
+                    authorized_task.status,
+                    audio.status if audio else None,
+                ),
+                "error": authorized_task.error,
+                "filename": authorized_task.filename,
+                "created_at": authorized_task.created_at,
+                "updated_at": authorized_task.updated_at,
+                "uploaded_at": utc_isoformat(
+                    audio.uploaded_at,
+                    naive_timezone=LEGACY_DATABASE_TIMEZONE,
+                ) if audio else None,
+            }
+
+        task = get_task(task_id, db=db)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
-        assert_task_access(db, current_user, task_id, "read")
 
         # Extract result data (handle both dict and string JSON)
         result_data = task.get("result", {})
@@ -137,6 +188,9 @@ async def get_status_v2(task_id: str, db: Session = Depends(get_db), current_use
         has_visualization = False
         audio_id = None
         download_url = None
+        requested_engine = None
+        engine_used = None
+        fallback_reason = None
 
         if isinstance(result_data, dict):
             num_speakers = result_data.get("num_speakers")
@@ -147,8 +201,11 @@ async def get_status_v2(task_id: str, db: Session = Depends(get_db), current_use
             context_analysis = result_data.get("context_analysis", {})
             visualization_data = result_data.get("visualization_data")
             has_visualization = result_data.get("has_visualization", False)
-            audio_id = result_data.get("audio_id")
+            audio_id = result_data.get("audio_id") or (audio.id if audio else None)
             download_url = result_data.get("download_url")
+            requested_engine = result_data.get("requested_engine")
+            engine_used = result_data.get("engine_used")
+            fallback_reason = result_data.get("fallback_reason")
 
         # Build comprehensive response
         response = {
@@ -167,6 +224,13 @@ async def get_status_v2(task_id: str, db: Session = Depends(get_db), current_use
             "filename": task.get("filename"),
             "created_at": task.get("created_at"),
             "updated_at": task.get("updated_at"),
+            "uploaded_at": utc_isoformat(
+                audio.uploaded_at,
+                naive_timezone=LEGACY_DATABASE_TIMEZONE,
+            ) if audio else None,
+            "requested_engine": requested_engine,
+            "engine_used": engine_used,
+            "fallback_reason": fallback_reason,
         }
 
         # Add optional fields if available

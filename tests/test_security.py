@@ -308,6 +308,31 @@ def test_logout_revokes_server_side_session(auth_enabled):
     assert replay.get("/api/v1/auth/me").status_code == 401
 
 
+def test_csrf_endpoint_recovers_cookie_session_mismatch(auth_enabled):
+    _, username, password = _create_user()
+    client = _login_client(username, password)
+
+    client.cookies.set(
+        settings.CSRF_COOKIE_NAME,
+        "rotated-after-browser-reload",
+        domain="testserver.local",
+        path="/",
+    )
+    refresh = client.get("/api/v1/auth/csrf")
+
+    assert refresh.status_code == 200
+    recovered = refresh.json()["csrf_token"]
+    assert recovered != "rotated-after-browser-reload"
+    assert client.cookies.get(settings.CSRF_COOKIE_NAME) == recovered
+    assert (
+        client.post(
+            "/api/v1/auth/logout",
+            headers={"x-csrf-token": recovered},
+        ).status_code
+        == 200
+    )
+
+
 def test_resource_level_auth_blocks_cross_case_task(auth_enabled):
     user_a_id, user_a, password_a = _create_user()
     user_b_id, _, _ = _create_user()
@@ -589,3 +614,179 @@ def test_production_rejects_default_secret(monkeypatch):
 
     with pytest.raises(RuntimeError, match="Weak SECRET_KEY"):
         validate_security_settings()
+
+
+def test_disabled_auth_requires_explicit_development_bypass(monkeypatch):
+    monkeypatch.setattr(settings, "ENVIRONMENT", "development")
+    monkeypatch.setattr(settings, "AUTH_ENABLED", False)
+    monkeypatch.setattr(settings, "DEV_AUTH_BYPASS", False)
+
+    with pytest.raises(RuntimeError, match="DEV_AUTH_BYPASS"):
+        validate_security_settings()
+
+
+def test_development_bypass_requires_loopback(monkeypatch):
+    monkeypatch.setattr(settings, "ENVIRONMENT", "development")
+    monkeypatch.setattr(settings, "AUTH_ENABLED", False)
+    monkeypatch.setattr(settings, "DEV_AUTH_BYPASS", True)
+    monkeypatch.setattr(settings, "DEV_USER_ID", 1)
+    monkeypatch.setattr(settings, "BACKEND_HOST", "0.0.0.0")
+
+    with pytest.raises(RuntimeError, match="loopback"):
+        validate_security_settings()
+
+
+def test_case_patch_rejects_mass_assignment_for_member(auth_enabled):
+    owner_id, _, _ = _create_user()
+    member_id, member_username, member_password = _create_user()
+    case_id = _create_case_for_user(owner_id)
+
+    db = SessionLocal()
+    try:
+        member_role = db.query(ParticipantRole).filter(
+            ParticipantRole.role_name == "member"
+        ).first()
+        db.add(
+            CaseParticipant(
+                case_id=case_id,
+                user_id=member_id,
+                role_id=member_role.id,
+                is_active=True,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    client = _login_client(member_username, member_password)
+    headers = _csrf_header(client)
+    allowed = client.patch(
+        f"/api/v1/cases/{case_id}",
+        json={"title": "Member supplied title"},
+        headers=headers,
+    )
+    assert allowed.status_code == 200, allowed.text
+
+    for forbidden_field, value in {
+        "created_by": member_id,
+        "id": 999999,
+        "is_archived": True,
+        "case_code": "attacker-controlled",
+        "participants": [],
+    }.items():
+        response = client.patch(
+            f"/api/v1/cases/{case_id}",
+            json={forbidden_field: value},
+            headers=headers,
+        )
+        assert response.status_code == 422, (forbidden_field, response.text)
+
+    db = SessionLocal()
+    try:
+        case = db.query(Case).filter(Case.id == case_id).first()
+        assert case.created_by == owner_id
+        assert case.is_archived is False
+        assert case.title == "Member supplied title"
+    finally:
+        db.close()
+
+
+def test_thread_worker_owns_and_closes_its_session(monkeypatch):
+    from src.api.endpoints import audio as audio_endpoint
+
+    sessions = []
+
+    class FakeSession:
+        def __init__(self):
+            self.closed = False
+            self.rolled_back = False
+            sessions.append(self)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            self.closed = True
+
+        def rollback(self):
+            self.rolled_back = True
+
+    monkeypatch.setattr(audio_endpoint, "SessionLocal", FakeSession)
+    monkeypatch.setattr(
+        audio_endpoint,
+        "process_task",
+        lambda task_id, model_name, db: (task_id, model_name, id(db)),
+    )
+
+    first = audio_endpoint._process_task_in_worker("task-1", "model")
+    second = audio_endpoint._process_task_in_worker("task-2", "model")
+
+    assert first[2] != second[2]
+    assert len(sessions) == 2
+    assert all(session.closed for session in sessions)
+
+
+def test_thread_worker_rolls_back_on_failure(monkeypatch):
+    from src.api.endpoints import audio as audio_endpoint
+
+    class FakeSession:
+        rolled_back = False
+        closed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            self.closed = True
+
+        def rollback(self):
+            self.rolled_back = True
+
+    session = FakeSession()
+    monkeypatch.setattr(audio_endpoint, "SessionLocal", lambda: session)
+
+    def fail(*_args):
+        raise RuntimeError("worker failed")
+
+    monkeypatch.setattr(audio_endpoint, "process_task", fail)
+
+    with pytest.raises(RuntimeError, match="worker failed"):
+        audio_endpoint._process_task_in_worker("task-1", "model")
+    assert session.rolled_back is True
+    assert session.closed is True
+
+
+def test_legacy_celery_task_closes_session(monkeypatch):
+    import src.database.config.database as database_module
+    from src.worker import tasks as worker_tasks
+
+    class FakeSession:
+        rolled_back = False
+        closed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            self.closed = True
+
+        def rollback(self):
+            self.rolled_back = True
+
+    session = FakeSession()
+    monkeypatch.setattr(database_module, "SessionLocal", lambda: session)
+    monkeypatch.setattr(
+        worker_tasks.old_tasks,
+        "process_task_with_diarization",
+        lambda task_id, model_name, db, method: {
+            "task_id": task_id,
+            "model_name": model_name,
+            "method": method,
+            "session": id(db),
+        },
+    )
+
+    result = worker_tasks.process_task_async.run("task-1", "model", "none")
+
+    assert result["session"] == id(session)
+    assert session.closed is True

@@ -8,7 +8,7 @@ import bcrypt
 import redis
 from fastapi import Depends, HTTPException, Request, Response, status
 from jose import JWTError, jwt
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from src.core.config import settings
 from src.database.config.database import SessionLocal, get_db
@@ -219,6 +219,12 @@ def verify_password(user: User | None, password: str) -> bool:
 
 async def auth_middleware(request: Request, call_next):
     if not settings.AUTH_ENABLED:
+        if not settings.DEV_AUTH_BYPASS:
+            return Response(
+                content='{"detail":"Authentication configuration invalid"}',
+                status_code=503,
+                media_type="application/json",
+            )
         return await call_next(request)
     if request.method.upper() == "OPTIONS":
         return await call_next(request)
@@ -244,9 +250,11 @@ async def auth_middleware(request: Request, call_next):
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     if not settings.AUTH_ENABLED:
-        user = db.query(User).filter(User.username == "admin").first() or db.query(User).first()
-        if not user:
-            raise HTTPException(status_code=500, detail="No development user available")
+        if not settings.DEV_AUTH_BYPASS or not settings.DEV_USER_ID:
+            raise HTTPException(status_code=503, detail="Authentication configuration invalid")
+        user = db.query(User).filter(User.id == settings.DEV_USER_ID).first()
+        if not user or not user.is_active:
+            raise HTTPException(status_code=503, detail="Configured development user is unavailable")
         return user
     if getattr(request.state, "user", None):
         user_id = request.state.user.id
@@ -323,7 +331,23 @@ def assert_audio_access(db: Session, user: User, audio_id: int, action: str) -> 
 
 
 def assert_task_access(db: Session, user: User, task_id: str, action: str) -> Task:
-    task = db.query(Task).filter(Task.id == task_id).first()
+    task = (
+        db.query(Task)
+        .options(
+            load_only(
+                Task.id,
+                Task.case_id,
+                Task.user_id,
+                Task.filename,
+                Task.status,
+                Task.error,
+                Task.created_at,
+                Task.updated_at,
+            )
+        )
+        .filter(Task.id == task_id)
+        .first()
+    )
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     if task.case_id is None:
