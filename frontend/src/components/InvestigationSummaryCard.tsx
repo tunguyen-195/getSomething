@@ -14,6 +14,7 @@ import EventIcon from '@mui/icons-material/Event';
 import PlaceIcon from '@mui/icons-material/Place';
 import LabelIcon from '@mui/icons-material/Label';
 import { apiFetch } from '../api/client';
+import { formatAnalysisValue, formatSlangDetected } from '../utils/analysisRender';
 
 // Kiểu dữ liệu cho props
 interface InvestigationSummaryCardProps {
@@ -111,33 +112,50 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
       parsedAnalysis = { ...parsedAnalysis, ...inner };
     }
   }
+  const knowledge = parsedAnalysis?.investigation_knowledge;
+  const evidenceSpans = Array.isArray(knowledge?.evidence_spans) ? knowledge.evidence_spans : [];
+  const evidenceById = new Map(evidenceSpans.map((item: any) => [item.evidence_id, item]));
+  const evidenceLabel = (evidenceIds: string[] = []) => evidenceIds
+    .map((id: string) => evidenceById.get(id))
+    .filter(Boolean)
+    .map((item: any) => {
+      const time = item.start_seconds != null ? `${Number(item.start_seconds).toFixed(2)}s` : 'text';
+      const speaker = formatAnalysisValue(item.speaker_id);
+      return `${time}${speaker ? ` · ${speaker}` : ''}: “${formatAnalysisValue(item.quote)}”`;
+    })
+    .join('\n');
+  const summaryText = formatAnalysisValue(parsedAnalysis?.summary);
   // Mapping lại các trường tổng quan từ parsedAnalysis
   const mappedOverview = {
-    title: parsedAnalysis?.summary || parsedAnalysis?.context?.topic || parsedAnalysis?.context?.purpose || '',
-    time: parsedAnalysis?.entities?.time?.[0]?.value || parsedAnalysis?.details?.time || '',
-    location: parsedAnalysis?.entities?.locations?.[0]?.name || '',
-    status: parsedAnalysis?.context?.status || '',
-    topic: parsedAnalysis?.context?.topic || '',
+    title: summaryText || formatAnalysisValue(parsedAnalysis?.context?.topic) || formatAnalysisValue(parsedAnalysis?.context?.purpose),
+    time: formatAnalysisValue(parsedAnalysis?.entities?.time?.[0]?.value || parsedAnalysis?.details?.time),
+    location: formatAnalysisValue(parsedAnalysis?.entities?.locations?.[0]?.name),
+    status: formatAnalysisValue(parsedAnalysis?.context?.status),
+    topic: formatAnalysisValue(parsedAnalysis?.context?.topic),
   };
   // Extract fields từ parsedAnalysis
-  const entities = Array.isArray(parsedAnalysis?.entities) ? parsedAnalysis.entities : (Array.isArray(parsedAnalysis?.entities?.people) ? parsedAnalysis.entities.people : []);
-  const relationships = Array.isArray(parsedAnalysis?.relationships) ? parsedAnalysis.relationships : [];
-  const events = Array.isArray(parsedAnalysis?.events) ? parsedAnalysis.events : [];
+  const entities = Array.isArray(knowledge?.entities)
+    ? knowledge.entities
+    : (Array.isArray(parsedAnalysis?.entities) ? parsedAnalysis.entities : (Array.isArray(parsedAnalysis?.entities?.people) ? parsedAnalysis.entities.people : []));
+  const relationships = Array.isArray(knowledge?.relationships) ? knowledge.relationships : [];
+  const events = Array.isArray(knowledge?.events) ? knowledge.events : [];
   const sensitive = Array.isArray(parsedAnalysis?.sensitive_info) ? parsedAnalysis.sensitive_info : [];
-  const keypoints = Array.isArray(parsedAnalysis?.key_points) ? parsedAnalysis.key_points : [];
+  const keypoints = Array.isArray(knowledge?.facts) ? knowledge.facts : [];
   const actions = Array.isArray(parsedAnalysis?.actions) ? parsedAnalysis.actions : [];
   const offers = Array.isArray(parsedAnalysis?.offers) ? parsedAnalysis.offers : [];
   const decisions = Array.isArray(parsedAnalysis?.decisions) ? parsedAnalysis.decisions : [];
-  const sentiment = parsedAnalysis?.sentiment || '';
-  const risk = Array.isArray(parsedAnalysis?.risk) ? parsedAnalysis.risk : (parsedAnalysis?.risk ? [parsedAnalysis.risk] : []);
-  const notes = parsedAnalysis?.notes || '';
-  const insight = Array.isArray(parsedAnalysis?.insight) ? parsedAnalysis.insight : (parsedAnalysis?.insight ? [parsedAnalysis.insight] : []);
-  const slang = parsedAnalysis?.slang_detected || '';
-  const hiddenRelationships = Array.isArray(parsedAnalysis?.hidden_relationships) ? parsedAnalysis.hidden_relationships : (parsedAnalysis?.hidden_relationships ? [parsedAnalysis.hidden_relationships] : []);
+  const sentiment = formatAnalysisValue(
+    typeof parsedAnalysis?.sentiment === 'string' ? parsedAnalysis.sentiment : parsedAnalysis?.sentiment?.overall,
+  );
+  const risk = Array.isArray(knowledge?.hypotheses) ? knowledge.hypotheses : [];
+  const notes = knowledge ? '' : formatAnalysisValue(parsedAnalysis?.notes);
+  const insight = Array.isArray(knowledge?.facts) ? knowledge.facts : [];
+  const slang = formatSlangDetected(parsedAnalysis?.slang_detected);
+  const hiddenRelationships = knowledge ? [] : (Array.isArray(parsedAnalysis?.hidden_relationships) ? parsedAnalysis.hidden_relationships : (parsedAnalysis?.hidden_relationships ? [parsedAnalysis.hidden_relationships] : []));
 
   // Timeline: lấy từ events, nếu không có thì từ entities.time hoặc timeline
-  const timelineEvents = Array.isArray(parsedAnalysis?.events) && parsedAnalysis.events.length > 0
-    ? parsedAnalysis.events
+  const timelineEvents = Array.isArray(knowledge?.timeline) && knowledge.timeline.length > 0
+    ? knowledge.timeline
     : (Array.isArray(parsedAnalysis?.timeline) ? parsedAnalysis.timeline : (Array.isArray(parsedAnalysis?.entities?.time) ? parsedAnalysis.entities.time.map((t: any) => ({ time: t.value, description: t.context || '' })) : []));
 
   // Nhạy cảm: lấy từ sensitive_info, đồng thời gom các entity có is_sensitive=true
@@ -155,8 +173,28 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
   ];
 
   // React Flow nodes/edges
-  const nodes = entities.map((e: any, idx: number) => ({ id: e.id || String(idx), data: { label: e.label || e.name || e.type, isSensitive: e.is_sensitive, tooltip: e.context }, position: { x: 100 + idx * 120, y: 100 } }));
-  const edges = relationships.map((r: any, idx: number) => ({ id: r.id || String(idx), source: r.source, target: r.target, label: r.label || r.type, tooltip: r.context }));
+  const entityNodeId = new Map(entities.map((e: any, idx: number) => [
+    formatAnalysisValue(e.value || e.name || e.label),
+    formatAnalysisValue(e.entity_id || e.id) || String(idx),
+  ]));
+  const nodes = entities.map((e: any, idx: number) => ({
+    id: formatAnalysisValue(e.entity_id || e.id) || String(idx),
+    data: {
+      label: formatAnalysisValue(e.value || e.label || e.name || e.entity_type || e.type),
+      isSensitive: e.is_sensitive,
+      tooltip: evidenceLabel(e.evidence_ids) || formatAnalysisValue(e.context),
+    },
+    position: { x: 100 + idx * 120, y: 100 },
+  }));
+  const edges = relationships
+    .filter((r: any) => entityNodeId.has(formatAnalysisValue(r.source)) && entityNodeId.has(formatAnalysisValue(r.target)))
+    .map((r: any, idx: number) => ({
+      id: formatAnalysisValue(r.relationship_id || r.id) || String(idx),
+      source: entityNodeId.get(formatAnalysisValue(r.source)),
+      target: entityNodeId.get(formatAnalysisValue(r.target)),
+      label: formatAnalysisValue(r.label || r.type),
+      tooltip: evidenceLabel(r.evidence_ids) || formatAnalysisValue(r.context),
+    }));
 
   // Helper: biểu tượng cảm xúc
   const sentimentIcon = (sentiment: string) => {
@@ -168,9 +206,9 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
 
   // Helper: insight checklist
   const insightChecklist = [
-    ...(offers.length ? offers.map((o: any) => ({ label: `Ưu đãi: ${o.content || o}`, icon: <InsightsIcon color="primary" /> })) : []),
-    ...(decisions.length ? decisions.map((d: any) => ({ label: `Quyết định: ${d.content || d}`, icon: <InfoIcon color="info" /> })) : []),
-    ...(actions.length ? actions.map((a: any) => ({ label: `Hành động: ${a.content || a}`, icon: <InfoIcon color="secondary" /> })) : []),
+    ...(offers.length ? offers.map((o: any) => ({ label: `Ưu đãi: ${formatAnalysisValue(o.content || o)}`, icon: <InsightsIcon color="primary" /> })) : []),
+    ...(decisions.length ? decisions.map((d: any) => ({ label: `Quyết định: ${formatAnalysisValue(d.content || d)}`, icon: <InfoIcon color="info" /> })) : []),
+    ...(actions.length ? actions.map((a: any) => ({ label: `Hành động: ${formatAnalysisValue(a.content || a)}`, icon: <InfoIcon color="secondary" /> })) : []),
     ...(sentiment ? [{ label: `Cảm xúc: ${sentiment}`, icon: sentimentIcon(sentiment) }] : []),
   ];
 
@@ -204,10 +242,10 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', background: '#f6fafd', borderRadius: 2, p: 2, mb: 2 }}>
               <Typography variant="subtitle1" fontWeight={500} color="#333" sx={{ flex: 1, lineHeight: 1.7 }}>
-                {mappedOverview.title || parsedAnalysis?.summary || 'Không có tóm tắt hội thoại.'}
+                {mappedOverview.title || 'Không có tóm tắt hội thoại.'}
               </Typography>
               <Tooltip title={copied === 'summary' ? 'Đã copy!' : 'Copy'}>
-                <Button size="small" variant="text" color={copied === 'summary' ? 'success' : 'primary'} sx={{ minWidth: 0, ml: 1 }} onClick={() => {navigator.clipboard.writeText(mappedOverview.title || parsedAnalysis?.summary || ''); setCopied('summary'); setTimeout(()=>setCopied(false), 1500);}} disabled={!(mappedOverview.title || parsedAnalysis?.summary)}><ContentCopyIcon fontSize="small" /></Button>
+                <Button size="small" variant="text" color={copied === 'summary' ? 'success' : 'primary'} sx={{ minWidth: 0, ml: 1 }} onClick={() => {navigator.clipboard.writeText(mappedOverview.title); setCopied('summary'); setTimeout(()=>setCopied(false), 1500);}} disabled={!mappedOverview.title}><ContentCopyIcon fontSize="small" /></Button>
               </Tooltip>
             </Box>
             <Box sx={{ background: '#f8fafc', borderRadius: 3, p: 2, mb: 2, border: '1px solid #e3e8ee' }}>
@@ -279,7 +317,7 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
                   {keypoints.map((kp: any, idx: number) => (
                     <ListItem key={idx}>
                       <Checkbox checked disabled />
-                      <Typography>{typeof kp === 'string' ? kp : JSON.stringify(kp)}</Typography>
+                      <Typography>{formatAnalysisValue(kp)}</Typography>
                     </ListItem>
                   ))}
                 </List>
@@ -310,9 +348,9 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
               <Typography variant="subtitle2" fontWeight={700}>Thực thể:</Typography>
               <List>
                 {entities.map((e: any, idx: number) => (
-                  <Tooltip key={idx} title={e.context || ''} arrow>
+                  <Tooltip key={idx} title={formatAnalysisValue(e.context)} arrow>
                     <ListItem>
-                      <Chip label={e.label || e.name || e.type} color={e.is_sensitive ? 'error' : 'primary'} icon={e.is_sensitive ? <SecurityIcon /> : <InfoIcon />} />
+                      <Chip label={formatAnalysisValue(e.label || e.name || e.value || e.type) || 'Không rõ'} color={e.is_sensitive ? 'error' : 'primary'} icon={e.is_sensitive ? <SecurityIcon /> : <InfoIcon />} />
                     </ListItem>
                   </Tooltip>
                 ))}
@@ -320,9 +358,9 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
               <Typography variant="subtitle2" fontWeight={700}>Mối quan hệ:</Typography>
               <List>
                 {relationships.map((r: any, idx: number) => (
-                  <Tooltip key={idx} title={r.context || ''} arrow>
+                  <Tooltip key={idx} title={formatAnalysisValue(r.context)} arrow>
                     <ListItem>
-                      <Chip label={r.label || r.type} color="secondary" icon={<InfoIcon />} />
+                      <Chip label={formatAnalysisValue(r.label || r.type) || 'Không rõ'} color="secondary" icon={<InfoIcon />} />
                     </ListItem>
                   </Tooltip>
                 ))}
@@ -341,8 +379,8 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
                     {idx < timelineEvents.length - 1 && <TimelineConnector />}
                   </TimelineSeparator>
                   <TimelineContent>
-                    <Typography fontWeight={600}>{ev.time || `Sự kiện ${idx + 1}`}</Typography>
-                    <Typography>{ev.description || ev.action || ev.event || ''}</Typography>
+                    <Typography fontWeight={600}>{formatAnalysisValue(ev.time) || `Sự kiện ${idx + 1}`}</Typography>
+                    <Typography>{formatAnalysisValue(ev.description || ev.action || ev.event)}</Typography>
                   </TimelineContent>
                 </TimelineItem>
               ))}
@@ -377,16 +415,16 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
                       <ListItemIcon><SecurityIcon color="error" /></ListItemIcon>
                       <ListItemText
                         primary={<span>
-                          <b>{info.name || info.value || 'Thông tin nhạy cảm'}</b>
-                          {info.type && <Chip label={info.type} size="small" sx={{ ml: 1 }} />}
+                          <b>{formatAnalysisValue(info.name || info.value) || 'Thông tin nhạy cảm'}</b>
+                          {info.type && <Chip label={formatAnalysisValue(info.type)} size="small" sx={{ ml: 1 }} />}
                           {info.is_sensitive && <Chip label="Nhạy cảm" color="error" size="small" sx={{ ml: 1 }} />}
-                          {['phone','email','id'].includes(info.type || '') && info.value && (
-                            <Button size="small" variant="outlined" color="primary" sx={{ ml: 1 }} onClick={() => navigator.clipboard.writeText(info.value)}>Copy</Button>
+                          {['phone','email','id'].includes(formatAnalysisValue(info.type)) && info.value && (
+                            <Button size="small" variant="outlined" color="primary" sx={{ ml: 1 }} onClick={() => navigator.clipboard.writeText(formatAnalysisValue(info.value))}>Copy</Button>
                           )}
                         </span>}
                         secondary={<>
-                          {info.sensitivity_reason && <Typography color="error">Lý do: {info.sensitivity_reason}</Typography>}
-                          {info.context && <Typography color="text.secondary">{info.context}</Typography>}
+                          {info.sensitivity_reason && <Typography color="error">Lý do: {formatAnalysisValue(info.sensitivity_reason)}</Typography>}
+                          {info.context && <Typography color="text.secondary">{formatAnalysisValue(info.context)}</Typography>}
                         </>}
                       />
                     </ListItem>
@@ -413,7 +451,7 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
           <Box mb={2}>
             {risk.length > 0 && (
               <Alert severity="error" sx={{ mb: 1 }}>
-                <b>Nguy cơ/rủi ro:</b> {risk.map((r: any, idx: number) => <span key={idx}>{typeof r === 'string' ? r : JSON.stringify(r)}<br/></span>)}
+                <b>Nguy cơ/rủi ro:</b> {risk.map((r: any, idx: number) => <span key={idx}>{formatAnalysisValue(r)}<br/></span>)}
               </Alert>
             )}
             {slang && (
@@ -423,7 +461,7 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
             )}
             {hiddenRelationships.length > 0 && (
               <Alert severity="info" sx={{ mb: 1 }}>
-                <b>Mối quan hệ ẩn/nghi vấn:</b> {hiddenRelationships.map((h: any, idx: number) => <span key={idx}>{typeof h === 'string' ? h : JSON.stringify(h)}<br/></span>)}
+                <b>Mối quan hệ ẩn/nghi vấn:</b> {hiddenRelationships.map((h: any, idx: number) => <span key={idx}>{formatAnalysisValue(h)}<br/></span>)}
               </Alert>
             )}
             {notes && (
@@ -440,7 +478,7 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
                 <Tooltip key={idx} title="Insight nghiệp vụ, dấu hiệu bất thường, nguy cơ, hành vi nghi vấn, mối liên hệ ẩn..." arrow>
                   <ListItem>
                     <Checkbox checked disabled />
-                    <Typography>{typeof ins === 'string' ? ins : JSON.stringify(ins)}</Typography>
+                    <Typography>{formatAnalysisValue(ins)}</Typography>
                   </ListItem>
                 </Tooltip>
               ))}
