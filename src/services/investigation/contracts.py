@@ -9,6 +9,7 @@ intentionally out of scope for this module.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import unicodedata
 from collections.abc import Mapping
@@ -23,15 +24,39 @@ from pydantic import (
     model_validator,
 )
 
-ADAPTIVE_CONTRACT_VERSION: Literal["adaptive-summary-analysis-v1.0"] = (
+ADAPTIVE_CONTRACT_VERSION: Literal[
     "adaptive-summary-analysis-v1.0"
-)
-ADAPTIVE_MANIFEST_VERSION: Literal["adaptive-run-manifest-v1.0"] = (
+] = "adaptive-summary-analysis-v1.0"
+ADAPTIVE_MANIFEST_VERSION: Literal[
     "adaptive-run-manifest-v1.0"
-)
-ADAPTIVE_DISCOVERY_PROMPT_VERSION: Literal["adaptive-open-discovery-v1.0"] = (
+] = "adaptive-run-manifest-v1.0"
+ADAPTIVE_DISCOVERY_PROMPT_VERSION: Literal[
     "adaptive-open-discovery-v1.0"
-)
+] = "adaptive-open-discovery-v1.0"
+INVESTIGATION_RUN_VERSION: Literal["investigation-run-v1.0"] = "investigation-run-v1.0"
+SUMMARY_PROJECTION_VERSION: Literal[
+    "investigation-summary-projection-v1.0"
+] = "investigation-summary-projection-v1.0"
+ANALYSIS_PROJECTION_VERSION: Literal[
+    "investigation-analysis-projection-v1.0"
+] = "investigation-analysis-projection-v1.0"
+
+EpistemicKind = Literal["fact", "inference", "hypothesis", "verification_action"]
+VerificationDisposition = Literal[
+    "supported", "partially_supported", "contradicted", "unverifiable"
+]
+EvidenceResolutionStatus = Literal["resolved", "unresolved", "revision_mismatch"]
+ProjectionEligibility = Literal["factual", "non_factual", "withheld"]
+RiskTier = Literal["ordinary", "high_risk"]
+DerivationType = Literal[
+    "aggregation",
+    "comparison",
+    "temporal_sequence",
+    "shared_attribute",
+    "contradiction_synthesis",
+    "constraint_inference",
+]
+CounterevidenceStatus = Literal["none_found", "present", "not_evaluated"]
 
 _FILLER_VALUES = {
     "không có thông tin",
@@ -182,6 +207,12 @@ def _ensure_unique(values: list[str], label: str) -> list[str]:
     return values
 
 
+def _require_refs(refs: list[str], available: set[str], label: str) -> None:
+    missing = sorted(set(refs) - available)
+    if missing:
+        raise ValueError(f"dangling {label}: {', '.join(missing)}")
+
+
 class StrictEnvelope(BaseModel):
     """Reject undeclared envelope fields and dirty sparse values."""
 
@@ -239,6 +270,8 @@ class EvidenceSpan(StrictEnvelope):
 
     @model_validator(mode="after")
     def validate_ranges(self) -> "EvidenceSpan":
+        if self.quote_sha256 != sha256_utf8(self.quote_exact):
+            raise ValueError("quote_sha256 must match quote_exact UTF-8 bytes")
         if (self.raw_char_start is None) != (self.raw_char_end is None):
             raise ValueError("raw character offsets must be provided together")
         if (
@@ -279,17 +312,23 @@ class GroundedClaim(StrictEnvelope):
     polarity: Literal[
         "affirmed", "negated", "uncertain", "reported", "quoted_instruction"
     ]
-    disposition: Literal[
-        "supported", "partially_supported", "contradicted", "unverifiable"
-    ]
-    epistemic_status: Literal["fact", "hypothesis"] = "fact"
-    risk_tier: Literal["ordinary", "high_risk"] = "ordinary"
+    disposition: VerificationDisposition
+    epistemic_status: EpistemicKind = "fact"
+    risk_tier: RiskTier | None = None
+    risk_screening_artifact_ref: str | None = Field(default=None, min_length=1)
     requires_human_verification: bool = False
     evidence_refs: list[str] = Field(min_length=1)
     concept_refs: list[str] | None = None
+    candidate_refs: list[str] | None = None
+    premise_claim_refs: list[str] | None = None
     attributes: dict[str, JsonValue] | None = None
 
-    @field_validator("evidence_refs", "concept_refs")
+    @field_validator(
+        "evidence_refs",
+        "concept_refs",
+        "candidate_refs",
+        "premise_claim_refs",
+    )
     @classmethod
     def unique_refs(cls, values: list[str] | None) -> list[str] | None:
         if values is None:
@@ -298,6 +337,8 @@ class GroundedClaim(StrictEnvelope):
 
     @model_validator(mode="after")
     def protect_high_risk_claims(self) -> "GroundedClaim":
+        if self.epistemic_status != "fact" and not self.requires_human_verification:
+            raise ValueError("non-factual claims require human verification")
         if self.risk_tier == "high_risk":
             if self.epistemic_status != "hypothesis":
                 raise ValueError("high-risk claims must be represented as hypotheses")
@@ -305,6 +346,8 @@ class GroundedClaim(StrictEnvelope):
                 raise ValueError("high-risk hypotheses require human verification")
             if self.disposition not in {"supported", "partially_supported"}:
                 raise ValueError("unsupported high-risk hypotheses cannot be released")
+        if self.disposition != "supported" and not self.requires_human_verification:
+            raise ValueError("non-supported claims require human verification")
         return self
 
 
@@ -314,17 +357,63 @@ class GroundedRelationship(StrictEnvelope):
     source_ref: str = Field(min_length=1)
     target_ref: str = Field(min_length=1)
     evidence_refs: list[str] = Field(min_length=1)
+    epistemic_status: EpistemicKind = "fact"
+    disposition: VerificationDisposition = "supported"
+    evidence_resolution: EvidenceResolutionStatus = "unresolved"
+    source_revision_id: str | None = Field(default=None, min_length=1)
+    resolution_authority: Literal["t2-evidence-selector-v1"] | None = None
+    resolution_artifact_ref: str | None = Field(default=None, min_length=1)
+    risk_tier: RiskTier | None = None
+    risk_screening_artifact_ref: str | None = Field(default=None, min_length=1)
+    projection_eligibility: ProjectionEligibility = "withheld"
+    eligibility_artifact_ref: str | None = Field(default=None, min_length=1)
+    requires_human_verification: bool = False
+    premise_claim_refs: list[str] | None = None
     attributes: dict[str, JsonValue] | None = None
 
-    @field_validator("evidence_refs")
+    @field_validator("evidence_refs", "premise_claim_refs")
     @classmethod
-    def unique_evidence_refs(cls, values: list[str]) -> list[str]:
-        return _ensure_unique(values, "relationship evidence_refs")
+    def unique_relationship_refs(
+        cls,
+        values: list[str] | None,
+    ) -> list[str] | None:
+        if values is None:
+            return None
+        return _ensure_unique(values, "relationship references")
 
     @model_validator(mode="after")
     def reject_self_reference(self) -> "GroundedRelationship":
         if self.source_ref == self.target_ref:
             raise ValueError("relationship source_ref and target_ref must differ")
+        if self.evidence_resolution == "resolved" and (
+            self.source_revision_id is None
+            or self.resolution_authority is None
+            or self.resolution_artifact_ref is None
+        ):
+            raise ValueError("resolved relationships require a T2 selector attestation")
+        if self.evidence_resolution != "resolved" and (
+            self.projection_eligibility != "withheld"
+        ):
+            raise ValueError("unresolved relationships must remain withheld")
+        if self.projection_eligibility != "withheld" and (
+            self.eligibility_artifact_ref is None
+        ):
+            raise ValueError(
+                "projectable relationships require an eligibility artifact"
+            )
+        if self.epistemic_status != "fact" and not self.requires_human_verification:
+            raise ValueError("non-factual relationships require human verification")
+        if self.disposition != "supported" and not self.requires_human_verification:
+            raise ValueError("non-supported relationships require human verification")
+        if self.risk_tier == "high_risk":
+            if self.epistemic_status != "hypothesis":
+                raise ValueError(
+                    "high-risk relationships must be represented as hypotheses"
+                )
+            if not self.requires_human_verification:
+                raise ValueError(
+                    "high-risk relationship hypotheses require human verification"
+                )
         return self
 
 
@@ -332,11 +421,21 @@ class AdaptiveTheme(StrictEnvelope):
     theme_id: str = Field(min_length=1)
     title: str = Field(min_length=1)
     claim_refs: list[str] = Field(min_length=1)
+    insight_refs: list[str] | None = None
+    hypothesis_refs: list[str] | None = None
+    verification_action_refs: list[str] | None = None
     attributes: dict[str, JsonValue] | None = None
 
-    @field_validator("claim_refs")
+    @field_validator(
+        "claim_refs",
+        "insight_refs",
+        "hypothesis_refs",
+        "verification_action_refs",
+    )
     @classmethod
-    def unique_claim_refs(cls, values: list[str]) -> list[str]:
+    def unique_claim_refs(cls, values: list[str] | None) -> list[str] | None:
+        if values is None:
+            return None
         return _ensure_unique(values, "theme claim_refs")
 
 
@@ -344,10 +443,13 @@ class NarrativeSentence(StrictEnvelope):
     text: str = Field(min_length=1)
     sentence_kind: Literal["factual", "uncertainty"] = "factual"
     claim_refs: list[str] = Field(min_length=1)
+    insight_refs: list[str] | None = None
 
-    @field_validator("claim_refs")
+    @field_validator("claim_refs", "insight_refs")
     @classmethod
-    def unique_claim_refs(cls, values: list[str]) -> list[str]:
+    def unique_claim_refs(cls, values: list[str] | None) -> list[str] | None:
+        if values is None:
+            return None
         return _ensure_unique(values, "narrative claim_refs")
 
 
@@ -380,11 +482,8 @@ class SafetyEnvelope(StrictEnvelope):
     unsupported_high_risk_claims_released: Literal[False] = False
 
 
-class RunManifest(StrictEnvelope):
+class ManifestEnvelope(StrictEnvelope):
     manifest_version: Literal["adaptive-run-manifest-v1.0"] = ADAPTIVE_MANIFEST_VERSION
-    contract_version: Literal["adaptive-summary-analysis-v1.0"] = (
-        ADAPTIVE_CONTRACT_VERSION
-    )
     prompt_version: str = Field(min_length=1)
     prompt_sha256: Sha256Hex = Field(pattern=r"^[0-9a-f]{64}$")
     json_schema_sha256: Sha256Hex = Field(pattern=r"^[0-9a-f]{64}$")
@@ -425,12 +524,25 @@ class RunManifest(StrictEnvelope):
         return value
 
 
-class AdaptiveSummaryAnalysisContract(StrictEnvelope):
-    """Single canonical output model used by both Summary and Analysis."""
+class RunManifest(ManifestEnvelope):
+    """Fail-closed manifest discriminator for the extraction contract."""
 
-    schema_version: Literal["adaptive-summary-analysis-v1.0"] = (
-        ADAPTIVE_CONTRACT_VERSION
-    )
+    contract_version: Literal[
+        "adaptive-summary-analysis-v1.0"
+    ] = ADAPTIVE_CONTRACT_VERSION
+
+
+class AdaptiveSummaryAnalysisContract(StrictEnvelope):
+    """Backward-compatible pre-release extraction/evaluation envelope.
+
+    This shape remains stable for the committed T0 evaluator. Production release
+    must validate an ``InvestigationRun`` so candidate and verification state
+    cannot be mistaken for Summary/Analysis projections.
+    """
+
+    schema_version: Literal[
+        "adaptive-summary-analysis-v1.0"
+    ] = ADAPTIVE_CONTRACT_VERSION
     run_status: Literal["success", "no_extractable_claims"]
     claims: list[GroundedClaim]
     evidence: list[EvidenceSpan] | None = None
@@ -518,6 +630,12 @@ class AdaptiveSummaryAnalysisContract(StrictEnvelope):
             require_refs(claim.evidence_refs, evidence_ids, "claim evidence_refs")
             if claim.concept_refs:
                 require_refs(claim.concept_refs, concept_ids, "claim concept_refs")
+            if claim.premise_claim_refs:
+                require_refs(
+                    claim.premise_claim_refs,
+                    claim_ids,
+                    "claim premise refs",
+                )
         for concept in self.concepts or []:
             require_refs(concept.evidence_refs, evidence_ids, "concept evidence_refs")
         for relationship in self.relationships or []:
@@ -531,6 +649,12 @@ class AdaptiveSummaryAnalysisContract(StrictEnvelope):
                 evidence_ids,
                 "relationship evidence_refs",
             )
+            if relationship.premise_claim_refs:
+                require_refs(
+                    relationship.premise_claim_refs,
+                    claim_ids,
+                    "relationship premise refs",
+                )
 
         primary_theme_claims: set[str] = set()
         for theme in self.themes or []:
@@ -566,15 +690,13 @@ class AdaptiveSummaryAnalysisContract(StrictEnvelope):
             return
         for claim_ref in sentence.claim_refs:
             claim = claim_by_id[claim_ref]
-            if claim.disposition not in {"supported", "partially_supported"}:
-                raise ValueError("factual narrative cannot cite unsupported claims")
-            if claim.risk_tier == "high_risk":
-                raise ValueError(
-                    "high-risk hypotheses cannot be released as factual narrative"
-                )
+            if claim.epistemic_status != "fact" or claim.disposition != "supported":
+                raise ValueError("factual narrative requires fact + supported claims")
 
 
-# Summary and Analysis deliberately resolve to the same canonical Pydantic model.
+# The evaluator consumes the extraction envelope; released product views are
+# separate projections owned by a canonical InvestigationRun.
+AdaptiveExtractionContract = AdaptiveSummaryAnalysisContract
 AdaptiveSummaryContract = AdaptiveSummaryAnalysisContract
 AdaptiveAnalysisContract = AdaptiveSummaryAnalysisContract
 
@@ -624,38 +746,102 @@ def build_run_manifest(
 
 
 def validate_adaptive_contract(value: Any) -> AdaptiveSummaryAnalysisContract:
-    """Validate raw model output without silently sanitizing invalid sparse data."""
+    """Validate pre-release extraction/evaluation output without sanitizing it."""
 
     if isinstance(value, str):
         return AdaptiveSummaryAnalysisContract.model_validate_json(value)
     return AdaptiveSummaryAnalysisContract.model_validate(value)
 
 
-__all__ = [
+_REASONING_EXPORTS = frozenset(
+    {"EvidenceBackedInsight", "Hypothesis", "VerificationAction"}
+)
+_RUN_EXPORTS = frozenset(
+    {
+        "AnalysisProjection",
+        "CanonicalClaimLedger",
+        "DiscoveryCandidate",
+        "GateFailure",
+        "InvestigationAnalysisProjection",
+        "InvestigationProjections",
+        "InvestigationRun",
+        "InvestigationRunManifest",
+        "InvestigationSummaryProjection",
+        "SummaryProjection",
+        "VerificationDecision",
+        "build_investigation_run_manifest",
+        "investigation_run_json_schema",
+        "investigation_run_schema_sha256",
+        "validate_investigation_run",
+    }
+)
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily preserve legacy imports without creating module cycles."""
+
+    if name in _REASONING_EXPORTS:
+        module = importlib.import_module(".reasoning_contracts", __package__)
+    elif name in _RUN_EXPORTS:
+        module = importlib.import_module(".run_contracts", __package__)
+    else:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(module, name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | _REASONING_EXPORTS | _RUN_EXPORTS)
+
+
+__all__ = [  # noqa: F822 - names are provided by the lazy compatibility facade.
     "ADAPTIVE_CONTRACT_VERSION",
     "ADAPTIVE_DISCOVERY_PROMPT_VERSION",
     "ADAPTIVE_MANIFEST_VERSION",
+    "ANALYSIS_PROJECTION_VERSION",
+    "INVESTIGATION_RUN_VERSION",
+    "SUMMARY_PROJECTION_VERSION",
     "AdaptiveAnalysisContract",
+    "AdaptiveExtractionContract",
     "AdaptiveSummaryAnalysisContract",
     "AdaptiveSummaryContract",
     "AdaptiveTheme",
+    "AnalysisProjection",
+    "CanonicalClaimLedger",
     "ConceptMention",
+    "DiscoveryCandidate",
     "EvidenceSpan",
+    "GateFailure",
     "GroundedClaim",
     "GroundedRelationship",
+    "EvidenceBackedInsight",
+    "Hypothesis",
+    "VerificationAction",
+    "InvestigationAnalysisProjection",
+    "InvestigationProjections",
+    "InvestigationRun",
+    "InvestigationRunManifest",
+    "InvestigationSummaryProjection",
     "NarrativeSentence",
     "NarrativeSynthesis",
     "RunManifest",
     "SafetyEnvelope",
     "SourceProvenance",
+    "SummaryProjection",
     "ThematicNarrative",
+    "VerificationDecision",
     "adaptive_contract_json_schema",
     "adaptive_contract_schema_sha256",
     "build_run_manifest",
+    "build_investigation_run_manifest",
     "canonical_json",
     "hash_source_modules",
+    "investigation_run_json_schema",
+    "investigation_run_schema_sha256",
     "sanitize_sparse_payload",
     "sha256_canonical_json",
     "sha256_utf8",
     "validate_adaptive_contract",
+    "validate_investigation_run",
 ]
