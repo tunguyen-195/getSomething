@@ -102,9 +102,9 @@ echo.
 REM ============================================================
 REM [4/6] Starting Celery Worker
 REM ============================================================
-echo [4/6] Starting Celery Worker (Gevent Pool)...
-REM Check if gevent is installed (optional check)
-start "Celery Worker (Gevent)" cmd /k "cd /d "%PROJECT_DIR%" && echo [Celery] Installing gevent if needed... && venv\Scripts\pip install -q gevent && echo [Celery] Starting Celery Worker (Gevent Pool) && venv\Scripts\python.exe -m celery -A src.worker.worker worker --pool=gevent --concurrency=4 --loglevel=info --logfile=celery.log --without-heartbeat --without-gossip --without-mingle"
+echo [4/6] Starting Celery Worker (GPU-safe Solo Pool)...
+REM One task at a time prevents ASR/diarization/LLM models from competing for GPU memory.
+start "Celery Worker (Solo)" cmd /k "cd /d "%PROJECT_DIR%" && echo [Celery] Starting GPU-safe single-task worker && venv\Scripts\python.exe -m celery -A src.worker.worker worker --pool=solo --concurrency=1 --loglevel=info --logfile=celery.log --without-heartbeat --without-gossip --without-mingle"
 echo [OK] Celery Worker starting
 timeout /t 3 /nobreak > nul
 echo.
