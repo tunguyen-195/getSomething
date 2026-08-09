@@ -1,0 +1,256 @@
+{
+  "schema_version": "rtk-evidence-v1",
+  "artifact_type": "pyannote-migration-config-audit",
+  "observed_at": "2026-08-09T17:12:43.147730+07:00",
+  "repo_root": "E:\\research\\STT",
+  "canonical_workspace": true,
+  "scope": "read_only_no_model_download_no_model_activation",
+  "migration_verdict": "PASS_NO_ADDITIONAL_LOSS",
+  "verdict": "BLOCKED",
+  "exit_code": 2,
+  "command": [
+    "E:\\research\\STT\\venv\\Scripts\\python.exe",
+    "-B",
+    "scripts/audit_pyannote_migration_config.py",
+    "--no-network"
+  ],
+  "harness_path": "scripts/audit_pyannote_migration_config.py",
+  "harness_sha256": "a8dca1027c0e74a936bfa67c57827c4b44e84d96efc6828c3edb99ff1c4c9d43",
+  "source_sha256": {
+    "scripts/audit_pyannote_migration_config.py": "a8dca1027c0e74a936bfa67c57827c4b44e84d96efc6828c3edb99ff1c4c9d43",
+    "scripts/capture_diarization_primary_sources.py": "d8fa86924dd8818ef3626b7d5e37baebcd3c3426561e363828929be4da82d089",
+    "docs/reviews/artifacts/2026-08-09-diarization-primary-source-verification.json": "1a317e5f7f9bba48d0318f9eb3ba0757a12fc28accd0c52ba551f5aa2c1b4cd8",
+    "src/services/model_runtime/local_artifacts.py": "500a4679e25de468e14c339a76155a62755eb5d9de630135e6813c4759879767",
+    "src/services/transcription/models/pyannote_manager.py": "c2466b70f83468ee45bd655e5b09782a1a6445d15c91dd82baf178ef81082da8",
+    "src/cherry_core/adapters/diarization/pyannote_adapter.py": "4c742d570fe52d37379d1a767f4db24056f6222f5551cc5b45e1fce99046f800",
+    "src/services/transcription/transcribe_service_v2.py": "9aabe0d0607c1c4866f69ea8975bd3e75c4f27aa2b249099541c8d8a104338dd",
+    "src/services/transcription/cherry_transcription_service.py": "3c6a19a1c007c95ed520d22a2d4dce2d52fbbafb53fb91c308580520f0874759",
+    "src/core/config.py": "1d68f0eba4216d9beecf9cd02bb83da4bdc311eeec0277ed529b3fca36b6865a",
+    "requirements.txt": "7be256c4ef90c79ff0fbf930da9e7a815bebfd94726861b667697ee38937b230",
+    "requirements-torch-cu121.txt": "3bf0ddcd4d004273d2350feadc0340684663c367778df190725f377b97c5fe25"
+  },
+  "migration_evidence": {
+    "root": "E:\\research\\_STT_migration_evidence\\2026-08-09-d-to-e",
+    "source_inventory_sha256": "ca917f95e936b3a4953a3cca1bc1102ea8b4ea468bb56ee2e36be8937299ce1b",
+    "destination_inventory_sha256": "ca917f95e936b3a4953a3cca1bc1102ea8b4ea468bb56ee2e36be8937299ce1b",
+    "material_hashes_sha256": "817df7510b962197fd9f5d81fefb486cc74a791d35d35524164701a422428add",
+    "source_model_files": 9,
+    "destination_model_files": 9,
+    "source_model_bytes": 25179,
+    "destination_model_bytes": 25179,
+    "material_hash_rows": 9,
+    "material_hashes_match": true,
+    "evidence_rows_consistent": true,
+    "current_e_cache_matches_destination": true,
+    "current_e_cache_files": 9,
+    "current_e_cache_bytes": 25179
+  },
+  "local_artifacts": {
+    "target_root": "E:\\research\\STT\\models\\pyannote",
+    "target_files": [],
+    "legacy_cache_root": "E:\\research\\STT\\models\\pyannote_cache",
+    "legacy_cache_files": [
+      {
+        "path": "models/pyannote_cache/models--pyannote--embedding/refs/main",
+        "size": 40,
+        "sha256": "43ad1cde7b458225e95032d8380e8237a7220d9b040b373b9e9a9041a77489f7"
+      },
+      {
+        "path": "models/pyannote_cache/models--pyannote--embedding/snapshots/4db4899737a38b2d618bbd74350915aa10293cb2/LICENSE",
+        "size": 1061,
+        "sha256": "14d7016ad68e7394d6e6b78d96cc2ae431c905287b89674cfdf021e79e62b8ba"
+      },
+      {
+        "path": "models/pyannote_cache/models--pyannote--embedding/snapshots/4db4899737a38b2d618bbd74350915aa10293cb2/README.md",
+        "size": 4549,
+        "sha256": "3c4381d88b2dcef82832879046d766f10b8a12a637d9a4dd90eee63e6514de18"
+      },
+      {
+        "path": "models/pyannote_cache/models--pyannote--segmentation/refs/main",
+        "size": 40,
+        "sha256": "d1722f3bac9acd7edac1af145cc71f10a685ab66f53af9f85cb3810ab8c8a1f0"
+      },
+      {
+        "path": "models/pyannote_cache/models--pyannote--segmentation/snapshots/660b9e20307a2b0cdb400d0f80aadc04a701fc54/LICENSE",
+        "size": 1061,
+        "sha256": "14d7016ad68e7394d6e6b78d96cc2ae431c905287b89674cfdf021e79e62b8ba"
+      },
+      {
+        "path": "models/pyannote_cache/models--pyannote--segmentation/snapshots/660b9e20307a2b0cdb400d0f80aadc04a701fc54/README.md",
+        "size": 5840,
+        "sha256": "d99ff89147976b76d5e1aaa787497ef245ae25d0e01f0876a33f2a0e5afbf6c6"
+      },
+      {
+        "path": "models/pyannote_cache/models--pyannote--speaker-diarization/refs/main",
+        "size": 40,
+        "sha256": "2314b04361e0f493feb7000f56c72b6502b8d099121524cdbc300ff0e447dd63"
+      },
+      {
+        "path": "models/pyannote_cache/models--pyannote--speaker-diarization/snapshots/0949b739131820b428f82569d616ba84a1903c11/LICENSE",
+        "size": 1061,
+        "sha256": "14d7016ad68e7394d6e6b78d96cc2ae431c905287b89674cfdf021e79e62b8ba"
+      },
+      {
+        "path": "models/pyannote_cache/models--pyannote--speaker-diarization/snapshots/0949b739131820b428f82569d616ba84a1903c11/README.md",
+        "size": 11487,
+        "sha256": "7acddb65ffe25cfb70a9aca0a9fb079796cb2a65264c81cc5fab0860772fc24e"
+      }
+    ],
+    "community_1_snapshot": null,
+    "legacy_3_1_snapshot": null,
+    "required_files": [
+      "config.yaml",
+      "embedding/pytorch_model.bin",
+      "plda/plda.npz",
+      "plda/xvec_transform.npz",
+      "segmentation/pytorch_model.bin"
+    ]
+  },
+  "effective_config": {
+    "offline_strict": true,
+    "transcription_engine": "legacy",
+    "hf_token_configured": true,
+    "hf_hub_offline": null,
+    "transformers_offline": null,
+    "token_value_recorded": false
+  },
+  "runtime_compatibility": {
+    "installed": {
+      "pyannote.audio": "3.1.1",
+      "pyannote.core": "5.0.0",
+      "torch": "2.1.1+cu121",
+      "torchaudio": "2.1.1+cu121",
+      "torchcodec": null,
+      "diart": "0.9.2"
+    },
+    "community_1_stack_compatible": false,
+    "community_1_code_api_compatible": false,
+    "manager_uses_relative_model_root": true,
+    "adapter_uses_models_dir": true,
+    "runtime_mentions_legacy_cache": false,
+    "manager_requires_full_tree": false,
+    "adapter_requires_full_tree": false,
+    "uses_legacy_use_auth_token_keyword": true,
+    "handles_community_1_output_object": false
+  },
+  "official_sources": {
+    "network_skipped": true,
+    "capture_path": "docs/reviews/artifacts/2026-08-09-diarization-primary-source-verification.json",
+    "capture_sha256": "1a317e5f7f9bba48d0318f9eb3ba0757a12fc28accd0c52ba551f5aa2c1b4cd8",
+    "capture_id": "123282666facaa1ed6e0499a2703153a90b45e89f67c7d44bed8f251cf771861",
+    "capture_observed_at": "2026-08-09T17:12:24.596260+07:00",
+    "capture_valid": true,
+    "capture_errors": [],
+    "sources": {
+      "community_1_metadata": {
+        "url": "https://huggingface.co/api/models/pyannote/speaker-diarization-community-1",
+        "status": 200,
+        "content_type": "application/json; charset=utf-8",
+        "content_bytes": 4284,
+        "content_sha256": "1c2337d4b6ed6248c14b20b417cd6b75e61d48a5eb9c4b91db69a13881baa19b",
+        "verified_fields": {
+          "model_id": "pyannote/speaker-diarization-community-1",
+          "revision": "3533c8cf8e369892e6b79ff1bf80f7b0286a54ee",
+          "gated": "auto",
+          "license": "cc-by-4.0",
+          "required_files": [
+            "config.yaml",
+            "embedding/pytorch_model.bin",
+            "plda/plda.npz",
+            "plda/xvec_transform.npz",
+            "segmentation/pytorch_model.bin"
+          ],
+          "required_files_present": true
+        }
+      },
+      "pyannote_audio_4_0_0_pypi": {
+        "url": "https://pypi.org/pypi/pyannote.audio/4.0.0/json",
+        "status": 200,
+        "content_type": "application/json",
+        "content_bytes": 16169,
+        "content_sha256": "a0d361f494a3e1b984940a0ec4444c28dafc674ffd950cefb4fc440541ec081b",
+        "verified_fields": {
+          "version": "4.0.0",
+          "requires_python": ">=3.10",
+          "runtime_requirements": [
+            "huggingface-hub>=0.28.1",
+            "pytorch-metric-learning>=2.8.1",
+            "torch-audiomentations>=0.12.0",
+            "torch>=2.8.0",
+            "torchaudio>=2.8.0",
+            "torchcodec>=0.6.0",
+            "torchmetrics>=1.6.1"
+          ]
+        }
+      },
+      "pyannote_audio_4_0_0_release": {
+        "url": "https://api.github.com/repos/pyannote/pyannote-audio/releases/tags/4.0.0",
+        "status": 200,
+        "content_type": "application/json; charset=utf-8",
+        "content_bytes": 16488,
+        "content_sha256": "7dcd9eb2813c53cb14e0598badf29b04f91577c1a82be89a0aa9278a84348e24",
+        "verified_fields": {
+          "tag": "4.0.0",
+          "published_at": "2025-09-29T12:04:16Z",
+          "offline_local_load_documented": true,
+          "token_keyword_breaking_change": true,
+          "torchcodec_audio_io": true,
+          "community_output_object_documented": true
+        }
+      }
+    }
+  },
+  "runtime_log": {
+    "path": "E:\\research\\STT\\celery.runtime.e.log",
+    "present": true,
+    "observed_size": 27601,
+    "matches": [
+      {
+        "line": 23,
+        "text": "[2026-08-09 14:45:50,872: WARNING/MainProcess] [PYANNOTE_MANAGER] No complete local snapshot; offline strict mode refuses provider fallback"
+      },
+      {
+        "line": 60,
+        "text": "[2026-08-09 15:10:30,533: WARNING/MainProcess] [PYANNOTE_MANAGER] No complete local snapshot; offline strict mode refuses provider fallback"
+      },
+      {
+        "line": 96,
+        "text": "[2026-08-09 16:19:21,021: WARNING/MainProcess] [PYANNOTE_MANAGER] No complete local snapshot; offline strict mode refuses provider fallback"
+      }
+    ]
+  },
+  "checks": {
+    "migration_inventory_and_hashes_match": true,
+    "current_e_cache_matches_destination": true,
+    "community_1_target_snapshot_present": false,
+    "community_1_full_required_tree_present": false,
+    "runtime_uses_canonical_model_root": true,
+    "runtime_model_root_consistent_and_absolute": false,
+    "runtime_resolver_requires_full_tree": false,
+    "community_1_runtime_stack_compatible": false,
+    "community_1_code_api_compatible": false,
+    "pyannote_dependency_declared": false,
+    "torchcodec_dependency_declared": false,
+    "token_source_consistent": false,
+    "offline_environment_flags_set": false,
+    "network_denied_loader_evidence_present": false
+  },
+  "blockers": [
+    "community_1_code_api_compatible",
+    "community_1_full_required_tree_present",
+    "community_1_runtime_stack_compatible",
+    "community_1_target_snapshot_present",
+    "network_denied_loader_evidence_present",
+    "offline_environment_flags_set",
+    "pyannote_dependency_declared",
+    "runtime_model_root_consistent_and_absolute",
+    "runtime_resolver_requires_full_tree",
+    "token_source_consistent",
+    "torchcodec_dependency_declared"
+  ],
+  "limitations": [
+    "No gated model file was downloaded or loaded by this audit.",
+    "Official metadata does not prove Vietnamese diarization quality.",
+    "The live Celery log is mutable and is recorded as an observation, not a release signature."
+  ]
+}

@@ -1,0 +1,661 @@
+{
+  "schema_version": "summary-diarization-readiness-v2",
+  "generated_at": "2026-08-09T10:27:31.208290+00:00",
+  "generated_at_source": "provided_rfc3339",
+  "repo_root": "E:\\research\\STT",
+  "canonical_workspace": true,
+  "probe_mode": "static",
+  "scope": "conservative_product_readiness_not_quality_prevalence",
+  "git": {
+    "branch": "feature/architecture-refactor",
+    "head": "a87b2319caefd64ff3e09f87f9345cc184d7b309",
+    "upstream": "origin/feature/architecture-refactor",
+    "behind": 0,
+    "ahead": 0,
+    "tracked_changes": 32,
+    "untracked_files_total": 40381,
+    "untracked_files_excluding_generated_audit": 40377,
+    "generated_audit_outputs_present": [
+      "docs/reviews/artifacts/2026-08-09-summary-diarization-readiness-static.json",
+      "docs/reviews/artifacts/2026-08-09-summary-diarization-readiness.json",
+      "docs/reviews/artifacts/2026-08-09-summary-diarization-readiness.sha256",
+      "output/audits/summary-diarization-readiness.json"
+    ]
+  },
+  "source_input_sha256": {
+    "docs/evals/runs/summary-diarization-baseline-v1.json": null,
+    "docs/evals/runs/summary-diarization-candidate-v1.json": null,
+    "docs/plans/2026-08-09-investigative-bulletin-diarization-plan.md": "26075b94341f30a53dde68dde61092a162dad13af0dbc5961d4b2aebd618730c",
+    "docs/research/2026-08-09-investigative-bulletin-diarization-evidence-refresh.md": "32bac9f47a018bc13ea91f4923d895cd30089c2f09be46656cbb15a339117db1",
+    "docs/reviews/2026-08-09-pyannote-migration-config-audit.md": "c5e3e43f1b46eae85b2a59c278f5ce6552822ffdd9d1cbeb81781af01bfedea8",
+    "docs/reviews/artifacts/2026-08-09-diarization-primary-source-verification.json": "1a317e5f7f9bba48d0318f9eb3ba0757a12fc28accd0c52ba551f5aa2c1b4cd8",
+    "docs/reviews/artifacts/2026-08-09-pyannote-migration-config-audit.json": "eef9f641e91c7ccdac08d61d9f405bcbf164de6995a309c1bf7505281ee5de02",
+    "docs/reviews/artifacts/c1-intelligence-run.json": null,
+    "docs/reviews/artifacts/diarization-contract-tests.json": null,
+    "docs/reviews/artifacts/e1-promotion-audit.json": null,
+    "docs/reviews/artifacts/e1a-baseline-lock.json": null,
+    "docs/reviews/artifacts/f1b-file-aware-evidence.json": null,
+    "docs/reviews/artifacts/gpu-handoff-live.json": null,
+    "docs/reviews/artifacts/p0-test-isolation.json": null,
+    "docs/reviews/artifacts/pyannote-community-1-acquisition.json": null,
+    "docs/reviews/artifacts/pyannote-community-1-network-denied-loader.json": null,
+    "docs/reviews/artifacts/q1-source-coverage.json": null,
+    "docs/reviews/artifacts/runtime-profile-contract-tests.json": null,
+    "docs/reviews/artifacts/s1-summary-schema.json": null,
+    "docs/reviews/artifacts/s2-narrative-release.json": null,
+    "docs/reviews/artifacts/s3-summary-request-contract.json": null,
+    "docs/reviews/artifacts/s4-summary-state-transitions.json": null,
+    "docs/reviews/artifacts/x1-speaker-claim-release.json": null,
+    "docs/runbooks/gpu-quarantine-recovery.md": null,
+    "docs/runbooks/pyannote-offline.md": null,
+    "frontend/src/App.tsx": "92623e85c23dfe8530dfe55f50beb62cf2328db031bbe4b5e177ff38ecb4c221",
+    "frontend/src/__tests__/fileAwareEvidence.test.tsx": null,
+    "frontend/src/__tests__/runtimeProfile.test.tsx": null,
+    "frontend/src/api/client.ts": "a6cd13509c5ac19ae627c9c380f241e11b9618867af9a8ef474ab79574fbb0d6",
+    "frontend/src/components/AnalysisPanel.tsx": "35c5a1f231b801705fcc3d9bc1ac32c5a9cce7194a295a95af18f061d20213fd",
+    "frontend/src/components/DiarizationPanel.tsx": "c35e328b04260a7795eba51cb9d029081faf8f0fda427dbffba083138d08e401",
+    "frontend/src/components/InvestigationSummaryCard.tsx": "91555aa1d7cc1331a70543f978f3ae000dd465f71720955c8bda34ca36f36959",
+    "frontend/src/components/SummarizeDialog.tsx": "2319cd137d2ce1ddda1a7ba60383406c2751892607863178084c09d64b8719d7",
+    "frontend/src/components/SummaryPanel.tsx": "a2fbf48e6ad5e4cc6e515a90d165865e3f443323396795c86f3ef280c12eedd7",
+    "frontend/src/components/TaskList.tsx": "f5ff656f41dd77666d620d76d69307617b9f18c5c15550c7c82c439282a0e269",
+    "frontend/src/components/TranscriptPanel.tsx": "9bbf78db5d119e4d31d00fc247366983c6d467334252dc303371b6ca9e5e3c52",
+    "models/manifests/pyannote-speaker-diarization-community-1.json": null,
+    "requirements-torch-cu121.txt": "3bf0ddcd4d004273d2350feadc0340684663c367778df190725f377b97c5fe25",
+    "requirements.txt": "7be256c4ef90c79ff0fbf930da9e7a815bebfd94726861b667697ee38937b230",
+    "scripts/acquire_pyannote_community1.py": null,
+    "scripts/audit_pyannote_migration_config.py": "a8dca1027c0e74a936bfa67c57827c4b44e84d96efc6828c3edb99ff1c4c9d43",
+    "scripts/audit_summary_diarization_readiness.py": "47385f92de34c152fc71228f6f2000ada8f31d684332f20852e7e7fec5460e95",
+    "scripts/capture_diarization_primary_sources.py": "d8fa86924dd8818ef3626b7d5e37baebcd3c3426561e363828929be4da82d089",
+    "scripts/evaluate_summary_diarization.py": null,
+    "scripts/recover_gpu_quarantine.py": null,
+    "scripts/rehearse_intelligence_run_migration.py": null,
+    "scripts/start_llama_server.ps1": "60710843159e365ee0d33559ffed9ff2571e76195d3c2ffd0c51273a5398d8bf",
+    "scripts/verify_pyannote_offline.py": null,
+    "scripts/verify_test_database_isolation.py": null,
+    "src/api/endpoints/audio.py": "de20415dc9d87ccf5a2ec24506afac54acf08b29736e234bc6b4d26de9ffd92a",
+    "src/api/endpoints/audio_v2.py": "30f2fc9415cc5ac8e3c7d34e8ba6e87cc78516c9d6bf726a2ec4ec08f82d7c8f",
+    "src/api/endpoints/summary.py": "fae6a1192042eac6f89de3c9c00c45cec8bf87c93244f46bd1073498279abccd",
+    "src/api/endpoints/system.py": null,
+    "src/cherry_core/adapters/diarization/pyannote_adapter.py": "4c742d570fe52d37379d1a767f4db24056f6222f5551cc5b45e1fce99046f800",
+    "src/cherry_core/ports/diarization_port.py": "9d62cb7fb6689d72e470c02e9ae175a4767891d779b9b42fb62f1c5e27ae93ae",
+    "src/core/config.py": "1d68f0eba4216d9beecf9cd02bb83da4bdc311eeec0277ed529b3fca36b6865a",
+    "src/database/models/models.py": "c7059630f7262be80534cf57bc55d85d221d5a9f5bca42759b4294f93960d9dc",
+    "src/main.py": "a2ddf12f693d3583e2c7d7f0999a68fc27cda5726fddfe0fdadece01243d05e0",
+    "src/services/investigation/chunk_planner.py": "c1380efb1657ea1f6dc502963fe32f16c67b13eb003479795ed21e4018662745",
+    "src/services/investigation/contracts.py": "a51e4a11ec0bc1a72e661158a2a9c95b558534d8e46f94c569d6afa1b0b668e8",
+    "src/services/investigation/discovery.py": "b22849ee2ef501f1a2164efe9933713d7599918c8439a274bb5be1c483ae14e1",
+    "src/services/investigation/discovery_contracts.py": "7bacf0adc05089a93802fcf9317a350e5df0536ffb75636790477935ade9f75f",
+    "src/services/investigation/exact_detectors.py": "71d86eb3dd951083815b58a66fbd1b7ea8e0815339d364873f97a328a9adb9b8",
+    "src/services/investigation/narrative_attestation.py": null,
+    "src/services/investigation/orchestrator.py": null,
+    "src/services/investigation/release_adapter.py": "124d586e0d2f13bf694a101c8f2e86e5594931b996ef8d9a873425c90dbd5a6c",
+    "src/services/investigation/run_contracts.py": "3c16d0eaa6554cb915e8822f3ce458937742b23048ef166908f3c104f88a7813",
+    "src/services/investigation/run_store.py": null,
+    "src/services/investigation/source_revision.py": "8fd6a4d7c0ebdc699169368683cc747cc754c09d2eeec958900fb050ec06c5b6",
+    "src/services/model_runtime/__init__.py": "eb1a57fc8eecc8324d9e0e0e93bc16df14fd2e2b26248c20c6772b68f824a1c8",
+    "src/services/model_runtime/gpu_lease.py": "becc4dba9da79b31843ac994d4146e6ea8afc34a2ea92507a54bd0fc03abf8b0",
+    "src/services/model_runtime/local_artifacts.py": "500a4679e25de468e14c339a76155a62755eb5d9de630135e6813c4759879767",
+    "src/services/summarization/context_service.py": "6b1c5c4cfc283decb12eab39da5fde6f495111b5ebc1c0bc00bc4454ea8c2529",
+    "src/services/summarization/contracts.py": null,
+    "src/services/summarization/legacy_context_adapter.py": null,
+    "src/services/summarization/models/context_analysis.py": "4433cab666f6356c6583fcde809205d1e30a2e72737f1288b6176ff48e47a320",
+    "src/services/summarization/models/investigation_knowledge.py": "0ee7913895d90a06701ec2fdef8b31304331fcc0624a78ffdfb258ced7f8937d",
+    "src/services/summarization/models/llm_manager.py": "6abf423cc546f713433dbc7fc8c301dad03b5371651e9dee6389b70d65252b81",
+    "src/services/summarization/models/openai_compatible_client.py": "29ba6314a7c43f199781809191fe52cc982e7f49c57cfcc6a1edfc54f120ae08",
+    "src/services/summarization/summary_service_v2.py": "a0dee6a87f0d8cc29c379fde2c15303ef6ac349d4362bc7255efbdfe6ee549b3",
+    "src/services/task_service.py": "d376abdfae869e7185a4137d76740f1ee586092b447dc90bf4039759b3d7cd85",
+    "src/services/transcription/contracts.py": null,
+    "src/services/transcription/models/pyannote_manager.py": "c2466b70f83468ee45bd655e5b09782a1a6445d15c91dd82baf178ef81082da8",
+    "src/services/transcription/transcribe_service_v2.py": "9aabe0d0607c1c4866f69ea8975bd3e75c4f27aa2b249099541c8d8a104338dd",
+    "src/worker/tasks/summarize_task.py": "a4bb13299065b05bc8e7b40c68b69c8ec543973f4e5028109e3894394fb62a89",
+    "src/worker/tasks/transcribe_task.py": "c274638939768670452ee23f5f686e6d1f1924dba3a4a8398c861175228662f9",
+    "tests/conftest.py": "8d6a18f5d508c8815d397417837421936ff8b9a6258d197dc091c0dfea6b1a00",
+    "tests/eval/summary-diarization-scoring-v1.json": null,
+    "tests/eval/summary_diarization_cases.jsonl": null,
+    "tests/eval/summary_diarization_corpus_manifest.json": null,
+    "tests/eval/whole_audio_coverage_cases.jsonl": null,
+    "tests/test_adaptive_summary_contracts.py": "e9b730c592613d3cdab676909f11c5ad43154e73272071d4ea03dc8e1fbeabf3",
+    "tests/test_case_evidence_authorization.py": null,
+    "tests/test_context_analysis.py": "9d509ccf227c81b3d27834b71998e726a6f24cfd5546d13dc4238ea8da54f000",
+    "tests/test_diarization_alignment.py": null,
+    "tests/test_gpu_quarantine_subprocess.py": null,
+    "tests/test_intelligence_run_persistence.py": null,
+    "tests/test_investigation_discovery.py": "44098fe8238558eab69396829cd25e60be7f342abddfea8136bfa622f0501e31",
+    "tests/test_investigation_evidence_selectors.py": "697c905e90617247bf3b4c67f9ac25dc478da0c3a464efd968ec7c7fa30141c8",
+    "tests/test_investigation_knowledge.py": "c9060761a0cee95a3dd48b6545c992390e3f42eb492e25ac69e31d17fe4c51e3",
+    "tests/test_investigation_release_adapter.py": "f324fb83bdb2c1c169b38fd6fbb44491a61f28a982066eb15674ecc923a301b6",
+    "tests/test_local_llm_optimization.py": "af22d0c034008996f398cacfb3a7bf604119c936ff3222d8d99cfeb601256cc2",
+    "tests/test_model_runtime.py": "52a711eb54320b13721114cbd6eec082a3ddc32250d8aee4ec9f651b3de1ae42",
+    "tests/test_openai_compatible_llm.py": "bac53aaf60103c8002ea750e24374b0ea02d723885e6edd5a31f65a6f3e8649a",
+    "tests/test_speaker_aware_claim_release.py": null,
+    "tests/test_startup_runtime_profile.py": "ceb290faa1473ccc0eddb90fdcace18421ddd0db6070784ee02f4c30f1ce29e2",
+    "tests/test_summary_diarization_audit_harness.py": "8712ea7876b6258f4a6470c1541bbedef2bb50daad2eae11b4ad483f63f70f89",
+    "tests/test_summary_diarization_evaluator.py": null,
+    "tests/test_summary_fail_closed.py": null,
+    "tests/test_summary_request_contract.py": null,
+    "tests/test_test_database_isolation.py": null,
+    "tests/test_transcription_engines.py": "d70587737a433dac87d974f947ea2e5c7d6d6ae357d967edd4c270702eea2dba"
+  },
+  "primary_source_verification": {
+    "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\2026-08-09-diarization-primary-source-verification.json",
+    "sha256": "1a317e5f7f9bba48d0318f9eb3ba0757a12fc28accd0c52ba551f5aa2c1b4cd8",
+    "valid": true,
+    "capture_id": "123282666facaa1ed6e0499a2703153a90b45e89f67c7d44bed8f251cf771861",
+    "observed_at": "2026-08-09T17:12:24.596260+07:00",
+    "validation_errors": [],
+    "migration_source_bindings": {
+      "community_1_metadata": {
+        "url": "https://huggingface.co/api/models/pyannote/speaker-diarization-community-1",
+        "status": 200,
+        "content_type": "application/json; charset=utf-8",
+        "content_bytes": 4284,
+        "content_sha256": "1c2337d4b6ed6248c14b20b417cd6b75e61d48a5eb9c4b91db69a13881baa19b",
+        "verified_fields": {
+          "model_id": "pyannote/speaker-diarization-community-1",
+          "revision": "3533c8cf8e369892e6b79ff1bf80f7b0286a54ee",
+          "gated": "auto",
+          "license": "cc-by-4.0",
+          "required_files": [
+            "config.yaml",
+            "embedding/pytorch_model.bin",
+            "plda/plda.npz",
+            "plda/xvec_transform.npz",
+            "segmentation/pytorch_model.bin"
+          ],
+          "required_files_present": true
+        }
+      },
+      "pyannote_audio_4_0_0_pypi": {
+        "url": "https://pypi.org/pypi/pyannote.audio/4.0.0/json",
+        "status": 200,
+        "content_type": "application/json",
+        "content_bytes": 16169,
+        "content_sha256": "a0d361f494a3e1b984940a0ec4444c28dafc674ffd950cefb4fc440541ec081b",
+        "verified_fields": {
+          "version": "4.0.0",
+          "requires_python": ">=3.10",
+          "runtime_requirements": [
+            "huggingface-hub>=0.28.1",
+            "pytorch-metric-learning>=2.8.1",
+            "torch-audiomentations>=0.12.0",
+            "torch>=2.8.0",
+            "torchaudio>=2.8.0",
+            "torchcodec>=0.6.0",
+            "torchmetrics>=1.6.1"
+          ]
+        }
+      },
+      "pyannote_audio_4_0_0_release": {
+        "url": "https://api.github.com/repos/pyannote/pyannote-audio/releases/tags/4.0.0",
+        "status": 200,
+        "content_type": "application/json; charset=utf-8",
+        "content_bytes": 16488,
+        "content_sha256": "7dcd9eb2813c53cb14e0598badf29b04f91577c1a82be89a0aa9278a84348e24",
+        "verified_fields": {
+          "tag": "4.0.0",
+          "published_at": "2025-09-29T12:04:16Z",
+          "offline_local_load_documented": true,
+          "token_keyword_breaking_change": true,
+          "torchcodec_audio_io": true,
+          "community_output_object_documented": true
+        }
+      }
+    },
+    "hf_metadata_content_sha256": "1c2337d4b6ed6248c14b20b417cd6b75e61d48a5eb9c4b91db69a13881baa19b",
+    "source_count": 7
+  },
+  "pyannote_migration_config_audit": {
+    "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\2026-08-09-pyannote-migration-config-audit.json",
+    "valid": true,
+    "migration_verdict": "PASS_NO_ADDITIONAL_LOSS",
+    "product_verdict": "BLOCKED",
+    "blockers": [
+      "community_1_code_api_compatible",
+      "community_1_full_required_tree_present",
+      "community_1_runtime_stack_compatible",
+      "community_1_target_snapshot_present",
+      "network_denied_loader_evidence_present",
+      "offline_environment_flags_set",
+      "pyannote_dependency_declared",
+      "runtime_model_root_consistent_and_absolute",
+      "runtime_resolver_requires_full_tree",
+      "token_source_consistent",
+      "torchcodec_dependency_declared"
+    ],
+    "source_hashes_valid": true,
+    "capture_reference_valid": true,
+    "official_sources_valid": true,
+    "recomputed_local_state_valid": true
+  },
+  "package_evidence": {
+    "p0a": {
+      "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\p0-test-isolation.json",
+      "bound_paths": [
+        "scripts/verify_test_database_isolation.py",
+        "tests/conftest.py",
+        "tests/test_test_database_isolation.py"
+      ],
+      "definition_errors": [],
+      "valid": false
+    },
+    "s1": {
+      "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\s1-summary-schema.json",
+      "bound_paths": [
+        "src/services/summarization/context_service.py",
+        "src/services/summarization/legacy_context_adapter.py",
+        "src/services/summarization/models/context_analysis.py",
+        "src/services/summarization/models/investigation_knowledge.py",
+        "src/services/summarization/models/llm_manager.py",
+        "tests/test_context_analysis.py",
+        "tests/test_investigation_knowledge.py"
+      ],
+      "definition_errors": [],
+      "valid": false
+    },
+    "s2": {
+      "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\s2-narrative-release.json",
+      "bound_paths": [
+        "src/services/investigation/contracts.py",
+        "src/services/investigation/narrative_attestation.py",
+        "src/services/investigation/release_adapter.py",
+        "src/services/investigation/run_contracts.py",
+        "src/services/summarization/summary_service_v2.py",
+        "tests/test_adaptive_summary_contracts.py",
+        "tests/test_investigation_release_adapter.py",
+        "tests/test_local_llm_optimization.py"
+      ],
+      "definition_errors": [],
+      "valid": false
+    },
+    "s3": {
+      "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\s3-summary-request-contract.json",
+      "bound_paths": [
+        "frontend/src/api/client.ts",
+        "frontend/src/components/SummarizeDialog.tsx",
+        "src/api/endpoints/audio.py",
+        "src/api/endpoints/audio_v2.py",
+        "src/api/endpoints/summary.py",
+        "src/services/summarization/contracts.py",
+        "src/services/summarization/summary_service_v2.py",
+        "src/worker/tasks/summarize_task.py",
+        "tests/test_local_llm_optimization.py",
+        "tests/test_summary_request_contract.py"
+      ],
+      "definition_errors": [],
+      "valid": false
+    },
+    "s4": {
+      "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\s4-summary-state-transitions.json",
+      "bound_paths": [
+        "src/api/endpoints/audio.py",
+        "src/api/endpoints/audio_v2.py",
+        "src/services/task_service.py",
+        "src/worker/tasks/summarize_task.py",
+        "tests/test_summary_fail_closed.py"
+      ],
+      "definition_errors": [],
+      "valid": false
+    },
+    "g1": {
+      "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\gpu-handoff-live.json",
+      "bound_paths": [
+        "docs/runbooks/gpu-quarantine-recovery.md",
+        "scripts/recover_gpu_quarantine.py",
+        "scripts/start_llama_server.ps1",
+        "src/services/model_runtime/__init__.py",
+        "src/services/model_runtime/gpu_lease.py",
+        "src/services/summarization/models/openai_compatible_client.py",
+        "src/services/summarization/summary_service_v2.py",
+        "src/services/transcription/transcribe_service_v2.py",
+        "src/worker/tasks/summarize_task.py",
+        "src/worker/tasks/transcribe_task.py",
+        "tests/test_gpu_quarantine_subprocess.py",
+        "tests/test_model_runtime.py",
+        "tests/test_openai_compatible_llm.py"
+      ],
+      "definition_errors": [],
+      "valid": false
+    },
+    "f1a": {
+      "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\runtime-profile-contract-tests.json",
+      "bound_paths": [
+        "frontend/src/App.tsx",
+        "frontend/src/__tests__/runtimeProfile.test.tsx",
+        "frontend/src/api/client.ts",
+        "frontend/src/components/SummarizeDialog.tsx",
+        "frontend/src/components/TaskList.tsx",
+        "src/api/endpoints/system.py",
+        "src/core/config.py",
+        "src/main.py",
+        "tests/test_startup_runtime_profile.py"
+      ],
+      "definition_errors": [],
+      "valid": false
+    },
+    "q1": {
+      "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\q1-source-coverage.json",
+      "bound_paths": [
+        "src/services/investigation/chunk_planner.py",
+        "src/services/investigation/discovery.py",
+        "src/services/investigation/discovery_contracts.py",
+        "src/services/investigation/exact_detectors.py",
+        "src/services/investigation/source_revision.py",
+        "tests/eval/whole_audio_coverage_cases.jsonl",
+        "tests/test_investigation_discovery.py",
+        "tests/test_investigation_evidence_selectors.py"
+      ],
+      "definition_errors": [],
+      "valid": false
+    },
+    "c1": {
+      "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\c1-intelligence-run.json",
+      "bound_paths": [
+        "scripts/rehearse_intelligence_run_migration.py",
+        "src/api/endpoints/summary.py",
+        "src/database/models/models.py",
+        "src/services/investigation/orchestrator.py",
+        "src/services/investigation/run_store.py",
+        "src/worker/tasks/summarize_task.py",
+        "tests/test_intelligence_run_persistence.py"
+      ],
+      "definition_errors": [],
+      "valid": false
+    },
+    "d1": {
+      "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\pyannote-community-1-network-denied-loader.json",
+      "bound_paths": [
+        "docs/reviews/artifacts/pyannote-community-1-acquisition.json",
+        "docs/runbooks/pyannote-offline.md",
+        "models/manifests/pyannote-speaker-diarization-community-1.json",
+        "requirements-torch-cu121.txt",
+        "requirements.txt",
+        "scripts/acquire_pyannote_community1.py",
+        "scripts/verify_pyannote_offline.py",
+        "src/cherry_core/adapters/diarization/pyannote_adapter.py",
+        "src/core/config.py",
+        "src/services/model_runtime/local_artifacts.py",
+        "src/services/transcription/models/pyannote_manager.py",
+        "tests/test_transcription_engines.py"
+      ],
+      "definition_errors": [],
+      "valid": false
+    },
+    "d2": {
+      "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\diarization-contract-tests.json",
+      "bound_paths": [
+        "src/cherry_core/adapters/diarization/pyannote_adapter.py",
+        "src/cherry_core/ports/diarization_port.py",
+        "src/services/transcription/contracts.py",
+        "src/services/transcription/models/pyannote_manager.py",
+        "src/services/transcription/transcribe_service_v2.py",
+        "tests/test_diarization_alignment.py",
+        "tests/test_transcription_engines.py"
+      ],
+      "definition_errors": [],
+      "valid": false
+    },
+    "x1": {
+      "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\x1-speaker-claim-release.json",
+      "bound_paths": [
+        "src/services/investigation/contracts.py",
+        "src/services/investigation/release_adapter.py",
+        "src/services/investigation/run_contracts.py",
+        "src/services/investigation/source_revision.py",
+        "tests/test_adaptive_summary_contracts.py",
+        "tests/test_investigation_release_adapter.py",
+        "tests/test_speaker_aware_claim_release.py"
+      ],
+      "definition_errors": [],
+      "valid": false
+    },
+    "f1b": {
+      "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\f1b-file-aware-evidence.json",
+      "bound_paths": [
+        "frontend/src/App.tsx",
+        "frontend/src/__tests__/fileAwareEvidence.test.tsx",
+        "frontend/src/api/client.ts",
+        "frontend/src/components/AnalysisPanel.tsx",
+        "frontend/src/components/DiarizationPanel.tsx",
+        "frontend/src/components/InvestigationSummaryCard.tsx",
+        "frontend/src/components/SummaryPanel.tsx",
+        "frontend/src/components/TranscriptPanel.tsx",
+        "tests/test_case_evidence_authorization.py"
+      ],
+      "definition_errors": [],
+      "valid": false
+    },
+    "e1a": {
+      "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\e1a-baseline-lock.json",
+      "bound_paths": [
+        "docs/evals/runs/summary-diarization-baseline-v1.json",
+        "scripts/evaluate_summary_diarization.py",
+        "tests/eval/summary-diarization-scoring-v1.json",
+        "tests/eval/summary_diarization_cases.jsonl",
+        "tests/eval/summary_diarization_corpus_manifest.json",
+        "tests/test_summary_diarization_evaluator.py"
+      ],
+      "definition_errors": [],
+      "valid": false
+    },
+    "e1": {
+      "path": "E:\\research\\STT\\docs\\reviews\\artifacts\\e1-promotion-audit.json",
+      "bound_paths": [
+        "docs/evals/runs/summary-diarization-candidate-v1.json",
+        "scripts/evaluate_summary_diarization.py"
+      ],
+      "definition_errors": [],
+      "valid": false
+    },
+    "contract": {
+      "valid": true,
+      "errors": [],
+      "plan_packages": [
+        "c1",
+        "d1",
+        "d2",
+        "e1",
+        "e1a",
+        "f1a",
+        "f1b",
+        "g1",
+        "p0a",
+        "q1",
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "x1"
+      ],
+      "validator_packages": [
+        "c1",
+        "d1",
+        "d2",
+        "e1",
+        "e1a",
+        "f1a",
+        "f1b",
+        "g1",
+        "p0a",
+        "q1",
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "x1"
+      ],
+      "exact_package_set_match": true,
+      "c1_dynamic_alembic_binding_required": true
+    }
+  },
+  "summary_contract": {
+    "object_schema_count": 17,
+    "all_objects_forbid_additional_properties": true,
+    "non_strict_object_paths": [],
+    "summary_compatibility_schema": {
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    },
+    "summary_sentence_fields": [],
+    "summary_sentence_contract_present": false,
+    "canonical_legacy_key_point_coercion_present": true,
+    "raw_context_summary_release_present": true,
+    "hard_minimum_length_present": true,
+    "shared_summary_contract_module_present": false,
+    "untyped_summary_type_paths": [
+      "src/api/endpoints/audio.py",
+      "src/services/summarization/summary_service_v2.py",
+      "src/worker/tasks/summarize_task.py"
+    ],
+    "release_sentence_fields": [
+      "claim_refs",
+      "insight_refs",
+      "sentence_kind",
+      "text"
+    ],
+    "release_sentence_contract_present": false,
+    "semantic_attestation_module_present": false,
+    "released_claim_narrative_coverage_gate_present": false
+  },
+  "model_state": {
+    "offline_strict": true,
+    "transcription_engine": "legacy",
+    "local_llm_provider": "ollama",
+    "pyannote_file_count": 0,
+    "pyannote_bytes": 0,
+    "community_1_snapshot": null,
+    "speaker_diarization_31_snapshot": null,
+    "community_1_required_files": [
+      "config.yaml",
+      "embedding/pytorch_model.bin",
+      "plda/plda.npz",
+      "plda/xvec_transform.npz",
+      "segmentation/pytorch_model.bin"
+    ],
+    "community_1_missing_files": [
+      "config.yaml",
+      "embedding/pytorch_model.bin",
+      "plda/plda.npz",
+      "plda/xvec_transform.npz",
+      "segmentation/pytorch_model.bin"
+    ],
+    "community_1_external_paths": [],
+    "community_1_complete": false,
+    "community_1_manifest_path": "E:\\research\\STT\\models\\manifests\\pyannote-speaker-diarization-community-1.json",
+    "community_1_acquisition_path": "E:\\research\\STT\\docs\\reviews\\artifacts\\pyannote-community-1-acquisition.json",
+    "community_1_acquisition_valid": false,
+    "community_1_manifest_valid": false,
+    "network_denied_loader_evidence_path": "E:\\research\\STT\\docs\\reviews\\artifacts\\pyannote-community-1-network-denied-loader.json",
+    "network_denied_loader_evidence_valid": false,
+    "cherry_large_v2_paths": []
+  },
+  "diarization_contract": {
+    "winner_take_all_alignment_present": true,
+    "multi_speaker_only_formatting_present": true,
+    "explicit_diarization_status_present": false,
+    "degraded_reasons_present": false,
+    "speaker_overlap_state_present": false,
+    "word_timestamps_retained": false,
+    "timestamp_provenance_present": false,
+    "sibling_wav_conversion_present": true,
+    "shared_diarization_method_contract_present": false,
+    "frontend_cross_file_segment_flattening_present": true,
+    "contract_test_evidence_path": "E:\\research\\STT\\docs\\reviews\\artifacts\\diarization-contract-tests.json",
+    "contract_test_evidence_valid": false
+  },
+  "gpu_contract": {
+    "process_instance_binding_present": false,
+    "sleeping_requires_exact_true": false,
+    "summary_cleanup_failure_swallowed": true,
+    "transcription_cleanup_failure_swallowed": true,
+    "recovery_cli_present": false,
+    "startup_uses_gpu_state_machine": false,
+    "live_test_evidence_path": "E:\\research\\STT\\docs\\reviews\\artifacts\\gpu-handoff-live.json",
+    "live_test_evidence_valid": false
+  },
+  "frontend_contract": {
+    "runtime_profile_endpoint_present": false,
+    "hardcoded_legacy_models": {
+      "frontend/src/components/SummarizeDialog.tsx": [
+        "gemma2:9b",
+        "llama3.2:3b"
+      ],
+      "frontend/src/components/TaskList.tsx": [
+        "gemma2:9b"
+      ]
+    },
+    "verified_alias_binding_contract_present": false,
+    "contract_test_evidence_path": "E:\\research\\STT\\docs\\reviews\\artifacts\\runtime-profile-contract-tests.json",
+    "contract_test_evidence_valid": false
+  },
+  "architecture_and_evaluation": {
+    "adaptive_chunk_planner_present": true,
+    "deterministic_exact_value_detector_present": true,
+    "append_only_intelligence_run_present": false,
+    "quality_corpus_manifest_present": false,
+    "quality_baseline_present": false,
+    "quality_scorer_protocol_present": false
+  },
+  "verdict": "BLOCKED",
+  "blockers": [
+    "append_only_intelligence_run_missing",
+    "c1_evidence_missing_or_invalid",
+    "canonical_legacy_key_point_coercion_present",
+    "cherry_large_v2_missing",
+    "configured_llm_provider_not_repository_local",
+    "d1_evidence_missing_or_invalid",
+    "d2_evidence_missing_or_invalid",
+    "diarization_contract_test_evidence_missing_or_invalid",
+    "diarization_degraded_reasons_missing",
+    "diarization_status_missing",
+    "e1_evidence_missing_or_invalid",
+    "e1a_evidence_missing_or_invalid",
+    "f1a_evidence_missing_or_invalid",
+    "f1b_evidence_missing_or_invalid",
+    "frontend_cross_file_speaker_merge_risk",
+    "frontend_hardcoded_legacy_models",
+    "g1_evidence_missing_or_invalid",
+    "gpu_live_handoff_evidence_missing_or_invalid",
+    "gpu_quarantine_process_instance_binding_missing",
+    "gpu_quarantine_recovery_cli_missing",
+    "live_summary_releases_raw_context_summary",
+    "llama_sleep_verifier_accepts_truthy_non_boolean",
+    "llama_startup_outside_gpu_state_machine",
+    "minimum_length_is_hard_enforced",
+    "p0a_evidence_missing_or_invalid",
+    "pyannote_community_1_incomplete",
+    "pyannote_manifest_invalid_or_missing",
+    "pyannote_network_denied_loader_evidence_missing_or_invalid",
+    "q1_evidence_missing_or_invalid",
+    "quality_baseline_missing",
+    "quality_corpus_manifest_missing",
+    "quality_scorer_protocol_missing",
+    "release_sentence_attestation_contract_missing",
+    "released_claim_narrative_coverage_gate_missing",
+    "runtime_profile_contract_test_evidence_missing_or_invalid",
+    "s1_evidence_missing_or_invalid",
+    "s2_evidence_missing_or_invalid",
+    "s3_evidence_missing_or_invalid",
+    "s4_evidence_missing_or_invalid",
+    "semantic_attestation_authority_missing",
+    "shared_diarization_method_contract_missing",
+    "shared_summary_type_length_contract_missing",
+    "single_speaker_success_collapsed_with_failure",
+    "speaker_overlap_uncertainty_missing",
+    "summary_cleanup_failure_swallowed",
+    "summary_type_untyped_outside_v2_api",
+    "timestamp_provenance_missing",
+    "transcription_cleanup_failure_swallowed",
+    "typed_summary_sentence_contract_missing",
+    "unsafe_sibling_wav_conversion",
+    "verified_runtime_profile_contract_missing",
+    "winner_take_all_speaker_alignment",
+    "word_timestamps_not_retained",
+    "x1_evidence_missing_or_invalid"
+  ],
+  "limitations": [
+    "Static source probes are conservative indicators, not substitutes for task tests.",
+    "Database aggregates include legacy and test rows and do not estimate quality prevalence.",
+    "Model quality still requires the pinned Vietnamese corpus and scorer protocol."
+  ]
+}
