@@ -13,6 +13,9 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
 from src.speech_to_text.transcriber import Transcriber
+from src.services.summarization.legacy_context_adapter import (
+    project_legacy_key_points,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -248,7 +251,7 @@ class WebInterface:
                 
                 # Add key points
                 lines.extend(["", "CÁC ĐIỂM CHÍNH:"])
-                for point in analysis.get('key_points', []):
+                for point in project_legacy_key_points(analysis):
                     lines.append(f"- {point}")
                 
                 # Add remaining information
@@ -284,4 +287,4 @@ def main():
     interface.launch(share=True)
 
 if __name__ == "__main__":
-    main() 
+    main()

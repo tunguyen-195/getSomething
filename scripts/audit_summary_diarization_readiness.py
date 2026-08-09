@@ -289,6 +289,36 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _git_index_sha256(repo_root: Path, relative: str) -> str | None:
+    """Hash the exact blob currently selected for the next commit."""
+
+    normalized = _normalized_relative_source_path(relative)
+    if normalized is None:
+        return None
+    completed = subprocess.run(
+        ["git", "show", f":{normalized}"],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        return None
+    return hashlib.sha256(completed.stdout).hexdigest()
+
+
+def _bound_source_sha256(
+    repo_root: Path,
+    relative: str,
+    source_scope: str,
+) -> str | None:
+    if source_scope == "git_index":
+        return _git_index_sha256(repo_root, relative)
+    if source_scope != "worktree":
+        return None
+    path = repo_root / relative
+    return _sha256(path) if path.is_file() else None
+
+
 def _normalized_relative_source_path(value: str) -> str | None:
     normalized = value.strip().replace("\\", "/")
     candidate = Path(normalized)
@@ -650,6 +680,9 @@ def _evidence_artifact_pass(
         return False
     if observed_at.tzinfo is None:
         return False
+    source_scope = str(payload.get("source_scope", "worktree"))
+    if source_scope not in {"worktree", "git_index"}:
+        return False
     harness_relative = payload.get("harness_path")
     harness_sha256 = payload.get("harness_sha256")
     if not isinstance(harness_relative, str) or not isinstance(harness_sha256, str):
@@ -659,15 +692,23 @@ def _evidence_artifact_pass(
         not harness_path.is_file()
         or os.path.commonpath((str(harness_path), str(repo_root.resolve())))
         != str(repo_root.resolve())
-        or _sha256(harness_path) != harness_sha256
+        or _bound_source_sha256(
+            repo_root,
+            harness_relative,
+            source_scope,
+        )
+        != harness_sha256
     ):
         return False
     source_hashes = payload.get("source_sha256")
     if not isinstance(source_hashes, dict):
         return False
     for relative in bound_paths:
-        source_path = repo_root / relative
-        if not source_path.is_file() or source_hashes.get(relative) != _sha256(source_path):
+        if source_hashes.get(relative) != _bound_source_sha256(
+            repo_root,
+            relative,
+            source_scope,
+        ):
             return False
     if dynamic_bound_path_field is not None:
         if dynamic_bound_path_field != "alembic_version_path":
@@ -675,10 +716,10 @@ def _evidence_artifact_pass(
         dynamic_relative = _dynamic_c1_alembic_path(payload)
         if dynamic_relative is None:
             return False
-        dynamic_path = repo_root / dynamic_relative
-        if (
-            not dynamic_path.is_file()
-            or source_hashes.get(dynamic_relative) != _sha256(dynamic_path)
+        if source_hashes.get(dynamic_relative) != _bound_source_sha256(
+            repo_root,
+            dynamic_relative,
+            source_scope,
         ):
             return False
     checks = payload.get("checks")

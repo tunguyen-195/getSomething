@@ -1,0 +1,3770 @@
+{
+  "schema_version": "rtk-evidence-v1",
+  "artifact_id": "s1-summary-schema",
+  "observed_at": "2026-08-09T19:24:00+07:00",
+  "verdict": "PASS",
+  "exit_code": 0,
+  "command": [
+    "E:\\research\\STT\\venv\\Scripts\\python.exe",
+    "scripts/evaluate_context_analysis.py",
+    "--emit-s1-evidence",
+    "docs/reviews/artifacts/s1-summary-schema.json"
+  ],
+  "environment": {
+    "workspace": "E:\\research\\STT",
+    "python": "3.11.9",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "git_head": "ff0886122950a9275e3fab53d066e7e7accb8f92",
+    "snapshot": "git_index",
+    "model_calls": 0,
+    "network_calls": 0
+  },
+  "source_scope": "git_index",
+  "harness_path": "scripts/evaluate_context_analysis.py",
+  "harness_sha256": "6955a2bde3eeec804edecbc0812f074b0aa09363e01ae40d9000d33d66d7e4f2",
+  "source_sha256": {
+    "docs/plans/2026-08-09-investigative-bulletin-diarization-plan.md": "3949a5e750488931fe2b88e8fa17aaa90842d6d72a0159467e60d2990e26b078",
+    "scripts/audit_summary_diarization_readiness.py": "05388cb0262f2187ee9d681cd563e69f7c3ccd49f11c064b2d7eea481c443912",
+    "scripts/evaluate_context_analysis.py": "6955a2bde3eeec804edecbc0812f074b0aa09363e01ae40d9000d33d66d7e4f2",
+    "src/services/audio_service.py": "9ef3911260dd6e6689fa1a05c0e77ca1669de986fd2d56ea20013a6288520b55",
+    "src/services/summarization/context_service.py": "8e2ef1fbbb05a366077c0843cf6176d65031f65b08aa081adfd897cfb44c666f",
+    "src/services/summarization/legacy_context_adapter.py": "3375fe758f989b4cdf01f6c0594f071932fe884930b2d3007bff285a319658b6",
+    "src/services/summarization/models/context_analysis.py": "e5310c72fb941c5263e1767794f5198d8a6291d1ebe89dd19bed921e30df0fae",
+    "src/services/summarization/models/investigation_knowledge.py": "a330fe5f1aa238f7b92770bb42f023c47856e78bad7e3cbf4e9cd96a282be8f5",
+    "src/services/summarization/models/llm_manager.py": "f5dc4f8ab8afd7c84dd162e76a13e11d24cd2663da3bb73c311df9ca5159acf3",
+    "src/summarization/summarizer.py": "eb278a46f8965fe36abe9035cea38ea6c301089f8e899609a107d3ea1b5725ad",
+    "src/web_interface/app.py": "640bbb9e1a1168f96ef3f8b8478b394c00dfd7a933385bae2fa7255e2c4669c8",
+    "tests/test_context_analysis.py": "9b5c45f783446551946dfa091d0d8d1c4f647176d96868045484f902e54b1653",
+    "tests/test_context_eval_harness.py": "6daa0257621d9f5595045c0ccc6cceb00b4fe03d4588d0e3a45e50639897e8da",
+    "tests/test_investigation_knowledge.py": "6e6cfbff769d45480f00eb1fb5e00d6b8fffc7a819aa22d5465423a1afe7a71c",
+    "tests/test_summary_diarization_audit_harness.py": "863ba02c28b45321e06a20b50df1bb8de42d6518e7398664f001e0d4f2fe300d"
+  },
+  "checks": {
+    "strict_nested_schema": true,
+    "typed_summary_sentences": true,
+    "legacy_adapter_separated": true,
+    "ungrounded_items_rejected": true,
+    "no_model_or_network_call": true
+  },
+  "schema_snapshot": {
+    "artifact_version": "s1-summary-schema-v1",
+    "context_prompt_version": "investigation-context-v2.4-typed-summary",
+    "knowledge_schema_version": "investigation-knowledge-v1.1",
+    "grounded_context_schema_version": "grounded-context-v1.0",
+    "provider_schema": {
+      "$defs": {
+        "ActionItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "action": {
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "actor": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Actor"
+            },
+            "status": {
+              "default": "reported",
+              "enum": [
+                "observed",
+                "reported",
+                "planned",
+                "completed",
+                "negated",
+                "uncertain",
+                "conflicting"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "action"
+          ],
+          "title": "ActionItem",
+          "type": "object"
+        },
+        "ContactInfo": {
+          "additionalProperties": false,
+          "properties": {
+            "phones": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "Phones",
+              "type": "array"
+            },
+            "emails": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "Emails",
+              "type": "array"
+            },
+            "ids": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "Ids",
+              "type": "array"
+            },
+            "bank_accounts": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "Bank Accounts",
+              "type": "array"
+            },
+            "addresses": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "Addresses",
+              "type": "array"
+            }
+          },
+          "title": "ContactInfo",
+          "type": "object"
+        },
+        "ContradictionItem": {
+          "additionalProperties": false,
+          "properties": {
+            "statement": {
+              "minLength": 1,
+              "title": "Statement",
+              "type": "string"
+            },
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "conflicting_evidence_quote": {
+              "minLength": 1,
+              "title": "Conflicting Evidence Quote",
+              "type": "string"
+            }
+          },
+          "required": [
+            "statement",
+            "evidence_quote",
+            "conflicting_evidence_quote"
+          ],
+          "title": "ContradictionItem",
+          "type": "object"
+        },
+        "CrimeIndicatorItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "statement": {
+              "minLength": 1,
+              "title": "Statement",
+              "type": "string"
+            },
+            "crime_type": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Crime Type"
+            },
+            "confidence": {
+              "default": "unknown",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "unknown"
+              ],
+              "title": "Confidence",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "statement"
+          ],
+          "title": "CrimeIndicatorItem",
+          "type": "object"
+        },
+        "DecisionItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "decision": {
+              "minLength": 1,
+              "title": "Decision",
+              "type": "string"
+            },
+            "actor": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Actor"
+            },
+            "status": {
+              "default": "reported",
+              "enum": [
+                "observed",
+                "reported",
+                "planned",
+                "completed",
+                "negated",
+                "uncertain",
+                "conflicting"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "decision"
+          ],
+          "title": "DecisionItem",
+          "type": "object"
+        },
+        "EntityGroups": {
+          "additionalProperties": false,
+          "properties": {
+            "people": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "People",
+              "type": "array"
+            },
+            "locations": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "Locations",
+              "type": "array"
+            },
+            "time": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "Time",
+              "type": "array"
+            },
+            "organizations": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "Organizations",
+              "type": "array"
+            },
+            "contact_info": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ContactInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "title": "EntityGroups",
+          "type": "object"
+        },
+        "EntityItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Name"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Value"
+            },
+            "account_number": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Account Number"
+            },
+            "address": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Address"
+            },
+            "role": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Role"
+            },
+            "alias": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Alias"
+            },
+            "normalized_value": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Normalized Value"
+            }
+          },
+          "required": [
+            "evidence_quote"
+          ],
+          "title": "EntityItem",
+          "type": "object"
+        },
+        "EventItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "description": {
+              "minLength": 1,
+              "title": "Description",
+              "type": "string"
+            },
+            "time": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Time"
+            },
+            "actors": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actors",
+              "type": "array"
+            },
+            "location": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Location"
+            },
+            "status": {
+              "default": "reported",
+              "enum": [
+                "observed",
+                "reported",
+                "planned",
+                "completed",
+                "negated",
+                "uncertain",
+                "conflicting"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "description"
+          ],
+          "title": "EventItem",
+          "type": "object"
+        },
+        "FactItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "statement": {
+              "minLength": 1,
+              "title": "Statement",
+              "type": "string"
+            },
+            "category": {
+              "default": "fact",
+              "minLength": 1,
+              "title": "Category",
+              "type": "string"
+            },
+            "status": {
+              "default": "reported",
+              "enum": [
+                "observed",
+                "reported",
+                "planned",
+                "completed",
+                "negated",
+                "uncertain",
+                "conflicting"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "statement"
+          ],
+          "title": "FactItem",
+          "type": "object"
+        },
+        "HypothesisItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "category": {
+              "default": "hypothesis",
+              "minLength": 1,
+              "title": "Category",
+              "type": "string"
+            },
+            "statement": {
+              "minLength": 1,
+              "title": "Statement",
+              "type": "string"
+            },
+            "confidence": {
+              "default": "unknown",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "unknown"
+              ],
+              "title": "Confidence",
+              "type": "string"
+            },
+            "verification_question": {
+              "minLength": 1,
+              "title": "Verification Question",
+              "type": "string"
+            },
+            "verification_status": {
+              "const": "unverified",
+              "default": "unverified",
+              "title": "Verification Status"
+            },
+            "requires_human_verification": {
+              "const": true,
+              "default": true,
+              "title": "Requires Human Verification"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "statement",
+            "verification_question"
+          ],
+          "title": "HypothesisItem",
+          "type": "object"
+        },
+        "KeyPointItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "statement": {
+              "minLength": 1,
+              "title": "Statement",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "statement"
+          ],
+          "title": "KeyPointItem",
+          "type": "object"
+        },
+        "OpenQuestionItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "question": {
+              "minLength": 1,
+              "title": "Question",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "question"
+          ],
+          "title": "OpenQuestionItem",
+          "type": "object"
+        },
+        "RelationshipItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "source": {
+              "minLength": 1,
+              "title": "Source",
+              "type": "string"
+            },
+            "target": {
+              "minLength": 1,
+              "title": "Target",
+              "type": "string"
+            },
+            "label": {
+              "minLength": 1,
+              "title": "Label",
+              "type": "string"
+            },
+            "status": {
+              "default": "reported",
+              "enum": [
+                "observed",
+                "reported",
+                "planned",
+                "completed",
+                "negated",
+                "uncertain",
+                "conflicting"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "source",
+            "target",
+            "label"
+          ],
+          "title": "RelationshipItem",
+          "type": "object"
+        },
+        "RiskActionItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "action": {
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "action"
+          ],
+          "title": "RiskActionItem",
+          "type": "object"
+        },
+        "RiskAssessment": {
+          "additionalProperties": false,
+          "properties": {
+            "overall_risk": {
+              "const": "unverified",
+              "default": "unverified",
+              "title": "Overall Risk"
+            },
+            "crime_indicators": {
+              "items": {
+                "$ref": "#/$defs/CrimeIndicatorItem"
+              },
+              "title": "Crime Indicators",
+              "type": "array"
+            },
+            "recommended_actions": {
+              "items": {
+                "$ref": "#/$defs/RiskActionItem"
+              },
+              "title": "Recommended Actions",
+              "type": "array"
+            }
+          },
+          "title": "RiskAssessment",
+          "type": "object"
+        },
+        "SummarySentenceDraft": {
+          "additionalProperties": false,
+          "properties": {
+            "draft_id": {
+              "minLength": 1,
+              "title": "Draft Id",
+              "type": "string"
+            },
+            "text": {
+              "minLength": 1,
+              "title": "Text",
+              "type": "string"
+            },
+            "sentence_role": {
+              "enum": [
+                "overview",
+                "participant",
+                "event",
+                "time",
+                "location",
+                "relationship",
+                "financial",
+                "contact",
+                "identifier",
+                "outcome",
+                "uncertainty",
+                "sensitive_detail"
+              ],
+              "title": "Sentence Role",
+              "type": "string"
+            },
+            "evidence_quotes": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Quotes",
+              "type": "array"
+            }
+          },
+          "required": [
+            "draft_id",
+            "text",
+            "sentence_role",
+            "evidence_quotes"
+          ],
+          "title": "SummarySentenceDraft",
+          "type": "object"
+        },
+        "TopicItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "synthesis": {
+              "minLength": 1,
+              "title": "Synthesis",
+              "type": "string"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Title"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "synthesis"
+          ],
+          "title": "TopicItem",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Strict shape accepted directly from the configured context model.",
+      "properties": {
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "summary_sentences": {
+          "items": {
+            "$ref": "#/$defs/SummarySentenceDraft"
+          },
+          "minItems": 1,
+          "title": "Summary Sentences",
+          "type": "array"
+        },
+        "key_points": {
+          "items": {
+            "$ref": "#/$defs/KeyPointItem"
+          },
+          "title": "Key Points",
+          "type": "array"
+        },
+        "entities": {
+          "$ref": "#/$defs/EntityGroups"
+        },
+        "risk_assessment": {
+          "$ref": "#/$defs/RiskAssessment"
+        },
+        "topics": {
+          "items": {
+            "$ref": "#/$defs/TopicItem"
+          },
+          "title": "Topics",
+          "type": "array"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/FactItem"
+          },
+          "title": "Facts",
+          "type": "array"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/EventItem"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "relationships": {
+          "items": {
+            "$ref": "#/$defs/RelationshipItem"
+          },
+          "title": "Relationships",
+          "type": "array"
+        },
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/ActionItem"
+          },
+          "title": "Actions",
+          "type": "array"
+        },
+        "decisions": {
+          "items": {
+            "$ref": "#/$defs/DecisionItem"
+          },
+          "title": "Decisions",
+          "type": "array"
+        },
+        "contradictions": {
+          "items": {
+            "$ref": "#/$defs/ContradictionItem"
+          },
+          "title": "Contradictions",
+          "type": "array"
+        },
+        "hypotheses": {
+          "items": {
+            "$ref": "#/$defs/HypothesisItem"
+          },
+          "title": "Hypotheses",
+          "type": "array"
+        },
+        "open_questions": {
+          "items": {
+            "$ref": "#/$defs/OpenQuestionItem"
+          },
+          "title": "Open Questions",
+          "type": "array"
+        },
+        "analysis_status": {
+          "const": "success",
+          "default": "success",
+          "title": "Analysis Status"
+        },
+        "prompt_version": {
+          "const": "investigation-context-v2.4-typed-summary",
+          "default": "investigation-context-v2.4-typed-summary",
+          "title": "Prompt Version"
+        },
+        "model_generated": {
+          "const": true,
+          "default": true,
+          "title": "Model Generated"
+        },
+        "requires_human_verification": {
+          "const": true,
+          "default": true,
+          "title": "Requires Human Verification"
+        }
+      },
+      "required": [
+        "summary",
+        "summary_sentences",
+        "key_points",
+        "entities",
+        "risk_assessment"
+      ],
+      "title": "ContextAnalysisPayload",
+      "type": "object"
+    },
+    "knowledge_schema": {
+      "$defs": {
+        "EvidenceSpan": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_id": {
+              "minLength": 1,
+              "title": "Evidence Id",
+              "type": "string"
+            },
+            "source_type": {
+              "enum": [
+                "transcript_segment",
+                "transcript_text"
+              ],
+              "title": "Source Type",
+              "type": "string"
+            },
+            "segment_index": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Segment Index"
+            },
+            "start_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Start Seconds"
+            },
+            "end_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "End Seconds"
+            },
+            "speaker_id": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Speaker Id"
+            },
+            "char_start": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Char Start"
+            },
+            "char_end": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Char End"
+            },
+            "quote": {
+              "minLength": 1,
+              "title": "Quote",
+              "type": "string"
+            },
+            "quote_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Quote Sha256",
+              "type": "string"
+            },
+            "source_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Source Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_id",
+            "source_type",
+            "quote",
+            "quote_sha256",
+            "source_sha256"
+          ],
+          "title": "EvidenceSpan",
+          "type": "object"
+        },
+        "GroundedSummarySentence": {
+          "additionalProperties": false,
+          "properties": {
+            "draft_id": {
+              "minLength": 1,
+              "title": "Draft Id",
+              "type": "string"
+            },
+            "text": {
+              "minLength": 1,
+              "title": "Text",
+              "type": "string"
+            },
+            "sentence_role": {
+              "enum": [
+                "overview",
+                "participant",
+                "event",
+                "time",
+                "location",
+                "relationship",
+                "financial",
+                "contact",
+                "identifier",
+                "outcome",
+                "uncertainty",
+                "sensitive_detail"
+              ],
+              "title": "Sentence Role",
+              "type": "string"
+            },
+            "evidence_quotes": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Quotes",
+              "type": "array"
+            },
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            }
+          },
+          "required": [
+            "draft_id",
+            "text",
+            "sentence_role",
+            "evidence_quotes",
+            "evidence_ids"
+          ],
+          "title": "GroundedSummarySentence",
+          "type": "object"
+        },
+        "InvestigationHypothesis": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "hypothesis_id": {
+              "minLength": 1,
+              "title": "Hypothesis Id",
+              "type": "string"
+            },
+            "category": {
+              "minLength": 1,
+              "title": "Category",
+              "type": "string"
+            },
+            "statement": {
+              "minLength": 1,
+              "title": "Statement",
+              "type": "string"
+            },
+            "confidence": {
+              "default": "unknown",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "unknown"
+              ],
+              "title": "Confidence",
+              "type": "string"
+            },
+            "verification_question": {
+              "minLength": 1,
+              "title": "Verification Question",
+              "type": "string"
+            },
+            "model_generated": {
+              "const": true,
+              "default": true,
+              "title": "Model Generated"
+            },
+            "requires_human_verification": {
+              "const": true,
+              "default": true,
+              "title": "Requires Human Verification"
+            },
+            "verification_status": {
+              "default": "unverified",
+              "enum": [
+                "unverified",
+                "human_verified",
+                "rejected"
+              ],
+              "title": "Verification Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_ids",
+            "hypothesis_id",
+            "category",
+            "statement",
+            "verification_question"
+          ],
+          "title": "InvestigationHypothesis",
+          "type": "object"
+        },
+        "KnowledgeEntity": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "entity_id": {
+              "minLength": 1,
+              "title": "Entity Id",
+              "type": "string"
+            },
+            "entity_type": {
+              "minLength": 1,
+              "title": "Entity Type",
+              "type": "string"
+            },
+            "value": {
+              "minLength": 1,
+              "title": "Value",
+              "type": "string"
+            },
+            "role": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Role"
+            },
+            "attributes": {
+              "$ref": "#/$defs/KnowledgeEntityAttributes"
+            },
+            "model_generated": {
+              "const": true,
+              "default": true,
+              "title": "Model Generated"
+            },
+            "verification_status": {
+              "default": "unverified",
+              "enum": [
+                "unverified",
+                "human_verified",
+                "rejected"
+              ],
+              "title": "Verification Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_ids",
+            "entity_id",
+            "entity_type",
+            "value"
+          ],
+          "title": "KnowledgeEntity",
+          "type": "object"
+        },
+        "KnowledgeEntityAttributes": {
+          "additionalProperties": false,
+          "properties": {
+            "account_number": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Account Number"
+            },
+            "address": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Address"
+            },
+            "alias": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Alias"
+            },
+            "normalized_value": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Normalized Value"
+            }
+          },
+          "title": "KnowledgeEntityAttributes",
+          "type": "object"
+        },
+        "KnowledgeEvent": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "event_id": {
+              "minLength": 1,
+              "title": "Event Id",
+              "type": "string"
+            },
+            "description": {
+              "minLength": 1,
+              "title": "Description",
+              "type": "string"
+            },
+            "time_text": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Time Text"
+            },
+            "actors": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actors",
+              "type": "array"
+            },
+            "location": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Location"
+            },
+            "status": {
+              "default": "reported",
+              "enum": [
+                "observed",
+                "reported",
+                "planned",
+                "completed",
+                "negated",
+                "uncertain",
+                "conflicting"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "model_generated": {
+              "const": true,
+              "default": true,
+              "title": "Model Generated"
+            },
+            "verification_status": {
+              "default": "unverified",
+              "enum": [
+                "unverified",
+                "human_verified",
+                "rejected"
+              ],
+              "title": "Verification Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_ids",
+            "event_id",
+            "description"
+          ],
+          "title": "KnowledgeEvent",
+          "type": "object"
+        },
+        "KnowledgeFact": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "fact_id": {
+              "minLength": 1,
+              "title": "Fact Id",
+              "type": "string"
+            },
+            "category": {
+              "minLength": 1,
+              "title": "Category",
+              "type": "string"
+            },
+            "statement": {
+              "minLength": 1,
+              "title": "Statement",
+              "type": "string"
+            },
+            "status": {
+              "default": "reported",
+              "enum": [
+                "observed",
+                "reported",
+                "planned",
+                "completed",
+                "negated",
+                "uncertain",
+                "conflicting"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "model_generated": {
+              "const": true,
+              "default": true,
+              "title": "Model Generated"
+            },
+            "verification_status": {
+              "default": "unverified",
+              "enum": [
+                "unverified",
+                "human_verified",
+                "rejected"
+              ],
+              "title": "Verification Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_ids",
+            "fact_id",
+            "category",
+            "statement"
+          ],
+          "title": "KnowledgeFact",
+          "type": "object"
+        },
+        "KnowledgeProvenance": {
+          "additionalProperties": false,
+          "properties": {
+            "source_task_id": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Task Id"
+            },
+            "source_audio_id": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Audio Id"
+            },
+            "audio_sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Audio Sha256"
+            },
+            "audio_integrity_status": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Audio Integrity Status"
+            },
+            "transcript_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Transcript Sha256",
+              "type": "string"
+            },
+            "transcript_segment_count": {
+              "minimum": 0,
+              "title": "Transcript Segment Count",
+              "type": "integer"
+            },
+            "segment_source_hashes": {
+              "items": {
+                "$ref": "#/$defs/SegmentSourceHash"
+              },
+              "title": "Segment Source Hashes",
+              "type": "array"
+            },
+            "prompt_version": {
+              "const": "investigation-context-v2.4-typed-summary",
+              "default": "investigation-context-v2.4-typed-summary",
+              "title": "Prompt Version"
+            },
+            "model_id": {
+              "minLength": 1,
+              "title": "Model Id",
+              "type": "string"
+            },
+            "generated_at": {
+              "format": "date-time",
+              "title": "Generated At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "transcript_sha256",
+            "transcript_segment_count",
+            "segment_source_hashes",
+            "model_id",
+            "generated_at"
+          ],
+          "title": "KnowledgeProvenance",
+          "type": "object"
+        },
+        "KnowledgeQuality": {
+          "additionalProperties": false,
+          "properties": {
+            "total_items": {
+              "minimum": 0,
+              "title": "Total Items",
+              "type": "integer"
+            },
+            "grounded_items": {
+              "minimum": 0,
+              "title": "Grounded Items",
+              "type": "integer"
+            },
+            "evidence_coverage": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Evidence Coverage",
+              "type": "number"
+            },
+            "high_risk_candidate_count": {
+              "minimum": 0,
+              "title": "High Risk Candidate Count",
+              "type": "integer"
+            },
+            "released_high_risk_count": {
+              "minimum": 0,
+              "title": "Released High Risk Count",
+              "type": "integer"
+            },
+            "withheld_high_risk_count": {
+              "minimum": 0,
+              "title": "Withheld High Risk Count",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "total_items",
+            "grounded_items",
+            "evidence_coverage",
+            "high_risk_candidate_count",
+            "released_high_risk_count",
+            "withheld_high_risk_count"
+          ],
+          "title": "KnowledgeQuality",
+          "type": "object"
+        },
+        "KnowledgeRelationship": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "relationship_id": {
+              "minLength": 1,
+              "title": "Relationship Id",
+              "type": "string"
+            },
+            "source": {
+              "minLength": 1,
+              "title": "Source",
+              "type": "string"
+            },
+            "target": {
+              "minLength": 1,
+              "title": "Target",
+              "type": "string"
+            },
+            "label": {
+              "minLength": 1,
+              "title": "Label",
+              "type": "string"
+            },
+            "status": {
+              "default": "reported",
+              "enum": [
+                "observed",
+                "reported",
+                "planned",
+                "completed",
+                "negated",
+                "uncertain",
+                "conflicting"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "model_generated": {
+              "const": true,
+              "default": true,
+              "title": "Model Generated"
+            },
+            "verification_status": {
+              "default": "unverified",
+              "enum": [
+                "unverified",
+                "human_verified",
+                "rejected"
+              ],
+              "title": "Verification Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_ids",
+            "relationship_id",
+            "source",
+            "target",
+            "label"
+          ],
+          "title": "KnowledgeRelationship",
+          "type": "object"
+        },
+        "KnowledgeRetention": {
+          "additionalProperties": false,
+          "properties": {
+            "policy_version": {
+              "const": "ai-investigation-retention-v1",
+              "default": "ai-investigation-retention-v1",
+              "title": "Policy Version"
+            },
+            "data_classification": {
+              "const": "law_enforcement_sensitive",
+              "default": "law_enforcement_sensitive",
+              "title": "Data Classification"
+            },
+            "generated_at": {
+              "format": "date-time",
+              "title": "Generated At",
+              "type": "string"
+            },
+            "expires_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expires At"
+            },
+            "legal_hold": {
+              "title": "Legal Hold",
+              "type": "boolean"
+            },
+            "raw_model_response_stored": {
+              "const": false,
+              "default": false,
+              "title": "Raw Model Response Stored"
+            }
+          },
+          "required": [
+            "generated_at",
+            "expires_at",
+            "legal_hold"
+          ],
+          "title": "KnowledgeRetention",
+          "type": "object"
+        },
+        "KnowledgeSafety": {
+          "additionalProperties": false,
+          "properties": {
+            "high_risk_fields_enabled": {
+              "title": "High Risk Fields Enabled",
+              "type": "boolean"
+            },
+            "notice": {
+              "minLength": 1,
+              "title": "Notice",
+              "type": "string"
+            },
+            "unsupported_high_risk_claims_released": {
+              "const": false,
+              "default": false,
+              "title": "Unsupported High Risk Claims Released"
+            }
+          },
+          "required": [
+            "high_risk_fields_enabled",
+            "notice"
+          ],
+          "title": "KnowledgeSafety",
+          "type": "object"
+        },
+        "KnowledgeTimelineEntry": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "event_id": {
+              "minLength": 1,
+              "title": "Event Id",
+              "type": "string"
+            },
+            "time": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Time"
+            },
+            "description": {
+              "minLength": 1,
+              "title": "Description",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_ids",
+            "event_id",
+            "description"
+          ],
+          "title": "KnowledgeTimelineEntry",
+          "type": "object"
+        },
+        "SegmentSourceHash": {
+          "additionalProperties": false,
+          "properties": {
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            },
+            "source_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Source Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "segment_index",
+            "source_sha256"
+          ],
+          "title": "SegmentSourceHash",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "investigation-knowledge-v1.1",
+          "default": "investigation-knowledge-v1.1",
+          "title": "Schema Version"
+        },
+        "evidence_spans": {
+          "items": {
+            "$ref": "#/$defs/EvidenceSpan"
+          },
+          "title": "Evidence Spans",
+          "type": "array"
+        },
+        "summary_sentences": {
+          "items": {
+            "$ref": "#/$defs/GroundedSummarySentence"
+          },
+          "minItems": 1,
+          "title": "Summary Sentences",
+          "type": "array"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/KnowledgeFact"
+          },
+          "title": "Facts",
+          "type": "array"
+        },
+        "entities": {
+          "items": {
+            "$ref": "#/$defs/KnowledgeEntity"
+          },
+          "title": "Entities",
+          "type": "array"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/KnowledgeEvent"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "relationships": {
+          "items": {
+            "$ref": "#/$defs/KnowledgeRelationship"
+          },
+          "title": "Relationships",
+          "type": "array"
+        },
+        "timeline": {
+          "items": {
+            "$ref": "#/$defs/KnowledgeTimelineEntry"
+          },
+          "title": "Timeline",
+          "type": "array"
+        },
+        "hypotheses": {
+          "items": {
+            "$ref": "#/$defs/InvestigationHypothesis"
+          },
+          "title": "Hypotheses",
+          "type": "array"
+        },
+        "provenance": {
+          "$ref": "#/$defs/KnowledgeProvenance"
+        },
+        "quality": {
+          "$ref": "#/$defs/KnowledgeQuality"
+        },
+        "retention": {
+          "$ref": "#/$defs/KnowledgeRetention"
+        },
+        "safety": {
+          "$ref": "#/$defs/KnowledgeSafety"
+        }
+      },
+      "required": [
+        "evidence_spans",
+        "summary_sentences",
+        "facts",
+        "entities",
+        "events",
+        "relationships",
+        "timeline",
+        "hypotheses",
+        "provenance",
+        "quality",
+        "retention",
+        "safety"
+      ],
+      "title": "InvestigationKnowledge",
+      "type": "object"
+    },
+    "final_envelope_schema": {
+      "$defs": {
+        "ActionItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "action": {
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            },
+            "actor": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Actor"
+            },
+            "status": {
+              "default": "reported",
+              "enum": [
+                "observed",
+                "reported",
+                "planned",
+                "completed",
+                "negated",
+                "uncertain",
+                "conflicting"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "action"
+          ],
+          "title": "ActionItem",
+          "type": "object"
+        },
+        "CompatibilityProjection": {
+          "additionalProperties": false,
+          "properties": {
+            "summary_source": {
+              "const": "summary_sentence_evidence_quotes",
+              "default": "summary_sentence_evidence_quotes",
+              "title": "Summary Source"
+            },
+            "raw_model_summary_released": {
+              "const": false,
+              "default": false,
+              "title": "Raw Model Summary Released"
+            },
+            "projection_version": {
+              "const": "summary-projection-v1",
+              "default": "summary-projection-v1",
+              "title": "Projection Version"
+            },
+            "release_authority": {
+              "const": "withheld_pending_claim_attestation",
+              "default": "withheld_pending_claim_attestation",
+              "title": "Release Authority"
+            }
+          },
+          "title": "CompatibilityProjection",
+          "type": "object"
+        },
+        "ContactInfo": {
+          "additionalProperties": false,
+          "properties": {
+            "phones": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "Phones",
+              "type": "array"
+            },
+            "emails": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "Emails",
+              "type": "array"
+            },
+            "ids": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "Ids",
+              "type": "array"
+            },
+            "bank_accounts": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "Bank Accounts",
+              "type": "array"
+            },
+            "addresses": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "Addresses",
+              "type": "array"
+            }
+          },
+          "title": "ContactInfo",
+          "type": "object"
+        },
+        "ContradictionItem": {
+          "additionalProperties": false,
+          "properties": {
+            "statement": {
+              "minLength": 1,
+              "title": "Statement",
+              "type": "string"
+            },
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "conflicting_evidence_quote": {
+              "minLength": 1,
+              "title": "Conflicting Evidence Quote",
+              "type": "string"
+            }
+          },
+          "required": [
+            "statement",
+            "evidence_quote",
+            "conflicting_evidence_quote"
+          ],
+          "title": "ContradictionItem",
+          "type": "object"
+        },
+        "CrimeIndicatorItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "statement": {
+              "minLength": 1,
+              "title": "Statement",
+              "type": "string"
+            },
+            "crime_type": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Crime Type"
+            },
+            "confidence": {
+              "default": "unknown",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "unknown"
+              ],
+              "title": "Confidence",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "statement"
+          ],
+          "title": "CrimeIndicatorItem",
+          "type": "object"
+        },
+        "DecisionItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "decision": {
+              "minLength": 1,
+              "title": "Decision",
+              "type": "string"
+            },
+            "actor": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Actor"
+            },
+            "status": {
+              "default": "reported",
+              "enum": [
+                "observed",
+                "reported",
+                "planned",
+                "completed",
+                "negated",
+                "uncertain",
+                "conflicting"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "decision"
+          ],
+          "title": "DecisionItem",
+          "type": "object"
+        },
+        "EntityGroups": {
+          "additionalProperties": false,
+          "properties": {
+            "people": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "People",
+              "type": "array"
+            },
+            "locations": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "Locations",
+              "type": "array"
+            },
+            "time": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "Time",
+              "type": "array"
+            },
+            "organizations": {
+              "items": {
+                "$ref": "#/$defs/EntityItem"
+              },
+              "title": "Organizations",
+              "type": "array"
+            },
+            "contact_info": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ContactInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "title": "EntityGroups",
+          "type": "object"
+        },
+        "EntityItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Name"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Value"
+            },
+            "account_number": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Account Number"
+            },
+            "address": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Address"
+            },
+            "role": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Role"
+            },
+            "alias": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Alias"
+            },
+            "normalized_value": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Normalized Value"
+            }
+          },
+          "required": [
+            "evidence_quote"
+          ],
+          "title": "EntityItem",
+          "type": "object"
+        },
+        "EventItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "description": {
+              "minLength": 1,
+              "title": "Description",
+              "type": "string"
+            },
+            "time": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Time"
+            },
+            "actors": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actors",
+              "type": "array"
+            },
+            "location": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Location"
+            },
+            "status": {
+              "default": "reported",
+              "enum": [
+                "observed",
+                "reported",
+                "planned",
+                "completed",
+                "negated",
+                "uncertain",
+                "conflicting"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "description"
+          ],
+          "title": "EventItem",
+          "type": "object"
+        },
+        "EvidenceSpan": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_id": {
+              "minLength": 1,
+              "title": "Evidence Id",
+              "type": "string"
+            },
+            "source_type": {
+              "enum": [
+                "transcript_segment",
+                "transcript_text"
+              ],
+              "title": "Source Type",
+              "type": "string"
+            },
+            "segment_index": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Segment Index"
+            },
+            "start_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Start Seconds"
+            },
+            "end_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "End Seconds"
+            },
+            "speaker_id": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Speaker Id"
+            },
+            "char_start": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Char Start"
+            },
+            "char_end": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Char End"
+            },
+            "quote": {
+              "minLength": 1,
+              "title": "Quote",
+              "type": "string"
+            },
+            "quote_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Quote Sha256",
+              "type": "string"
+            },
+            "source_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Source Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_id",
+            "source_type",
+            "quote",
+            "quote_sha256",
+            "source_sha256"
+          ],
+          "title": "EvidenceSpan",
+          "type": "object"
+        },
+        "FactItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "statement": {
+              "minLength": 1,
+              "title": "Statement",
+              "type": "string"
+            },
+            "category": {
+              "default": "fact",
+              "minLength": 1,
+              "title": "Category",
+              "type": "string"
+            },
+            "status": {
+              "default": "reported",
+              "enum": [
+                "observed",
+                "reported",
+                "planned",
+                "completed",
+                "negated",
+                "uncertain",
+                "conflicting"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "statement"
+          ],
+          "title": "FactItem",
+          "type": "object"
+        },
+        "GroundedSummarySentence": {
+          "additionalProperties": false,
+          "properties": {
+            "draft_id": {
+              "minLength": 1,
+              "title": "Draft Id",
+              "type": "string"
+            },
+            "text": {
+              "minLength": 1,
+              "title": "Text",
+              "type": "string"
+            },
+            "sentence_role": {
+              "enum": [
+                "overview",
+                "participant",
+                "event",
+                "time",
+                "location",
+                "relationship",
+                "financial",
+                "contact",
+                "identifier",
+                "outcome",
+                "uncertainty",
+                "sensitive_detail"
+              ],
+              "title": "Sentence Role",
+              "type": "string"
+            },
+            "evidence_quotes": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Quotes",
+              "type": "array"
+            },
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            }
+          },
+          "required": [
+            "draft_id",
+            "text",
+            "sentence_role",
+            "evidence_quotes",
+            "evidence_ids"
+          ],
+          "title": "GroundedSummarySentence",
+          "type": "object"
+        },
+        "HypothesisItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "category": {
+              "default": "hypothesis",
+              "minLength": 1,
+              "title": "Category",
+              "type": "string"
+            },
+            "statement": {
+              "minLength": 1,
+              "title": "Statement",
+              "type": "string"
+            },
+            "confidence": {
+              "default": "unknown",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "unknown"
+              ],
+              "title": "Confidence",
+              "type": "string"
+            },
+            "verification_question": {
+              "minLength": 1,
+              "title": "Verification Question",
+              "type": "string"
+            },
+            "verification_status": {
+              "const": "unverified",
+              "default": "unverified",
+              "title": "Verification Status"
+            },
+            "requires_human_verification": {
+              "const": true,
+              "default": true,
+              "title": "Requires Human Verification"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "statement",
+            "verification_question"
+          ],
+          "title": "HypothesisItem",
+          "type": "object"
+        },
+        "InvestigationHypothesis": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "hypothesis_id": {
+              "minLength": 1,
+              "title": "Hypothesis Id",
+              "type": "string"
+            },
+            "category": {
+              "minLength": 1,
+              "title": "Category",
+              "type": "string"
+            },
+            "statement": {
+              "minLength": 1,
+              "title": "Statement",
+              "type": "string"
+            },
+            "confidence": {
+              "default": "unknown",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "unknown"
+              ],
+              "title": "Confidence",
+              "type": "string"
+            },
+            "verification_question": {
+              "minLength": 1,
+              "title": "Verification Question",
+              "type": "string"
+            },
+            "model_generated": {
+              "const": true,
+              "default": true,
+              "title": "Model Generated"
+            },
+            "requires_human_verification": {
+              "const": true,
+              "default": true,
+              "title": "Requires Human Verification"
+            },
+            "verification_status": {
+              "default": "unverified",
+              "enum": [
+                "unverified",
+                "human_verified",
+                "rejected"
+              ],
+              "title": "Verification Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_ids",
+            "hypothesis_id",
+            "category",
+            "statement",
+            "verification_question"
+          ],
+          "title": "InvestigationHypothesis",
+          "type": "object"
+        },
+        "InvestigationKnowledge": {
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": {
+              "const": "investigation-knowledge-v1.1",
+              "default": "investigation-knowledge-v1.1",
+              "title": "Schema Version"
+            },
+            "evidence_spans": {
+              "items": {
+                "$ref": "#/$defs/EvidenceSpan"
+              },
+              "title": "Evidence Spans",
+              "type": "array"
+            },
+            "summary_sentences": {
+              "items": {
+                "$ref": "#/$defs/GroundedSummarySentence"
+              },
+              "minItems": 1,
+              "title": "Summary Sentences",
+              "type": "array"
+            },
+            "facts": {
+              "items": {
+                "$ref": "#/$defs/KnowledgeFact"
+              },
+              "title": "Facts",
+              "type": "array"
+            },
+            "entities": {
+              "items": {
+                "$ref": "#/$defs/KnowledgeEntity"
+              },
+              "title": "Entities",
+              "type": "array"
+            },
+            "events": {
+              "items": {
+                "$ref": "#/$defs/KnowledgeEvent"
+              },
+              "title": "Events",
+              "type": "array"
+            },
+            "relationships": {
+              "items": {
+                "$ref": "#/$defs/KnowledgeRelationship"
+              },
+              "title": "Relationships",
+              "type": "array"
+            },
+            "timeline": {
+              "items": {
+                "$ref": "#/$defs/KnowledgeTimelineEntry"
+              },
+              "title": "Timeline",
+              "type": "array"
+            },
+            "hypotheses": {
+              "items": {
+                "$ref": "#/$defs/InvestigationHypothesis"
+              },
+              "title": "Hypotheses",
+              "type": "array"
+            },
+            "provenance": {
+              "$ref": "#/$defs/KnowledgeProvenance"
+            },
+            "quality": {
+              "$ref": "#/$defs/KnowledgeQuality"
+            },
+            "retention": {
+              "$ref": "#/$defs/KnowledgeRetention"
+            },
+            "safety": {
+              "$ref": "#/$defs/KnowledgeSafety"
+            }
+          },
+          "required": [
+            "evidence_spans",
+            "summary_sentences",
+            "facts",
+            "entities",
+            "events",
+            "relationships",
+            "timeline",
+            "hypotheses",
+            "provenance",
+            "quality",
+            "retention",
+            "safety"
+          ],
+          "title": "InvestigationKnowledge",
+          "type": "object"
+        },
+        "KeyPointItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "statement": {
+              "minLength": 1,
+              "title": "Statement",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "statement"
+          ],
+          "title": "KeyPointItem",
+          "type": "object"
+        },
+        "KnowledgeEntity": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "entity_id": {
+              "minLength": 1,
+              "title": "Entity Id",
+              "type": "string"
+            },
+            "entity_type": {
+              "minLength": 1,
+              "title": "Entity Type",
+              "type": "string"
+            },
+            "value": {
+              "minLength": 1,
+              "title": "Value",
+              "type": "string"
+            },
+            "role": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Role"
+            },
+            "attributes": {
+              "$ref": "#/$defs/KnowledgeEntityAttributes"
+            },
+            "model_generated": {
+              "const": true,
+              "default": true,
+              "title": "Model Generated"
+            },
+            "verification_status": {
+              "default": "unverified",
+              "enum": [
+                "unverified",
+                "human_verified",
+                "rejected"
+              ],
+              "title": "Verification Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_ids",
+            "entity_id",
+            "entity_type",
+            "value"
+          ],
+          "title": "KnowledgeEntity",
+          "type": "object"
+        },
+        "KnowledgeEntityAttributes": {
+          "additionalProperties": false,
+          "properties": {
+            "account_number": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Account Number"
+            },
+            "address": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Address"
+            },
+            "alias": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Alias"
+            },
+            "normalized_value": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Normalized Value"
+            }
+          },
+          "title": "KnowledgeEntityAttributes",
+          "type": "object"
+        },
+        "KnowledgeEvent": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "event_id": {
+              "minLength": 1,
+              "title": "Event Id",
+              "type": "string"
+            },
+            "description": {
+              "minLength": 1,
+              "title": "Description",
+              "type": "string"
+            },
+            "time_text": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Time Text"
+            },
+            "actors": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actors",
+              "type": "array"
+            },
+            "location": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Location"
+            },
+            "status": {
+              "default": "reported",
+              "enum": [
+                "observed",
+                "reported",
+                "planned",
+                "completed",
+                "negated",
+                "uncertain",
+                "conflicting"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "model_generated": {
+              "const": true,
+              "default": true,
+              "title": "Model Generated"
+            },
+            "verification_status": {
+              "default": "unverified",
+              "enum": [
+                "unverified",
+                "human_verified",
+                "rejected"
+              ],
+              "title": "Verification Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_ids",
+            "event_id",
+            "description"
+          ],
+          "title": "KnowledgeEvent",
+          "type": "object"
+        },
+        "KnowledgeFact": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "fact_id": {
+              "minLength": 1,
+              "title": "Fact Id",
+              "type": "string"
+            },
+            "category": {
+              "minLength": 1,
+              "title": "Category",
+              "type": "string"
+            },
+            "statement": {
+              "minLength": 1,
+              "title": "Statement",
+              "type": "string"
+            },
+            "status": {
+              "default": "reported",
+              "enum": [
+                "observed",
+                "reported",
+                "planned",
+                "completed",
+                "negated",
+                "uncertain",
+                "conflicting"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "model_generated": {
+              "const": true,
+              "default": true,
+              "title": "Model Generated"
+            },
+            "verification_status": {
+              "default": "unverified",
+              "enum": [
+                "unverified",
+                "human_verified",
+                "rejected"
+              ],
+              "title": "Verification Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_ids",
+            "fact_id",
+            "category",
+            "statement"
+          ],
+          "title": "KnowledgeFact",
+          "type": "object"
+        },
+        "KnowledgeProvenance": {
+          "additionalProperties": false,
+          "properties": {
+            "source_task_id": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Task Id"
+            },
+            "source_audio_id": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Audio Id"
+            },
+            "audio_sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Audio Sha256"
+            },
+            "audio_integrity_status": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Audio Integrity Status"
+            },
+            "transcript_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Transcript Sha256",
+              "type": "string"
+            },
+            "transcript_segment_count": {
+              "minimum": 0,
+              "title": "Transcript Segment Count",
+              "type": "integer"
+            },
+            "segment_source_hashes": {
+              "items": {
+                "$ref": "#/$defs/SegmentSourceHash"
+              },
+              "title": "Segment Source Hashes",
+              "type": "array"
+            },
+            "prompt_version": {
+              "const": "investigation-context-v2.4-typed-summary",
+              "default": "investigation-context-v2.4-typed-summary",
+              "title": "Prompt Version"
+            },
+            "model_id": {
+              "minLength": 1,
+              "title": "Model Id",
+              "type": "string"
+            },
+            "generated_at": {
+              "format": "date-time",
+              "title": "Generated At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "transcript_sha256",
+            "transcript_segment_count",
+            "segment_source_hashes",
+            "model_id",
+            "generated_at"
+          ],
+          "title": "KnowledgeProvenance",
+          "type": "object"
+        },
+        "KnowledgeQuality": {
+          "additionalProperties": false,
+          "properties": {
+            "total_items": {
+              "minimum": 0,
+              "title": "Total Items",
+              "type": "integer"
+            },
+            "grounded_items": {
+              "minimum": 0,
+              "title": "Grounded Items",
+              "type": "integer"
+            },
+            "evidence_coverage": {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "title": "Evidence Coverage",
+              "type": "number"
+            },
+            "high_risk_candidate_count": {
+              "minimum": 0,
+              "title": "High Risk Candidate Count",
+              "type": "integer"
+            },
+            "released_high_risk_count": {
+              "minimum": 0,
+              "title": "Released High Risk Count",
+              "type": "integer"
+            },
+            "withheld_high_risk_count": {
+              "minimum": 0,
+              "title": "Withheld High Risk Count",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "total_items",
+            "grounded_items",
+            "evidence_coverage",
+            "high_risk_candidate_count",
+            "released_high_risk_count",
+            "withheld_high_risk_count"
+          ],
+          "title": "KnowledgeQuality",
+          "type": "object"
+        },
+        "KnowledgeRelationship": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "relationship_id": {
+              "minLength": 1,
+              "title": "Relationship Id",
+              "type": "string"
+            },
+            "source": {
+              "minLength": 1,
+              "title": "Source",
+              "type": "string"
+            },
+            "target": {
+              "minLength": 1,
+              "title": "Target",
+              "type": "string"
+            },
+            "label": {
+              "minLength": 1,
+              "title": "Label",
+              "type": "string"
+            },
+            "status": {
+              "default": "reported",
+              "enum": [
+                "observed",
+                "reported",
+                "planned",
+                "completed",
+                "negated",
+                "uncertain",
+                "conflicting"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "model_generated": {
+              "const": true,
+              "default": true,
+              "title": "Model Generated"
+            },
+            "verification_status": {
+              "default": "unverified",
+              "enum": [
+                "unverified",
+                "human_verified",
+                "rejected"
+              ],
+              "title": "Verification Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_ids",
+            "relationship_id",
+            "source",
+            "target",
+            "label"
+          ],
+          "title": "KnowledgeRelationship",
+          "type": "object"
+        },
+        "KnowledgeRetention": {
+          "additionalProperties": false,
+          "properties": {
+            "policy_version": {
+              "const": "ai-investigation-retention-v1",
+              "default": "ai-investigation-retention-v1",
+              "title": "Policy Version"
+            },
+            "data_classification": {
+              "const": "law_enforcement_sensitive",
+              "default": "law_enforcement_sensitive",
+              "title": "Data Classification"
+            },
+            "generated_at": {
+              "format": "date-time",
+              "title": "Generated At",
+              "type": "string"
+            },
+            "expires_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expires At"
+            },
+            "legal_hold": {
+              "title": "Legal Hold",
+              "type": "boolean"
+            },
+            "raw_model_response_stored": {
+              "const": false,
+              "default": false,
+              "title": "Raw Model Response Stored"
+            }
+          },
+          "required": [
+            "generated_at",
+            "expires_at",
+            "legal_hold"
+          ],
+          "title": "KnowledgeRetention",
+          "type": "object"
+        },
+        "KnowledgeSafety": {
+          "additionalProperties": false,
+          "properties": {
+            "high_risk_fields_enabled": {
+              "title": "High Risk Fields Enabled",
+              "type": "boolean"
+            },
+            "notice": {
+              "minLength": 1,
+              "title": "Notice",
+              "type": "string"
+            },
+            "unsupported_high_risk_claims_released": {
+              "const": false,
+              "default": false,
+              "title": "Unsupported High Risk Claims Released"
+            }
+          },
+          "required": [
+            "high_risk_fields_enabled",
+            "notice"
+          ],
+          "title": "KnowledgeSafety",
+          "type": "object"
+        },
+        "KnowledgeTimelineEntry": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "event_id": {
+              "minLength": 1,
+              "title": "Event Id",
+              "type": "string"
+            },
+            "time": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Time"
+            },
+            "description": {
+              "minLength": 1,
+              "title": "Description",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_ids",
+            "event_id",
+            "description"
+          ],
+          "title": "KnowledgeTimelineEntry",
+          "type": "object"
+        },
+        "OpenQuestionItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "question": {
+              "minLength": 1,
+              "title": "Question",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "question"
+          ],
+          "title": "OpenQuestionItem",
+          "type": "object"
+        },
+        "RelationshipItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "source": {
+              "minLength": 1,
+              "title": "Source",
+              "type": "string"
+            },
+            "target": {
+              "minLength": 1,
+              "title": "Target",
+              "type": "string"
+            },
+            "label": {
+              "minLength": 1,
+              "title": "Label",
+              "type": "string"
+            },
+            "status": {
+              "default": "reported",
+              "enum": [
+                "observed",
+                "reported",
+                "planned",
+                "completed",
+                "negated",
+                "uncertain",
+                "conflicting"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "source",
+            "target",
+            "label"
+          ],
+          "title": "RelationshipItem",
+          "type": "object"
+        },
+        "RiskActionItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "action": {
+              "minLength": 1,
+              "title": "Action",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "action"
+          ],
+          "title": "RiskActionItem",
+          "type": "object"
+        },
+        "RiskAssessment": {
+          "additionalProperties": false,
+          "properties": {
+            "overall_risk": {
+              "const": "unverified",
+              "default": "unverified",
+              "title": "Overall Risk"
+            },
+            "crime_indicators": {
+              "items": {
+                "$ref": "#/$defs/CrimeIndicatorItem"
+              },
+              "title": "Crime Indicators",
+              "type": "array"
+            },
+            "recommended_actions": {
+              "items": {
+                "$ref": "#/$defs/RiskActionItem"
+              },
+              "title": "Recommended Actions",
+              "type": "array"
+            }
+          },
+          "title": "RiskAssessment",
+          "type": "object"
+        },
+        "SegmentSourceHash": {
+          "additionalProperties": false,
+          "properties": {
+            "segment_index": {
+              "minimum": 0,
+              "title": "Segment Index",
+              "type": "integer"
+            },
+            "source_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Source Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "segment_index",
+            "source_sha256"
+          ],
+          "title": "SegmentSourceHash",
+          "type": "object"
+        },
+        "TopicItem": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_quote": {
+              "minLength": 1,
+              "title": "Evidence Quote",
+              "type": "string"
+            },
+            "synthesis": {
+              "minLength": 1,
+              "title": "Synthesis",
+              "type": "string"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Title"
+            }
+          },
+          "required": [
+            "evidence_quote",
+            "synthesis"
+          ],
+          "title": "TopicItem",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Final typed envelope returned after deterministic grounding and projection.",
+      "properties": {
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "summary_sentences": {
+          "items": {
+            "$ref": "#/$defs/GroundedSummarySentence"
+          },
+          "minItems": 1,
+          "title": "Summary Sentences",
+          "type": "array"
+        },
+        "key_points": {
+          "items": {
+            "$ref": "#/$defs/KeyPointItem"
+          },
+          "title": "Key Points",
+          "type": "array"
+        },
+        "entities": {
+          "$ref": "#/$defs/EntityGroups"
+        },
+        "risk_assessment": {
+          "$ref": "#/$defs/RiskAssessment"
+        },
+        "topics": {
+          "items": {
+            "$ref": "#/$defs/TopicItem"
+          },
+          "title": "Topics",
+          "type": "array"
+        },
+        "facts": {
+          "items": {
+            "$ref": "#/$defs/FactItem"
+          },
+          "title": "Facts",
+          "type": "array"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/EventItem"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "relationships": {
+          "items": {
+            "$ref": "#/$defs/RelationshipItem"
+          },
+          "title": "Relationships",
+          "type": "array"
+        },
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/ActionItem"
+          },
+          "title": "Actions",
+          "type": "array"
+        },
+        "decisions": {
+          "items": {
+            "$ref": "#/$defs/DecisionItem"
+          },
+          "title": "Decisions",
+          "type": "array"
+        },
+        "contradictions": {
+          "items": {
+            "$ref": "#/$defs/ContradictionItem"
+          },
+          "title": "Contradictions",
+          "type": "array"
+        },
+        "hypotheses": {
+          "items": {
+            "$ref": "#/$defs/HypothesisItem"
+          },
+          "title": "Hypotheses",
+          "type": "array"
+        },
+        "open_questions": {
+          "items": {
+            "$ref": "#/$defs/OpenQuestionItem"
+          },
+          "title": "Open Questions",
+          "type": "array"
+        },
+        "analysis_status": {
+          "const": "success",
+          "default": "success",
+          "title": "Analysis Status"
+        },
+        "prompt_version": {
+          "const": "investigation-context-v2.4-typed-summary",
+          "default": "investigation-context-v2.4-typed-summary",
+          "title": "Prompt Version"
+        },
+        "model_generated": {
+          "const": true,
+          "default": true,
+          "title": "Model Generated"
+        },
+        "requires_human_verification": {
+          "const": true,
+          "default": true,
+          "title": "Requires Human Verification"
+        },
+        "schema_version": {
+          "const": "grounded-context-v1.0",
+          "default": "grounded-context-v1.0",
+          "title": "Schema Version"
+        },
+        "investigation_knowledge": {
+          "$ref": "#/$defs/InvestigationKnowledge"
+        },
+        "summary_projection_source": {
+          "const": "summary_sentence_evidence_quotes",
+          "default": "summary_sentence_evidence_quotes",
+          "title": "Summary Projection Source"
+        },
+        "compatibility": {
+          "$ref": "#/$defs/CompatibilityProjection"
+        }
+      },
+      "required": [
+        "summary",
+        "summary_sentences",
+        "key_points",
+        "entities",
+        "risk_assessment",
+        "investigation_knowledge"
+      ],
+      "title": "GroundedContextAnalysisPayload",
+      "type": "object"
+    },
+    "gates": {
+      "nested_objects_forbid_unknown_fields": true,
+      "summary_sentences_require_evidence_quotes": true,
+      "grounded_references_must_resolve": true,
+      "source_hash_manifest_bound": true,
+      "raw_model_summary_is_release_authority": false,
+      "raw_model_sentence_text_released": false,
+      "final_envelope_revalidated": true,
+      "legacy_coercion_in_provider_path": false,
+      "per_claim_semantic_attestation_complete": false,
+      "summary_release_authority": "withheld_pending_claim_attestation"
+    }
+  }
+}

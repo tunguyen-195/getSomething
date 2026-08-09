@@ -14,6 +14,9 @@ from src.services.audio_storage import (
     resolve_audio_path,
     stage_upload,
 )
+from src.services.summarization.legacy_context_adapter import (
+    project_legacy_key_points,
+)
 
 
 
@@ -708,8 +711,9 @@ Nếu có context_analysis, hãy ưu tiên sử dụng để làm rõ tóm tắt
         )
         if context and 'summary' in context:
             prompt += f"\nTóm tắt ngữ cảnh: {context['summary']}"
-        if context and 'key_points' in context and context['key_points']:
-            key_points_str = ', '.join(context['key_points'])
+        key_points = project_legacy_key_points(context)
+        if key_points:
+            key_points_str = ', '.join(key_points)
             prompt += f"\nCác điểm chính: {key_points_str}"
         if context and 'entities' in context and context['entities']:
             entities_json = json.dumps(context['entities'], ensure_ascii=False)
@@ -780,8 +784,9 @@ Nếu có context_analysis, hãy ưu tiên sử dụng để làm rõ tóm tắt
             )
             if 'summary' in context:
                 prompt += f"\nTóm tắt ngữ cảnh: {context['summary']}"
-            if 'key_points' in context and context['key_points']:
-                prompt += f"\nCác điểm chính: {', '.join(context['key_points'])}"
+            key_points = project_legacy_key_points(context)
+            if key_points:
+                prompt += f"\nCác điểm chính: {', '.join(key_points)}"
             if 'entities' in context and context['entities']:
                 prompt += f"\nThực thể: {json.dumps(context['entities'], ensure_ascii=False)}"
             if 'privacy_summary' in context:
@@ -835,8 +840,9 @@ def summarize_multi_transcripts(transcripts: list[str], context: dict = None, mo
         )
         if 'summary' in context:
             prompt += f"\nTóm tắt ngữ cảnh: {context['summary']}"
-        if 'key_points' in context and context['key_points']:
-            prompt += f"\nCác điểm chính: {', '.join(context['key_points'])}"
+        key_points = project_legacy_key_points(context)
+        if key_points:
+            prompt += f"\nCác điểm chính: {', '.join(key_points)}"
         if 'entities' in context and context['entities']:
             prompt += f"\nThực thể: {json.dumps(context['entities'], ensure_ascii=False)}"
         if 'privacy_summary' in context:

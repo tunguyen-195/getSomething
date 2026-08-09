@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 import scripts.audit_pyannote_migration_config as migration_audit
@@ -11,6 +12,7 @@ from scripts.audit_summary_diarization_readiness import (
     PACKAGE_EVIDENCE_REQUIREMENTS,
     _canonical_repo,
     _evidence_artifact_pass,
+    _git_index_sha256,
     _package_evidence_state,
     _plan_package_allowlists,
     _primary_source_state,
@@ -117,6 +119,55 @@ def test_c1_evidence_cannot_pass_without_bound_dynamic_alembic_path(
         {"migration_rehearsal_passed"},
         {"source.py"},
         dynamic_bound_path_field="alembic_version_path",
+    )
+
+
+def test_evidence_can_bind_exact_git_index_when_worktree_has_unrelated_hunks(
+    tmp_path: Path,
+) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    harness = tmp_path / "harness.py"
+    source = tmp_path / "source.py"
+    artifact = tmp_path / "evidence.json"
+    harness.write_text("print('verify')\n", encoding="utf-8")
+    source.write_text("STAGED = True\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "--", "harness.py", "source.py"],
+        cwd=tmp_path,
+        check=True,
+    )
+    source.write_text("STAGED = True\nUNRELATED = True\n", encoding="utf-8")
+
+    payload = {
+        "schema_version": "rtk-evidence-v1",
+        "verdict": "PASS",
+        "exit_code": 0,
+        "command": ["python", "harness.py"],
+        "environment": {"snapshot": "git_index"},
+        "observed_at": "2026-08-09T18:30:00+07:00",
+        "source_scope": "git_index",
+        "harness_path": "harness.py",
+        "harness_sha256": _git_index_sha256(tmp_path, "harness.py"),
+        "source_sha256": {
+            "source.py": _git_index_sha256(tmp_path, "source.py"),
+        },
+        "checks": {"staged_snapshot_verified": True},
+    }
+    artifact.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert _evidence_artifact_pass(
+        tmp_path,
+        artifact,
+        {"staged_snapshot_verified"},
+        {"source.py"},
+    )
+    payload["source_sha256"]["source.py"] = _sha256(source)
+    artifact.write_text(json.dumps(payload), encoding="utf-8")
+    assert not _evidence_artifact_pass(
+        tmp_path,
+        artifact,
+        {"staged_snapshot_verified"},
+        {"source.py"},
     )
 
 

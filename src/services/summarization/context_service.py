@@ -5,6 +5,8 @@ OPTIONAL: Only called when explicitly requested
 """
 import logging
 from typing import Dict, Optional
+
+from .legacy_context_adapter import project_legacy_key_points
 from .models.llm_manager import get_llm_manager
 
 logger = logging.getLogger(__name__)
@@ -13,7 +15,9 @@ logger = logging.getLogger(__name__)
 def analyze_conversation_context(
     transcript: str,
     model_name: str = None,
-    user_prompt: str = None
+    user_prompt: str = None,
+    segments: list[dict] | None = None,
+    source_metadata: dict | None = None,
 ) -> Optional[Dict]:
     """
     Analyze conversation context using LLM
@@ -35,25 +39,13 @@ def analyze_conversation_context(
         
         logger.info(f"[CONTEXT_SERVICE] Analyzing context | model={model_name or 'auto'}")
         
-        # Build prompt
-        base_prompt = """
-Phân tích hội thoại sau và trích xuất thông tin chi tiết theo cấu trúc JSON.
-Tập trung vào:
-- Thực thể: người, địa điểm, thời gian, tổ chức
-- Mối quan hệ giữa các thực thể
-- Hành động, quyết định, ưu đãi
-- Cảm xúc, thái độ
-- Thông tin nhạy cảm
-
-"""
-        
-        if user_prompt:
-            base_prompt += f"\nYêu cầu bổ sung: {user_prompt}\n"
-        
-        base_prompt += f"\nHội thoại:\n{transcript}\n\nJSON:"
-        
-        # Use LLM manager
-        result = llm_mgr.analyze_context(transcript, model=model_name)
+        result = llm_mgr.analyze_context(
+            transcript,
+            model=model_name,
+            additional_instructions=user_prompt,
+            segments=segments,
+            source_metadata=source_metadata,
+        )
         
         logger.info("[CONTEXT_SERVICE] Context analysis complete")
         return result
@@ -116,4 +108,4 @@ def extract_key_points(context: Dict) -> list:
     if not context:
         return []
     
-    return context.get("key_points", [])
+    return project_legacy_key_points(context)

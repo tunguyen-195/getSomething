@@ -5,8 +5,20 @@ Lazy loading, optional usage (không gọi mặc định)
 import logging
 import requests
 import json
-from typing import Optional, Dict, List
+from typing import Any, Optional, Dict, List
+
+from pydantic import ValidationError
+
 from src.core.config import settings
+from .context_analysis import (
+    CONTEXT_PROMPT_VERSION,
+    ContextAnalysisPayload,
+    StructuredOutputError,
+    build_context_prompt,
+    context_analysis_failure,
+    validate_context_analysis,
+)
+from .investigation_knowledge import build_grounded_context_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +42,7 @@ class LLMManager:
             self._api_url = "http://localhost:11434/api/generate"
             # Default to gpt-oss:latest if available, otherwise fallback to gemma2:9b
             self._default_model = settings.DEFAULT_AI_MODEL if hasattr(settings, 'DEFAULT_AI_MODEL') else "gpt-oss:latest"
+            self._last_model_used: str | None = None
             self._initialized = True
             logger.info(f"[LLM_MANAGER] Initialized (lazy mode)")
 
@@ -90,7 +103,9 @@ class LLMManager:
         model: str = None,
         temperature: float = 0.7,
         max_tokens: int = 2048,
-        stream: bool = False
+        stream: bool = False,
+        json_mode: bool = False,
+        json_schema: dict[str, Any] | None = None,
     ) -> str:
         """
         Generate response from LLM
@@ -110,6 +125,7 @@ class LLMManager:
 
         if model is None:
             model = self.select_best_model()
+        self._last_model_used = model
 
         logger.info(f"[LLM_MANAGER] Generating with model: {model}")
 
@@ -123,6 +139,10 @@ class LLMManager:
                     "num_predict": max_tokens
                 }
             }
+            if json_schema is not None:
+                payload["format"] = json_schema
+            elif json_mode:
+                payload["format"] = "json"
 
             logger.debug(f"[LLM_MANAGER] Sending request to {self._api_url} | model={model} | prompt_length={len(prompt)}")
 
@@ -180,135 +200,75 @@ class LLMManager:
             logger.error(f"[LLM_MANAGER] Generation failed: {e}", exc_info=True)
             raise
 
-    def analyze_context(self, text: str, model: str = None) -> Dict:
-        """
-        Analyze context from text using LLM for criminal investigation
-        Returns comprehensive structured data with all sensitive information
-        """
-        prompt = f"""
-PHÂN TÍCH HỘI THOẠI CHO ĐIỀU TRA HÌNH SỰ - STRUCTURED OUTPUT
+    def analyze_context(
+        self,
+        text: str,
+        model: str = None,
+        additional_instructions: str = None,
+        segments: list[dict] | None = None,
+        source_metadata: dict | None = None,
+    ) -> Dict:
+        """Generate, validate, ground, and revalidate investigation context."""
 
-Bạn là chuyên gia điều tra tội phạm. Phân tích hội thoại sau và trích xuất TẤT CẢ thông tin có thể.
-
-Trả về kết quả dưới dạng JSON với cấu trúc sau (BẮT BUỘC phải đúng format JSON hợp lệ):
-
-{{
-  "summary": "Tóm tắt toàn diện không giới hạn độ dài. Bao gồm tất cả chi tiết quan trọng.",
-  "context": {{
-    "topic": "Chủ đề chính",
-    "purpose": "Mục đích cuộc gọi",
-    "status": "Trạng thái",
-    "call_type": "normal|urgent|suspicious",
-    "risk_level": "low|medium|high|critical"
-  }},
-  "key_points": ["Điểm quan trọng 1", "Điểm quan trọng 2"],
-  "entities": {{
-    "people": [
-      {{"name": "Họ tên đầy đủ", "role": "Vai trò", "phone": "SĐT", "id_number": "CCCD", "address": "Địa chỉ", "is_sensitive": true, "context": "Ngữ cảnh", "behavior": "Thái độ"}}
-    ],
-    "locations": [
-      {{"name": "Địa điểm", "address": "Địa chỉ chi tiết", "type": "Loại", "is_sensitive": false, "context": "Mục đích"}}
-    ],
-    "time": [
-      {{"value": "Thời gian cụ thể", "type": "Loại", "context": "Ngữ cảnh", "is_sensitive": false}}
-    ],
-    "organizations": ["Tên tổ chức"],
-    "contact_info": {{
-      "phones": [{{"value": "0987654321", "owner": "Chủ SĐT", "type": "mobile", "is_sensitive": true, "context": "Ngữ cảnh"}}],
-      "emails": [{{"value": "email@example.com", "owner": "Chủ email", "is_sensitive": true, "context": "Mục đích"}}],
-      "ids": [{{"value": "001234567890", "owner": "Chủ CCCD", "type": "cccd", "is_sensitive": true, "context": "Ngữ cảnh"}}],
-      "bank_accounts": [{{"account_number": "1234567890", "bank_name": "Ngân hàng", "account_holder": "Chủ TK", "is_sensitive": true, "context": "Mục đích"}}],
-      "addresses": [{{"value": "Địa chỉ đầy đủ", "owner": "Chủ địa chỉ", "type": "home|office", "is_sensitive": true, "context": "Loại"}}]
-    }}
-  }},
-  "relationships": [
-    {{"source": "Người A", "target": "Người B", "label": "Loại quan hệ", "context": "Chi tiết", "is_suspicious": false}}
-  ],
-  "events": [
-    {{"time": "Thời điểm", "description": "Mô tả sự kiện", "action": "Hành động", "actors": ["Người 1"], "location": "Địa điểm", "is_suspicious": false}}
-  ],
-  "financial_info": {{
-    "transactions": [
-      {{"amount": "6000000 VND", "currency": "VND", "purpose": "Mục đích", "method": "Chuyển khoản", "payer": "Người trả", "receiver": "Người nhận", "status": "pending", "is_suspicious": false}}
-    ],
-    "offers": [{{"content": "Ưu đãi", "value": "Giá trị", "conditions": "Điều kiện"}}]
-  }},
-  "actions": [{{"actor": "Người thực hiện", "action": "Hành động", "status": "completed|pending", "is_suspicious": false}}],
-  "decisions": [{{"decision_maker": "Người quyết định", "decision": "Nội dung", "impact": "Ảnh hưởng"}}],
-  "sentiment": {{
-    "overall": "positive|negative|neutral",
-    "caller_emotion": "Cảm xúc người gọi",
-    "receiver_emotion": "Cảm xúc người nhận",
-    "honesty_assessment": "honest|evasive|deceptive"
-  }},
-  "sensitive_info": [
-    {{"category": "personal|financial|criminal", "type": "Loại", "value": "Giá trị", "owner": "Chủ sở hữu", "sensitivity_reason": "Lý do", "risk_level": "low|medium|high"}}
-  ],
-  "anomalies": [
-    {{"type": "behavioral|verbal|financial", "description": "Mô tả", "severity": "low|medium|high", "evidence": "Bằng chứng"}}
-  ],
-  "slang_detected": {{
-    "has_slang": false,
-    "terms": [{{"term": "Từ lóng", "possible_meaning": "Ý nghĩa", "context": "Ngữ cảnh"}}]
-  }},
-  "hidden_relationships": [
-    {{"description": "Mô tả mối quan hệ ẩn", "involved_parties": ["Bên 1", "Bên 2"], "evidence": "Bằng chứng"}}
-  ],
-  "contradictions": [
-    {{"statement_1": "Lời nói 1", "statement_2": "Lời nói 2 mâu thuẫn", "severity": "minor|significant|major"}}
-  ],
-  "risk_assessment": {{
-    "overall_risk": "low|medium|high|critical",
-    "crime_indicators": [{{"crime_type": "fraud|money_laundering|other", "confidence": "low|medium|high", "indicators": ["Chỉ báo"]}}],
-    "urgency": "routine|monitor|investigate|immediate_action",
-    "recommended_actions": ["Hành động khuyến nghị"]
-  }},
-  "insight": ["Insight nghiệp vụ, phân tích sâu"],
-  "investigation_notes": {{
-    "priority_level": "low|medium|high|critical",
-    "follow_up_questions": ["Câu hỏi cần truy vấn"],
-    "verification_needed": ["Thông tin cần xác minh"],
-    "surveillance_targets": ["Đối tượng cần giám sát"],
-    "missing_information": ["Thông tin còn thiếu"],
-    "next_steps": ["Bước tiếp theo"]
-  }}
-}}
-
-=== HỘI THOẠI CẦN PHÂN TÍCH ===
-
-{text}
-
-=== HƯỚNG DẪN QUAN TRỌNG ===
-
-1. Trích xuất TẤT CẢ thông tin có thể, không bỏ sót chi tiết nào
-2. Thông tin nhân thân (họ tên, SĐT, CCCD, địa chỉ) là ƯU TIÊN TUYỆT ĐỐI
-3. Nếu không có thông tin cho trường nào, để [], "", {{}}, hoặc null
-4. Tất cả số tiền phải chính xác đến đồng
-5. Tất cả thời gian phải cụ thể (ngày/tháng/năm, giờ:phút nếu có)
-6. Phát hiện mâu thuẫn, dấu hiệu bất thường là rất quan trọng
-7. BẮT BUỘC trả về JSON hợp lệ, không có text thừa
-
-Hãy phân tích kỹ và trả về JSON đầy đủ ngay bây giờ:
-
-JSON:
-"""
+        prompt = build_context_prompt(
+            text,
+            additional_instructions=additional_instructions,
+        )
+        try:
+            response = self.generate(
+                prompt,
+                model=model,
+                temperature=0.2,
+                json_mode=True,
+                json_schema=ContextAnalysisPayload.model_json_schema(),
+            )
+        except Exception:
+            logger.exception(
+                "[LLM_MANAGER] Context generation failed | prompt_version=%s",
+                CONTEXT_PROMPT_VERSION,
+            )
+            return context_analysis_failure(
+                "LLM_GENERATION_FAILED",
+                "The context model did not produce a response.",
+            )
 
         try:
-            response = self.generate(prompt, model=model, temperature=0.2)  # Lower temp for structured output
-            # Try to extract JSON from response
-            import re
-            json_match = re.search(r'\{{.*\}}', response, re.DOTALL)
-            if json_match:
-                parsed = json.loads(json_match.group())
-                logger.info(f"[LLM_MANAGER] Investigation analysis complete | fields={{len(parsed)}} | risk={{parsed.get('risk_assessment', {{}}).get('overall_risk', 'unknown')}}")
-                return parsed
-            else:
-                logger.warning("[LLM_MANAGER] No JSON found in response")
-                return {"summary": response, "key_points": []}
-        except Exception as e:
-            logger.error(f"[LLM_MANAGER] Investigation analysis failed: {{e}}")
-            return {"summary": "", "key_points": []}
+            parsed = validate_context_analysis(response)
+        except (StructuredOutputError, ValidationError):
+            logger.warning(
+                "[LLM_MANAGER] Context response rejected | prompt_version=%s",
+                CONTEXT_PROMPT_VERSION,
+            )
+            return context_analysis_failure(
+                "INVALID_STRUCTURED_OUTPUT",
+                "The model response was not valid investigation JSON.",
+            )
 
+        effective_model = self._last_model_used or model or self._default_model
+        try:
+            grounded = build_grounded_context_analysis(
+                parsed,
+                text,
+                segments,
+                model_id=effective_model,
+                source_metadata=source_metadata,
+            )
+        except Exception:
+            logger.exception(
+                "[LLM_MANAGER] Knowledge grounding failed | prompt_version=%s",
+                CONTEXT_PROMPT_VERSION,
+            )
+            return context_analysis_failure(
+                "KNOWLEDGE_GROUNDING_FAILED",
+                "The model output could not be grounded in transcript evidence.",
+            )
+
+        logger.info(
+            "[LLM_MANAGER] Context analysis complete | prompt_version=%s | fields=%s",
+            CONTEXT_PROMPT_VERSION,
+            len(grounded),
+        )
+        return grounded
     @classmethod
     def get_instance(cls) -> 'LLMManager':
         """Get singleton instance"""

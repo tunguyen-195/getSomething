@@ -8,6 +8,10 @@ import re
 import unicodedata
 import json
 
+from src.services.summarization.legacy_context_adapter import (
+    project_legacy_key_points,
+)
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -152,8 +156,9 @@ class Summarizer:
                 prompt = f"Tóm tắt nội dung hội thoại dưới đây, tập trung vào các thông tin quan trọng, các thực thể, mối quan hệ, mức độ nhạy cảm và ngữ cảnh.\n"
                 if 'summary' in context:
                     prompt += f"\nTóm tắt ngữ cảnh: {context['summary']}"
-                if 'key_points' in context and context['key_points']:
-                    prompt += f"\nCác điểm chính: {', '.join(context['key_points'])}"
+                key_points = project_legacy_key_points(context)
+                if key_points:
+                    prompt += f"\nCác điểm chính: {', '.join(key_points)}"
                 if 'entities' in context and context['entities']:
                     prompt += f"\nThực thể: {json.dumps(context['entities'], ensure_ascii=False)}"
                 if 'privacy_summary' in context:
@@ -285,4 +290,4 @@ class Summarizer:
         # Loại bỏ thẻ HTML, giữ lại nội dung
         summary = re.sub(r'<[^>]+>', '', summary)
         summary = summary.replace('*', '')
-        return summary.strip() 
+        return summary.strip()
