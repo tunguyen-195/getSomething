@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import { Card, CardContent, Typography, Box, Button, Collapse, Alert, List, ListItem, Checkbox, Divider, Tabs, Tab, Tooltip, Chip, Avatar, CardHeader, Grid, ListItemIcon, ListItemText } from '@mui/material';
-import { Timeline, TimelineItem, TimelineSeparator, TimelineConnector, TimelineContent, TimelineDot } from '@mui/lab';
-import ReactFlow, { Background, Controls, MiniMap } from 'react-flow-renderer';
 import InfoIcon from '@mui/icons-material/Info';
 import SecurityIcon from '@mui/icons-material/Security';
 import EmojiEmotionsIcon from '@mui/icons-material/EmojiEmotions';
@@ -71,17 +69,6 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
     }
   }
   const knowledge = parsedAnalysis?.investigation_knowledge;
-  const evidenceSpans = Array.isArray(knowledge?.evidence_spans) ? knowledge.evidence_spans : [];
-  const evidenceById = new Map(evidenceSpans.map((item: any) => [item.evidence_id, item]));
-  const evidenceLabel = (evidenceIds: string[] = []) => evidenceIds
-    .map((id: string) => evidenceById.get(id))
-    .filter(Boolean)
-    .map((item: any) => {
-      const time = item.start_seconds != null ? `${Number(item.start_seconds).toFixed(2)}s` : 'text';
-      const speaker = formatAnalysisValue(item.speaker_id);
-      return `${time}${speaker ? ` · ${speaker}` : ''}: “${formatAnalysisValue(item.quote)}”`;
-    })
-    .join('\n');
   const summaryText = formatAnalysisValue(parsedAnalysis?.summary)
     || (typeof summary === 'string' ? summary.trim() : '');
   // Mapping lại các trường tổng quan từ parsedAnalysis
@@ -93,10 +80,6 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
     topic: formatAnalysisValue(parsedAnalysis?.context?.topic),
   };
   // Extract fields từ parsedAnalysis
-  const entities = Array.isArray(knowledge?.entities)
-    ? knowledge.entities
-    : (Array.isArray(parsedAnalysis?.entities) ? parsedAnalysis.entities : (Array.isArray(parsedAnalysis?.entities?.people) ? parsedAnalysis.entities.people : []));
-  const relationships = Array.isArray(knowledge?.relationships) ? knowledge.relationships : [];
   const keypoints = selectKeyPoints(parsedAnalysis);
   const sentiment = formatAnalysisValue(
     typeof parsedAnalysis?.sentiment === 'string' ? parsedAnalysis.sentiment : parsedAnalysis?.sentiment?.overall,
@@ -105,11 +88,6 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
   const insight = selectReleasedInsightStatements(parsedAnalysis);
   const slang = formatSlangDetected(parsedAnalysis?.slang_detected);
   const hiddenRelationships = knowledge ? [] : (Array.isArray(parsedAnalysis?.hidden_relationships) ? parsedAnalysis.hidden_relationships : (parsedAnalysis?.hidden_relationships ? [parsedAnalysis.hidden_relationships] : []));
-
-  // Timeline: lấy từ events, nếu không có thì từ entities.time hoặc timeline
-  const timelineEvents = Array.isArray(knowledge?.timeline) && knowledge.timeline.length > 0
-    ? knowledge.timeline
-    : (Array.isArray(parsedAnalysis?.timeline) ? parsedAnalysis.timeline : (Array.isArray(parsedAnalysis?.entities?.time) ? parsedAnalysis.entities.time.map((t: any) => ({ time: t.value, description: t.context || '' })) : []));
 
   // Nhạy cảm: lấy từ sensitive_info, đồng thời gom các entity có is_sensitive=true
   const sensitiveEntities = [
@@ -125,30 +103,6 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
     ...sensitiveEntities
   ];
 
-  // React Flow nodes/edges
-  const entityNodeId = new Map(entities.map((e: any, idx: number) => [
-    formatAnalysisValue(e.value || e.name || e.label),
-    formatAnalysisValue(e.entity_id || e.id) || String(idx),
-  ]));
-  const nodes = entities.map((e: any, idx: number) => ({
-    id: formatAnalysisValue(e.entity_id || e.id) || String(idx),
-    data: {
-      label: formatAnalysisValue(e.value || e.label || e.name || e.entity_type || e.type),
-      isSensitive: e.is_sensitive,
-      tooltip: evidenceLabel(e.evidence_ids) || formatAnalysisValue(e.context),
-    },
-    position: { x: 100 + idx * 120, y: 100 },
-  }));
-  const edges = relationships
-    .filter((r: any) => entityNodeId.has(formatAnalysisValue(r.source)) && entityNodeId.has(formatAnalysisValue(r.target)))
-    .map((r: any, idx: number) => ({
-      id: formatAnalysisValue(r.relationship_id || r.id) || String(idx),
-      source: entityNodeId.get(formatAnalysisValue(r.source)),
-      target: entityNodeId.get(formatAnalysisValue(r.target)),
-      label: formatAnalysisValue(r.label || r.type),
-      tooltip: evidenceLabel(r.evidence_ids) || formatAnalysisValue(r.context),
-    }));
-
   // Helper: biểu tượng cảm xúc
   const sentimentIcon = (sentiment: string) => {
     if (!sentiment) return null;
@@ -161,18 +115,16 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
     label: statement,
     icon: <InsightsIcon color="primary" />,
   }));
-  const activeTab = tab === 3 && insight.length === 0 ? 0 : tab;
+  const activeTab = tab === 1 && insight.length === 0 ? 0 : tab;
 
   return (
     <Card sx={{ mb: 3, borderRadius: 2, boxShadow: '0 2px 8px #b388ff11', background: '#fff', border: '1px solid #e0e7ef' }}>
       <CardContent>
         <Tabs value={activeTab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
           <Tab value={0} label="Tổng quan" />
-          <Tab value={1} label="Sơ đồ quan hệ" />
-          <Tab value={2} label="Timeline" />
-          {insight.length > 0 && <Tab value={3} label="Insight" />}
-          <Tab value={4} label="Nhạy cảm" />
-          <Tab value={5} label="Cảm xúc" />
+          {insight.length > 0 && <Tab value={1} label="Insight" />}
+          <Tab value={2} label="Nhạy cảm" />
+          <Tab value={3} label="Cảm xúc" />
         </Tabs>
         {activeTab === 0 && (
           <Box>
@@ -279,60 +231,7 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
             )}
           </Box>
         )}
-        {activeTab === 1 && (
-          <Box>
-            <Typography variant="h6" color="secondary" fontWeight={700} mb={1}>Sơ đồ quan hệ</Typography>
-            <Box sx={{ height: 300, background: '#e3f2fd', borderRadius: 2, mb: 2 }}>
-              <ReactFlow nodes={nodes} edges={edges} fitView>
-                <MiniMap />
-                <Controls />
-                <Background />
-              </ReactFlow>
-            </Box>
-            <Box>
-              <Typography variant="subtitle2" fontWeight={700}>Thực thể:</Typography>
-              <List>
-                {entities.map((e: any, idx: number) => (
-                  <Tooltip key={idx} title={formatAnalysisValue(e.context)} arrow>
-                    <ListItem>
-                      <Chip label={formatAnalysisValue(e.label || e.name || e.value || e.type) || 'Không rõ'} color={e.is_sensitive ? 'error' : 'primary'} icon={e.is_sensitive ? <SecurityIcon /> : <InfoIcon />} />
-                    </ListItem>
-                  </Tooltip>
-                ))}
-              </List>
-              <Typography variant="subtitle2" fontWeight={700}>Mối quan hệ:</Typography>
-              <List>
-                {relationships.map((r: any, idx: number) => (
-                  <Tooltip key={idx} title={formatAnalysisValue(r.context)} arrow>
-                    <ListItem>
-                      <Chip label={formatAnalysisValue(r.label || r.type) || 'Không rõ'} color="secondary" icon={<InfoIcon />} />
-                    </ListItem>
-                  </Tooltip>
-                ))}
-              </List>
-            </Box>
-          </Box>
-        )}
-        {activeTab === 2 && timelineEvents.length > 0 && (
-          <Box>
-            <Typography variant="h6" color="secondary" fontWeight={700} mb={1}>Timeline sự kiện</Typography>
-            <Timeline position="right">
-              {timelineEvents.map((ev: any, idx: number) => (
-                <TimelineItem key={idx}>
-                  <TimelineSeparator>
-                    <TimelineDot color="primary" />
-                    {idx < timelineEvents.length - 1 && <TimelineConnector />}
-                  </TimelineSeparator>
-                  <TimelineContent>
-                    <Typography fontWeight={600}>{formatAnalysisValue(ev.time) || `Sự kiện ${idx + 1}`}</Typography>
-                    <Typography>{formatAnalysisValue(ev.description || ev.action || ev.event)}</Typography>
-                  </TimelineContent>
-                </TimelineItem>
-              ))}
-            </Timeline>
-          </Box>
-        )}
-        {activeTab === 3 && insight.length > 0 && (
+        {activeTab === 1 && insight.length > 0 && (
           <Box>
             <Typography variant="h6" color="primary" fontWeight={700} mb={1}>Insight & Checklist</Typography>
             <List>
@@ -345,7 +244,7 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
             </List>
           </Box>
         )}
-        {activeTab === 4 && (
+        {activeTab === 2 && (
           <Box>
             <Button variant="contained" color="error" onClick={() => setShowSensitive(v => !v)} sx={{ mb: 1 }}>
               {showSensitive ? 'Ẩn thông tin nhạy cảm' : 'Hiện thông tin nhạy cảm'}
@@ -381,7 +280,7 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
             </Alert>
           </Box>
         )}
-        {activeTab === 5 && (
+        {activeTab === 3 && (
           <Box>
             <Typography variant="h6" color="primary" fontWeight={700} mb={2}>Cảm xúc hội thoại</Typography>
             <Box display="flex" alignItems="center" mb={2}>

@@ -248,12 +248,19 @@ test('component wiring remains read-only and uses the semantic validators', () =
   assert.match(card, /human_verified/);
   assert.match(card, /Đã bác bỏ/);
   assert.doesNotMatch(card, /verification_status === ['"]verified['"]/);
+  assert.doesNotMatch(
+    card,
+    /react-flow-renderer|ReactFlow|<Timeline|Sơ đồ quan hệ|Timeline sự kiện/,
+  );
   assert.match(dialog, /selectReleasedVisualizationArtifactFromTask/);
+  assert.match(dialog, /react-flow-renderer|ReactFlow/);
   assert.doesNotMatch(dialog, /context_analysis|result\?\.summary|InvestigationSummaryCard/);
   assert.match(fileCard, /validateReleasedVisualizationArtifact/);
   assert.doesNotMatch(fileCard, />\s*(?:Re-)?Generate\s*</i);
   assert.match(taskList, /projectInvestigationSummaryContext/);
   assert.match(taskListItem, /contextAnalysis=\{safeContextAnalysis\}/);
+  assert.doesNotMatch(taskListItem, /Data Visualization/);
+  assert.match(taskListItem, /Thông tin trích xuất/);
   assert.doesNotMatch(
     taskListItem,
     /contextAnalysis=\{task\.result\?\.context_analysis\}/,

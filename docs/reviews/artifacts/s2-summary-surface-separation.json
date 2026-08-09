@@ -1,0 +1,72 @@
+{
+  "schema_version": "rtk-s2-summary-surface-separation-v1",
+  "generated_at": "2026-08-09T23:59:39.4328413+07:00",
+  "workspace": "E:\\research\\STT",
+  "branch": "feature/architecture-refactor",
+  "base_head": "ab5016c3383d7ebac105fc110b6de779c8ff0dcc",
+  "objective": "Remove the residual summary-owned graph/timeline surface while preserving strict released-artifact visualization ownership.",
+  "finding": {
+    "status": "confirmed_and_fixed",
+    "description": "InvestigationSummaryCard still projected ReactFlow and timeline views directly from context_analysis, and TaskListItem labelled the surface Data Visualization."
+  },
+  "changes": [
+    "Removed graph and timeline rendering from InvestigationSummaryCard",
+    "Removed summary-surface visualization labels",
+    "Kept key-point statement-only projection and fail-closed insights",
+    "Added negative component-wiring assertions"
+  ],
+  "gates": {
+    "frontend_semantic": {
+      "command": "node tests/investigationProjection.test.ts",
+      "passed": 9,
+      "failed": 0
+    },
+    "frontend_build": {
+      "command": "npm run build",
+      "passed": true,
+      "vite_version": "6.3.5",
+      "modules_transformed": 12076,
+      "bundle_kb": 710.91,
+      "bundle_gzip_kb": 217.83,
+      "advisory": "one minified chunk remains above 500 kB"
+    },
+    "backend_targeted": {
+      "command": "E:/research/STT/venv/Scripts/python.exe -m pytest -q tests/test_summary_visualization_separation.py tests/test_investigation_visualization.py tests/test_investigation_release_adapter.py tests/test_security.py",
+      "passed": 114,
+      "failed": 0,
+      "warnings": 13,
+      "duration_seconds": 60.94
+    },
+    "negative_source_scan": {
+      "passed": true,
+      "summary_surface_visualization_hits": 0
+    },
+    "database_exact_reproducer_search": {
+      "read_only": true,
+      "matching_tasks": 0
+    },
+    "independent_frontend_audit": {
+      "status": "PASS",
+      "blocking_findings": 0
+    }
+  },
+  "runtime": {
+    "frontend_http_status": 200,
+    "backend_health_http_status": 200,
+    "backend_health_body": {
+      "status": "ok"
+    }
+  },
+  "source_sha256": {
+    "frontend/src/components/InvestigationSummaryCard.tsx": "08be0b2a954286ac16186e8b6b1bf9fd9e0b0cd5ceecae1f502e110198f84b84",
+    "frontend/src/components/TaskListItem.tsx": "17473593261403862e1fbf56fdf8bb75247526d573a9b3d37a948c2eea0d5994",
+    "frontend/tests/investigationProjection.test.ts": "149ca0c55fcd18a8f64d1bbbc666403f873eab4d39dc4367142045126ad01ef0"
+  },
+  "residuals": [
+    "Frontend does not recompute canonical visualization content_hash",
+    "C1 trusted release persistence and rehydration is not implemented",
+    "No authenticated browser E2E for the unavailable historical payload",
+    "S3, S4, G1, runtime profile, diarization, and Vietnamese quality tasks remain out of scope"
+  ],
+  "verdict": "PASS"
+}

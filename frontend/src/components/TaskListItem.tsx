@@ -200,8 +200,8 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
         <Divider />
         <Box sx={{ p: 3, background: '#f4f7fa', borderRadius: 2 }}>
           <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
-            <Tab label="Data Visualization" />
-            <Tab label="Details" />
+            <Tab label="Thông tin trích xuất" />
+            <Tab label="Nội dung đầy đủ" />
           </Tabs>
           {tab === 0 && (
             <InvestigationSummaryCard summary={task.result?.summary} contextAnalysis={safeContextAnalysis} taskId={task.result?.task_id || task.id} />
