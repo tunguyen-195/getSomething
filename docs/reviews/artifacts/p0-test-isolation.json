@@ -1,0 +1,252 @@
+{
+  "schema_version": "rtk-evidence-v1",
+  "artifact_type": "p0-test-database-isolation",
+  "observed_at": "2026-08-09T10:53:14.264149+00:00",
+  "repo_root": "E:\\research\\STT",
+  "canonical_workspace": true,
+  "scope": "dedicated_test_database_only_no_application_ddl",
+  "verdict": "PASS",
+  "exit_code": 0,
+  "command": [
+    "E:\\research\\STT\\venv\\Scripts\\python.exe",
+    "-B",
+    "scripts/verify_test_database_isolation.py"
+  ],
+  "environment": {
+    "application_database": {
+      "driver": "postgresql",
+      "host": "localhost",
+      "port": 5432,
+      "database": "speech_to_info"
+    },
+    "test_database": {
+      "driver": "postgresql",
+      "host": "localhost",
+      "port": 5432,
+      "database": "speech_to_info_test"
+    },
+    "maintenance_database": "postgres",
+    "credentials_recorded": false
+  },
+  "git_parent_head": "4c379062ad8e9b7c4f9fb8a30f336d04c3f056cc",
+  "harness_path": "scripts/verify_test_database_isolation.py",
+  "harness_sha256": "7a9c312fe4aa01a7917224c483b9c2746b5faaa5f3713f80d30a5fbbe9735259",
+  "source_sha256": {
+    "tests/conftest.py": "3576a3883f7f52713c6ee6e9bc91f44466d28f49812b9612f9d57a3675b1c10e",
+    "tests/test_database_safety.py": "0334db3061492869c54b4098e56d730abaa780b906b830982529c070dcd70d75",
+    "tests/test_test_database_isolation.py": "b99f46713ada93a18a959941ef18894c68c312efa5e6079c5c55402b9edf464a",
+    "scripts/verify_test_database_isolation.py": "7a9c312fe4aa01a7917224c483b9c2746b5faaa5f3713f80d30a5fbbe9735259"
+  },
+  "application_fingerprint_before": {
+    "select_one": 1,
+    "tables": {
+      "users": {
+        "count": 3641,
+        "content_sha256": "17445b60894ff5ce43136898f1129e6a19be70fcc2abd6e4acd29df120e0b493"
+      },
+      "cases": {
+        "count": 2946,
+        "content_sha256": "bca778a2e1b6b12d0e536e1c02e6e430ba92c658e96f633cfb75c7996f4f2e1b"
+      },
+      "tasks": {
+        "count": 2432,
+        "content_sha256": "ef73fc648f731886331048b153fc022e4e02772dd6779e036aaceb722e8ecaf6"
+      }
+    }
+  },
+  "application_fingerprint_after": {
+    "select_one": 1,
+    "tables": {
+      "users": {
+        "count": 3641,
+        "content_sha256": "17445b60894ff5ce43136898f1129e6a19be70fcc2abd6e4acd29df120e0b493"
+      },
+      "cases": {
+        "count": 2946,
+        "content_sha256": "bca778a2e1b6b12d0e536e1c02e6e430ba92c658e96f633cfb75c7996f4f2e1b"
+      },
+      "tasks": {
+        "count": 2432,
+        "content_sha256": "ef73fc648f731886331048b153fc022e4e02772dd6779e036aaceb722e8ecaf6"
+      }
+    }
+  },
+  "non_test_database_guard": {
+    "exit_code": 1,
+    "guard_message_present": true,
+    "connection_attempt_absent": true,
+    "credential_absent": true,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_sha256": "a54f5dc1c05fac7442e3a0de326c6e0e243e446bc5c12e467286a9569bb15bea"
+  },
+  "sequential_targeted_suite": {
+    "command": [
+      "E:\\research\\STT\\venv\\Scripts\\python.exe",
+      "-m",
+      "pytest",
+      "-q",
+      "tests/test_test_database_isolation.py",
+      "tests/test_database_safety.py",
+      "-k",
+      "not p0_subprocess_lock_probe",
+      "-p",
+      "no:cacheprovider"
+    ],
+    "exit_code": 0,
+    "stdout_sha256": "c0166d2f99bcfe8b7be0b4bf4853433d2cd678ac56fe615b416a47d6dd7ff98e",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pytest_summary": {
+      "passed": 26,
+      "deselected": 1
+    },
+    "historical_workspace_path_absent": true,
+    "credential_markers_absent": true
+  },
+  "parallel_probe_results": [
+    {
+      "command": [
+        "E:\\research\\STT\\venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_test_database_isolation.py",
+        "-k",
+        "p0_subprocess_lock_probe",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "791fc380a1414df9a07d7093deac2be8143968801bfcbc6118d9f62227601b4f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pytest_summary": {
+        "passed": 1,
+        "deselected": 24
+      },
+      "historical_workspace_path_absent": true,
+      "credential_markers_absent": true,
+      "lock_evidence_path": "output/audits/p0-test-isolation-46148-105302707740-a.json"
+    },
+    {
+      "command": [
+        "E:\\research\\STT\\venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_test_database_isolation.py",
+        "-k",
+        "p0_subprocess_lock_probe",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "91f006caaf43e375792273603876422b6a1aad8aedbcabb3f0b374a6cb6acbeb",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pytest_summary": {
+        "passed": 1,
+        "deselected": 24
+      },
+      "historical_workspace_path_absent": true,
+      "credential_markers_absent": true,
+      "lock_evidence_path": "output/audits/p0-test-isolation-46148-105302707740-b.json"
+    }
+  ],
+  "lock_windows": [
+    {
+      "schema_version": "p0-test-lock-window-v1",
+      "pid": 48052,
+      "backend_pid": 38104,
+      "scope": "pytest-session",
+      "lock_key": 6805808865763122194,
+      "database": {
+        "driver": "postgresql",
+        "host": "localhost",
+        "port": 5432,
+        "database": "speech_to_info_test"
+      },
+      "requested_at": "2026-08-09T10:53:03.123591+00:00",
+      "acquired_at": "2026-08-09T10:53:03.160591+00:00",
+      "released_at": "2026-08-09T10:53:06.755213+00:00",
+      "conftest_sha256": "3576a3883f7f52713c6ee6e9bc91f44466d28f49812b9612f9d57a3675b1c10e",
+      "historical_workspace_path_absent": true
+    },
+    {
+      "schema_version": "p0-test-lock-window-v1",
+      "pid": 39172,
+      "backend_pid": 5544,
+      "scope": "pytest-session",
+      "lock_key": 6805808865763122194,
+      "database": {
+        "driver": "postgresql",
+        "host": "localhost",
+        "port": 5432,
+        "database": "speech_to_info_test"
+      },
+      "requested_at": "2026-08-09T10:53:03.238109+00:00",
+      "acquired_at": "2026-08-09T10:53:06.797740+00:00",
+      "released_at": "2026-08-09T10:53:10.355960+00:00",
+      "conftest_sha256": "3576a3883f7f52713c6ee6e9bc91f44466d28f49812b9612f9d57a3675b1c10e",
+      "historical_workspace_path_absent": true
+    }
+  ],
+  "exception_probe_result": {
+    "command": [
+      "E:\\research\\STT\\venv\\Scripts\\python.exe",
+      "-m",
+      "pytest",
+      "-q",
+      "tests/test_test_database_isolation.py",
+      "-k",
+      "p0_subprocess_lock_probe",
+      "-p",
+      "no:cacheprovider"
+    ],
+    "exit_code": 1,
+    "stdout_sha256": "52799ca2198e83ec32c53f53290001cbe7d541e5d58e88c806a1e025d5baefe8",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pytest_summary": {
+      "failed": 1,
+      "deselected": 24
+    },
+    "historical_workspace_path_absent": true,
+    "credential_markers_absent": true,
+    "lock_evidence_path": "output/audits/p0-test-isolation-exception-46148-105310715644.json"
+  },
+  "exception_lock_window": {
+    "schema_version": "p0-test-lock-window-v1",
+    "pid": 10956,
+    "backend_pid": 40632,
+    "scope": "pytest-session",
+    "lock_key": 6805808865763122194,
+    "database": {
+      "driver": "postgresql",
+      "host": "localhost",
+      "port": 5432,
+      "database": "speech_to_info_test"
+    },
+    "requested_at": "2026-08-09T10:53:11.247582+00:00",
+    "acquired_at": "2026-08-09T10:53:11.277583+00:00",
+    "released_at": "2026-08-09T10:53:13.844035+00:00",
+    "conftest_sha256": "3576a3883f7f52713c6ee6e9bc91f44466d28f49812b9612f9d57a3675b1c10e",
+    "historical_workspace_path_absent": true
+  },
+  "remaining_runtime_state": {
+    "test_sessions": 0,
+    "test_advisory_locks": 0
+  },
+  "checks": {
+    "non_test_database_rejected": true,
+    "concurrent_runs_isolated": true,
+    "application_database_unchanged": true,
+    "sequential_targeted_suite_passed": true,
+    "session_lock_released": true,
+    "exception_path_releases_lock": true,
+    "historical_workspace_path_absent": true,
+    "credentials_absent": true
+  },
+  "blockers": [],
+  "limitations": [
+    "Full pytest remains blocked until later P0 packages close their own gates.",
+    "This verifier serializes one shared _test database; it does not enable xdist.",
+    "Abrupt process termination (hard kill) relies on PostgreSQL connection cleanup and is not simulated here."
+  ]
+}
