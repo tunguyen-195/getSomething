@@ -459,9 +459,63 @@ def test_expensive_summary_endpoints_are_rate_limited(auth_enabled, monkeypatch)
     ).status_code == 429
     assert client.post(
         "/api/v1/audio/summarize-multi",
-        json={"transcripts": {"transcripts": ["hello"]}},
+        json={"transcripts": ["hello"]},
         headers=_csrf_header(client),
     ).status_code == 429
+
+
+def test_summary_request_contract_returns_422_before_task_or_enqueue(
+    auth_enabled,
+    monkeypatch,
+):
+    _, username, password = _create_user()
+    client = _login_client(username, password)
+    touched: list[str] = []
+    monkeypatch.setattr(
+        "src.services.task_service.get_task",
+        lambda *_args: touched.append("v2-task-read"),
+    )
+    monkeypatch.setattr(
+        "src.api.endpoints.audio.get_task",
+        lambda *_args: touched.append("v1-task-read"),
+    )
+
+    headers = _csrf_header(client)
+    responses = [
+        client.post(
+            "/api/v1/audio/v2/summarize/missing-task",
+            json={"summary_type": "bogus"},
+            headers=headers,
+        ),
+        client.post(
+            "/api/v1/audio/summarize-task/missing-task",
+            json={"summary_type": "bogus"},
+            headers=headers,
+        ),
+        client.post(
+            "/api/v1/audio/summarize-multi",
+            json={"transcripts": ["hello"], "summary_type": "bogus"},
+            headers=headers,
+        ),
+        client.post(
+            "/api/v1/audio/summarize-case",
+            json={"case_id": "999999", "summary_type": "bogus"},
+            headers=headers,
+        ),
+        client.post(
+            "/api/v1/audio/v2/summarize/missing-task",
+            json={"summary_type": "brief", "min_length": 10, "max_length": 5},
+            headers=headers,
+        ),
+        client.post(
+            "/api/v1/audio/summarize-task/missing-task",
+            json={"summary_type": "brief", "min_length": 10, "max_length": 5},
+            headers=headers,
+        ),
+    ]
+
+    assert [response.status_code for response in responses] == [422] * len(responses)
+    assert touched == []
 
 
 def test_required_torch_requirements_file_is_tracked():

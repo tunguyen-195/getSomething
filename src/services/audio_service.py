@@ -17,6 +17,53 @@ from src.services.audio_storage import (
 from src.services.summarization.legacy_context_adapter import (
     project_legacy_key_points,
 )
+from src.services.summarization.contracts import (
+    DEFAULT_MULTI_SUMMARY_MAX_WORDS,
+    DEFAULT_MULTI_SUMMARY_MIN_WORDS,
+    DEFAULT_SUMMARY_MAX_WORDS,
+    DEFAULT_SUMMARY_MIN_WORDS,
+    DEFAULT_SUMMARY_TYPE,
+    SummaryMaximumExceeded,
+    SummaryRequestContractError,
+    SummaryType,
+    enforce_summary_maximum,
+    validate_summary_request_options,
+)
+
+
+def _validate_legacy_summary_request(
+    *,
+    summary_type: SummaryType,
+    min_length: int,
+    max_length: int,
+):
+    options = validate_summary_request_options(
+        summary_type=summary_type,
+        min_length=min_length,
+        max_length=max_length,
+    )
+    if options.summary_type in {"investigation", "forensic"}:
+        raise SummaryRequestContractError(
+            "LEGACY_EVIDENCE_SUMMARY_DISABLED",
+            "Legacy generic summarization cannot release investigation or forensic "
+            "content without the trusted evidence narrative contract.",
+        )
+    return options
+
+
+def _finalize_legacy_summary(
+    summary: str,
+    *,
+    min_length: int,
+    max_length: int,
+) -> str:
+    final_summary = force_vietnamese_output(summary.strip())
+    enforce_summary_maximum(
+        final_summary,
+        min_length=min_length,
+        max_length=max_length,
+    )
+    return final_summary
 
 
 
@@ -653,11 +700,25 @@ def summarize_transcript(
     context: dict = None,
     model_name: str = None,
     user_context_prompt: str = None,
-    max_length: int = 150,
-    min_length: int = 50
+    max_length: int = DEFAULT_SUMMARY_MAX_WORDS,
+    min_length: int = DEFAULT_SUMMARY_MIN_WORDS,
+    summary_type: SummaryType = DEFAULT_SUMMARY_TYPE,
 ) -> str:
+    options = _validate_legacy_summary_request(
+        summary_type=summary_type,
+        min_length=min_length,
+        max_length=max_length,
+    )
+    summary_type = options.summary_type
+    min_length = options.min_length
+    max_length = options.max_length
+
     if not transcript:
-        return "Không có tóm tắt."
+        return _finalize_legacy_summary(
+            "Không có tóm tắt.",
+            min_length=min_length,
+            max_length=max_length,
+        )
 
     # Sử dụng model mặc định từ config nếu không chỉ định
     if model_name is None:
@@ -770,10 +831,17 @@ Nếu có context_analysis, hãy ưu tiên sử dụng để làm rõ tóm tắt
             main_summary = response_main.json().get("response", "")
         else:
             main_summary = ""
-        if main_summary:
-            return force_vietnamese_output(f"Nội dung tổng quan: {main_summary.strip()}\n\n{deep_summary.strip()}")
+        if summary_type == "brief":
+            raw_summary = main_summary.strip() or deep_summary.strip()
+        elif main_summary:
+            raw_summary = f"Nội dung tổng quan: {main_summary.strip()}\n\n{deep_summary.strip()}"
         else:
-            return force_vietnamese_output(deep_summary.strip())
+            raw_summary = deep_summary.strip()
+        return _finalize_legacy_summary(
+            raw_summary,
+            min_length=min_length,
+            max_length=max_length,
+        )
     else:
         from src.summarization.summarizer import Summarizer
         summarizer = Summarizer(model_name=model)
@@ -792,25 +860,67 @@ Nếu có context_analysis, hãy ưu tiên sử dụng để làm rõ tóm tắt
             if 'privacy_summary' in context:
                 prompt += f"\nThông tin nhạy cảm: {context['privacy_summary']}"
             prompt += f"\nNội dung hội thoại: {transcript}"
-            deep_summary = summarizer.summarize(prompt, context=context, max_length=max_length, min_length=min_length)
+            deep_summary = summarizer.summarize(
+                prompt,
+                context=context,
+                max_length=max_length,
+                min_length=0,
+            )
         else:
-            deep_summary = summarizer.summarize(transcript, context=context, max_length=max_length, min_length=min_length)
+            deep_summary = summarizer.summarize(
+                transcript,
+                context=context,
+                max_length=max_length,
+                min_length=0,
+            )
         main_prompt = (
             user_prompt +
             "Hãy tóm tắt ngắn gọn, rõ ràng, dễ hiểu nội dung chính nhất của cuộc trò chuyện dưới đây trong 1-2 câu. Chỉ trình bày tổng quan, không liệt kê chi tiết.\n"
             f"Nội dung hội thoại: {transcript}"
         )
-        main_summary = summarizer.summarize(main_prompt, context=context, max_length=60, min_length=20)
-        if main_summary:
-            return force_vietnamese_output(f"Nội dung chính: {main_summary.strip()}\n\n{deep_summary.strip()}")
+        main_summary = summarizer.summarize(
+            main_prompt,
+            context=context,
+            max_length=min(60, max_length),
+            min_length=0,
+        )
+        if summary_type == "brief":
+            raw_summary = main_summary.strip() or deep_summary.strip()
+        elif main_summary:
+            raw_summary = f"Nội dung chính: {main_summary.strip()}\n\n{deep_summary.strip()}"
         else:
-            return force_vietnamese_output(deep_summary.strip())
+            raw_summary = deep_summary.strip()
+        return _finalize_legacy_summary(
+            raw_summary,
+            min_length=min_length,
+            max_length=max_length,
+        )
 
 
 
-def summarize_multi_transcripts(transcripts: list[str], context: dict = None, model_name: str = None) -> str:
+def summarize_multi_transcripts(
+    transcripts: list[str],
+    context: dict = None,
+    model_name: str = None,
+    summary_type: SummaryType = DEFAULT_SUMMARY_TYPE,
+    max_length: int = DEFAULT_MULTI_SUMMARY_MAX_WORDS,
+    min_length: int = DEFAULT_MULTI_SUMMARY_MIN_WORDS,
+) -> str:
+    options = _validate_legacy_summary_request(
+        summary_type=summary_type,
+        min_length=min_length,
+        max_length=max_length,
+    )
+    summary_type = options.summary_type
+    min_length = options.min_length
+    max_length = options.max_length
+
     if not transcripts:
-        return "Không có transcript nào để tóm tắt."
+        return _finalize_legacy_summary(
+            "Không có transcript nào để tóm tắt.",
+            min_length=min_length,
+            max_length=max_length,
+        )
     # Sử dụng model mặc định từ config nếu không chỉ định
     if model_name is None:
         model_name = settings.DEFAULT_AI_MODEL
@@ -835,7 +945,11 @@ def summarize_multi_transcripts(transcripts: list[str], context: dict = None, mo
 """
         prompt = (
             vi_requirement +
-            "Tóm tắt tổng hợp các hội thoại dưới đây, tập trung vào các thông tin quan trọng, "
+            (
+                "Tóm tắt ngắn gọn các hội thoại dưới đây, chỉ nêu các điểm cốt lõi.\n"
+                if summary_type == "brief"
+                else "Tóm tắt tổng hợp các hội thoại dưới đây, tập trung vào các thông tin quan trọng, "
+            ) +
             "các thực thể, mối quan hệ, mức độ nhạy cảm, quyết định, hành động, cảm xúc, ngữ cảnh.\n"
         )
         if 'summary' in context:
@@ -861,15 +975,39 @@ def summarize_multi_transcripts(transcripts: list[str], context: dict = None, mo
             )
             if response.status_code == 200:
                 result = response.json()
-                return force_vietnamese_output(result.get("response", ""))
+                return _finalize_legacy_summary(
+                    result.get("response", ""),
+                    min_length=min_length,
+                    max_length=max_length,
+                )
             else:
-                return f"[Ollama error {response.status_code}]"
+                return _finalize_legacy_summary(
+                    f"[Ollama error {response.status_code}]",
+                    min_length=min_length,
+                    max_length=max_length,
+                )
+        except SummaryMaximumExceeded:
+            raise
         except Exception as e:
-            return f"[Ollama error: {e}]"
+            return _finalize_legacy_summary(
+                f"[Ollama error: {e}]",
+                min_length=min_length,
+                max_length=max_length,
+            )
     else:
         from src.summarization.summarizer import Summarizer
         summarizer = Summarizer(model_name=model_name)
-        return force_vietnamese_output(summarizer.summarize(joined, context=context))
+        summary = summarizer.summarize(
+            joined,
+            context=context,
+            max_length=max_length,
+            min_length=0,
+        )
+        return _finalize_legacy_summary(
+            summary,
+            min_length=min_length,
+            max_length=max_length,
+        )
 
 
 

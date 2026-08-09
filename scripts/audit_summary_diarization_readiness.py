@@ -591,17 +591,97 @@ def _summary_contract(repo_root: Path) -> dict[str, Any]:
     service_source = (
         repo_root / "src/services/summarization/summary_service_v2.py"
     ).read_text(encoding="utf-8")
+    legacy_service_source = (
+        repo_root / "src/services/audio_service.py"
+    ).read_text(encoding="utf-8")
+    v2_api_source = (repo_root / "src/api/endpoints/audio_v2.py").read_text(
+        encoding="utf-8"
+    )
+    legacy_api_source = (repo_root / "src/api/endpoints/audio.py").read_text(
+        encoding="utf-8"
+    )
+    summary_api_source = (repo_root / "src/api/endpoints/summary.py").read_text(
+        encoding="utf-8"
+    )
     run_source = (
         repo_root / "src/services/investigation/run_contracts.py"
     ).read_text(encoding="utf-8")
-    untyped_paths = []
-    for relative in (
-        "src/services/summarization/summary_service_v2.py",
-        "src/api/endpoints/audio.py",
-        "src/worker/tasks/summarize_task.py",
-    ):
-        if "summary_type: str" in (repo_root / relative).read_text(encoding="utf-8"):
-            untyped_paths.append(relative)
+    entrypoint_specs = {
+        "src/services/summarization/summary_service_v2.py": {
+            "summarize_transcript_v2": {"direct": True},
+            "summarize_multi_transcripts_v2": {"direct": True},
+        },
+        "src/services/audio_service.py": {
+            "summarize_transcript": {"direct": True},
+            "summarize_multi_transcripts": {"direct": True},
+        },
+        "src/api/endpoints/audio_v2.py": {
+            "summarize_v2": {"direct": True},
+        },
+        "src/api/endpoints/audio.py": {
+            "summarize_multi": {"request": "MultiSummaryRequest"},
+            "summarize_case": {"request": "CaseSummaryRequest"},
+            "resummarize_task": {"direct": True},
+            "summarize_task": {"request": "SummaryRequest"},
+        },
+        "src/worker/tasks/summarize_task.py": {
+            "summarize_transcript_task": {"direct": True},
+            "summarize_multi_task": {"direct": True},
+        },
+    }
+    entrypoint_contracts: list[dict[str, Any]] = []
+    untyped_paths: set[str] = set()
+    for relative, functions in entrypoint_specs.items():
+        source_path = repo_root / relative
+        tree = ast.parse(source_path.read_text(encoding="utf-8-sig"), filename=relative)
+        nodes = {
+            node.name: node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        for function_name, expectation in functions.items():
+            node = nodes.get(function_name)
+            annotations = {
+                argument.arg: ast.unparse(argument.annotation)
+                if argument.annotation is not None
+                else None
+                for argument in (node.args.args if node is not None else [])
+            }
+            if expectation.get("direct"):
+                valid = (
+                    annotations.get("summary_type") == "SummaryType"
+                    and "min_length" in annotations
+                    and "max_length" in annotations
+                )
+            else:
+                valid = annotations.get("request") == expectation["request"]
+            entrypoint_contracts.append(
+                {
+                    "path": relative,
+                    "function": function_name,
+                    "valid": valid,
+                    "annotations": annotations,
+                }
+            )
+            if not valid:
+                untyped_paths.add(relative)
+
+    legacy_tree = ast.parse(
+        legacy_service_source,
+        filename="src/services/audio_service.py",
+    )
+    legacy_generator_uses_requested_minimum = any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "summarize"
+        and any(
+            keyword.arg == "min_length"
+            and isinstance(keyword.value, ast.Name)
+            and keyword.value.id == "min_length"
+            for keyword in node.keywords
+        )
+        for node in ast.walk(legacy_tree)
+    )
     return {
         "object_schema_count": len(objects),
         "all_objects_forbid_additional_properties": not non_strict,
@@ -625,7 +705,26 @@ def _summary_contract(repo_root: Path) -> dict[str, Any]:
         "shared_summary_contract_module_present": (
             repo_root / "src/services/summarization/contracts.py"
         ).is_file(),
+        "summary_entrypoint_contracts": entrypoint_contracts,
         "untyped_summary_type_paths": sorted(untyped_paths),
+        "legacy_final_maximum_enforcement_present": (
+            "def _finalize_legacy_summary(" in legacy_service_source
+            and "enforce_summary_maximum(" in legacy_service_source
+            and legacy_service_source.count("_finalize_legacy_summary(") >= 9
+        ),
+        "legacy_generator_uses_requested_minimum": (
+            legacy_generator_uses_requested_minimum
+        ),
+        "summary_visualization_separation_present": (
+            "def _summary_response_result(" in v2_api_source
+            and '"result": _summary_response_result(result)' in v2_api_source
+            and "def _summary_context_patch(" in legacy_api_source
+            and legacy_api_source.count("_summary_context_patch(") >= 3
+            and 'context_result_patch = {"context_analysis": context_analysis}'
+            in summary_api_source
+            and 'update_task(task_id, {"result": context_result_patch})'
+            in summary_api_source
+        ),
         "release_sentence_fields": sorted(narrative_fields),
         "release_sentence_contract_present": (
             required_release_fields.issubset(narrative_fields)
@@ -1511,7 +1610,12 @@ def _blockers(
         "live_summary_releases_raw_context_summary": summary["raw_context_summary_release_present"],
         "minimum_length_is_hard_enforced": summary["hard_minimum_length_present"],
         "shared_summary_type_length_contract_missing": not summary["shared_summary_contract_module_present"],
-        "summary_type_untyped_outside_v2_api": bool(summary["untyped_summary_type_paths"]),
+        "summary_entrypoint_contract_missing": bool(summary["untyped_summary_type_paths"]),
+        "legacy_final_summary_maximum_missing": not summary["legacy_final_maximum_enforcement_present"],
+        "legacy_generator_hard_minimum_present": summary["legacy_generator_uses_requested_minimum"],
+        "summary_visualization_separation_missing": not summary[
+            "summary_visualization_separation_present"
+        ],
         "release_sentence_attestation_contract_missing": not summary["release_sentence_contract_present"],
         "semantic_attestation_authority_missing": not summary["semantic_attestation_module_present"],
         "released_claim_narrative_coverage_gate_missing": not summary["released_claim_narrative_coverage_gate_present"],

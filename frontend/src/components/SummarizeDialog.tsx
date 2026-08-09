@@ -1,21 +1,42 @@
 import React, { useState } from 'react';
-import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Select, MenuItem, Typography, Box, FormControl, FormControlLabel, Checkbox } from '@mui/material';
+import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Select, MenuItem, Typography, Box, FormControl, FormControlLabel, Checkbox, TextField } from '@mui/material';
 import { Description, Close } from '@mui/icons-material';
+import {
+  DEFAULT_SUMMARY_MAX_LENGTH,
+  DEFAULT_SUMMARY_MIN_LENGTH,
+  DEFAULT_SUMMARY_TYPE,
+} from '../api/client';
+import type { SummaryDialogOptions, SummaryType } from '../api/client';
 
 interface SummarizeDialogProps {
   open: boolean;
   onClose: () => void;
-  onConfirm: (options: { model_name: string; summary_type: string; include_context_analysis: boolean }) => void;
+  onConfirm: (options: SummaryDialogOptions) => void;
   transcriptLength?: number;
 }
 
 const SummarizeDialog: React.FC<SummarizeDialogProps> = ({ open, onClose, onConfirm, transcriptLength }) => {
   const [modelName, setModelName] = useState('vistral');
-  const [summaryType, setSummaryType] = useState('investigation');
+  const [summaryType, setSummaryType] = useState<SummaryType>(DEFAULT_SUMMARY_TYPE);
   const [includeContext, setIncludeContext] = useState(true);
+  const [minLength, setMinLength] = useState(DEFAULT_SUMMARY_MIN_LENGTH);
+  const [maxLength, setMaxLength] = useState(DEFAULT_SUMMARY_MAX_LENGTH);
+
+  const boundsValid = Number.isInteger(minLength)
+    && Number.isInteger(maxLength)
+    && minLength >= 0
+    && maxLength >= 1
+    && minLength <= maxLength;
 
   const handleConfirm = () => {
-    onConfirm({ model_name: modelName, summary_type: summaryType, include_context_analysis: includeContext });
+    if (!boundsValid) return;
+    onConfirm({
+      model_name: modelName,
+      summary_type: summaryType,
+      include_context_analysis: includeContext,
+      min_length: minLength,
+      max_length: maxLength,
+    });
     onClose();
   };
 
@@ -39,12 +60,38 @@ const SummarizeDialog: React.FC<SummarizeDialogProps> = ({ open, onClose, onConf
 
         <Typography variant="subtitle2" fontWeight={700} mb={1}>SUMMARY TYPE</Typography>
         <FormControl fullWidth sx={{ mb: 2 }}>
-          <Select value={summaryType} onChange={(e) => setSummaryType(e.target.value)} size="small">
+          <Select value={summaryType} onChange={(e) => setSummaryType(e.target.value as SummaryType)} size="small">
             <MenuItem value="brief">Brief (Key points only)</MenuItem>
             <MenuItem value="detailed">Detailed (Full analysis)</MenuItem>
             <MenuItem value="investigation">Investigation (For police work)</MenuItem>
           </Select>
         </FormControl>
+
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2, mb: 1 }}>
+          <TextField
+            label="Target minimum (advisory)"
+            type="number"
+            size="small"
+            value={minLength}
+            inputProps={{ min: 0, step: 1 }}
+            onChange={(event) => setMinLength(Number(event.target.value))}
+            error={!boundsValid}
+          />
+          <TextField
+            label="Maximum words (enforced)"
+            type="number"
+            size="small"
+            value={maxLength}
+            inputProps={{ min: 1, step: 1 }}
+            onChange={(event) => setMaxLength(Number(event.target.value))}
+            error={!boundsValid}
+          />
+        </Box>
+        {!boundsValid && (
+          <Typography variant="caption" color="error" display="block" mb={1}>
+            Length bounds require 0 &lt;= target minimum &lt;= maximum.
+          </Typography>
+        )}
 
         <FormControlLabel
           control={<Checkbox checked={includeContext} onChange={(e) => setIncludeContext(e.target.checked)} sx={{ color: '#ff9800' }} />}
@@ -53,7 +100,7 @@ const SummarizeDialog: React.FC<SummarizeDialogProps> = ({ open, onClose, onConf
       </DialogContent>
       <DialogActions sx={{ p: 3, gap: 2 }}>
         <Button onClick={onClose} variant="outlined" startIcon={<Close />} sx={{ textTransform: 'none' }}>Cancel</Button>
-        <Button onClick={handleConfirm} variant="contained" startIcon={<Description />} sx={{ bgcolor: '#ff9800', textTransform: 'none', fontWeight: 700 }}>
+        <Button onClick={handleConfirm} disabled={!boundsValid} variant="contained" startIcon={<Description />} sx={{ bgcolor: '#ff9800', textTransform: 'none', fontWeight: 700 }}>
           Start Summary
         </Button>
       </DialogActions>

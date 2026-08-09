@@ -22,6 +22,7 @@ import AnalysisPanel from './components/AnalysisPanel';
 import DiarizationPanel from './components/DiarizationPanel';
 import DateTimeText from './components/DateTimeText';
 import { apiFetch, getCurrentUser, login, logout } from './api/client';
+import type { SummaryDialogOptions } from './api/client';
 import { validateReleasedVisualizationArtifact } from './utils/investigationProjection';
 
 interface Case {
@@ -353,17 +354,19 @@ function App() {
     }
   };
 
-  const handleSummarize = async (options: any) => {
+  const handleSummarize = async (options: SummaryDialogOptions) => {
     if (!selectedTaskId) return;
     try {
       const response = await apiFetch(`${API_V2_BASE}/summarize/${selectedTaskId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model_name: options.modelName,
-          summary_type: options.summaryType || 'investigation',
-          include_context: true,
-          async_mode: true
+          model_name: options.model_name,
+          summary_type: options.summary_type,
+          include_context: options.include_context_analysis !== false,
+          async_mode: true,
+          min_length: options.min_length,
+          max_length: options.max_length,
         })
       });
       if (!response.ok) throw new Error('Failed');

@@ -125,11 +125,13 @@ def analyze_summary(summary: str = Body(..., embed=True), task_id: str = Body(No
             f"{list(context_analysis.keys()) if isinstance(context_analysis, dict) else 'non-dict'}"
         )
         if context_analysis:
+            context_result_patch = {"context_analysis": context_analysis}
             if task:
-                result_data = task.get("result") or {}
-                result_data["context_analysis"] = context_analysis
-                update_task(task_id, {"result": result_data})
-            return {"context_analysis": context_analysis}
+                update_task(task_id, {"result": context_result_patch})
+            return {
+                "context_analysis": context_analysis,
+                "result": context_result_patch,
+            }
     except Exception as e:
         logger.error(f"[SUMMARY_ANALYZE] OllamaProcessor.analyze_context failed: {e}", exc_info=True)
     return {"error": "Phân tích thất bại với rule/memory bank nội bộ"}

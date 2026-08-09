@@ -3,10 +3,20 @@ Summary Service v2 - Refactored with LLM Manager
 OPTIONAL: Only called when user explicitly requests summarization
 """
 import logging
-from typing import Dict, Optional, List
+from typing import Dict, List
 from src.services.investigation.narrative_attestation import (
     released_narrative_metadata,
     render_released_narrative_text,
+)
+from .contracts import (
+    DEFAULT_MULTI_SUMMARY_MAX_WORDS,
+    DEFAULT_MULTI_SUMMARY_MIN_WORDS,
+    DEFAULT_SUMMARY_MAX_WORDS,
+    DEFAULT_SUMMARY_MIN_WORDS,
+    DEFAULT_SUMMARY_TYPE,
+    SummaryType,
+    evaluate_summary_length,
+    validate_summary_request_options,
 )
 from .models.llm_manager import get_llm_manager
 from .context_service import analyze_conversation_context
@@ -18,6 +28,8 @@ def _summarize_released_investigation_narrative(
     *,
     released_narrative: object | None,
     model_name: str | None,
+    min_length: int,
+    max_length: int,
     source_metadata: dict | None,
 ) -> Dict:
     """Render only the deterministic projection minted by the T5 release gate."""
@@ -90,6 +102,29 @@ def _summarize_released_investigation_narrative(
             },
         }
 
+    length_contract = evaluate_summary_length(
+        summary,
+        min_length=min_length,
+        max_length=max_length,
+    )
+    if not length_contract["maximum_met"]:
+        return {
+            "summary": "",
+            "context": None,
+            "model": None,
+            "requested_model": model_name,
+            "summary_type": "investigation",
+            "available": False,
+            "error": {
+                "code": "SUMMARY_MAX_LENGTH_EXCEEDED",
+                "message": (
+                    f"Released narrative contains {length_contract['actual']} words; "
+                    f"maximum is {max_length}."
+                ),
+            },
+            "runtime": {"length_contract": length_contract},
+        }
+
     return {
         "summary": summary,
         "context": None,
@@ -103,6 +138,7 @@ def _summarize_released_investigation_narrative(
             "last_generation": None,
             "visualization_projection": "not_requested",
             "summary_generation": "attested_deterministic_projection",
+            "length_contract": length_contract,
         },
     }
 
@@ -110,11 +146,11 @@ def _summarize_released_investigation_narrative(
 def summarize_transcript_v2(
     transcript: str,
     model_name: str = None,
-    summary_type: str = "detailed",
+    summary_type: SummaryType = DEFAULT_SUMMARY_TYPE,
     include_context: bool = True,
     user_prompt: str = None,
-    max_length: int = 200,
-    min_length: int = 50,
+    max_length: int = DEFAULT_SUMMARY_MAX_WORDS,
+    min_length: int = DEFAULT_SUMMARY_MIN_WORDS,
     source_metadata: dict | None = None,
     released_narrative: object | None = None,
 ) -> Dict:
@@ -128,15 +164,26 @@ def summarize_transcript_v2(
         include_context: Include context analysis
         user_prompt: Optional user context prompt
         max_length: Maximum summary length
-        min_length: Minimum summary length
+        min_length: Advisory target; short complete summaries remain releasable
 
     Returns:
         Dict with summary, context (optional), model info
     """
+    options = validate_summary_request_options(
+        summary_type=summary_type,
+        min_length=min_length,
+        max_length=max_length,
+    )
+    summary_type = options.summary_type
+    min_length = options.min_length
+    max_length = options.max_length
+
     if summary_type == "investigation":
         return _summarize_released_investigation_narrative(
             released_narrative=released_narrative,
             model_name=model_name,
+            min_length=min_length,
+            max_length=max_length,
             source_metadata=source_metadata,
         )
 
@@ -173,6 +220,25 @@ def summarize_transcript_v2(
 TÓM TẮT CHI TIẾT:
 """
                 summary = adapter.generate(prompt, max_tokens=2048, temperature=0.1)
+                summary = summary.strip() if isinstance(summary, str) else ""
+                length_contract = evaluate_summary_length(
+                    summary,
+                    min_length=min_length,
+                    max_length=max_length,
+                )
+                if not summary:
+                    return {
+                        "summary": "",
+                        "context": None,
+                        "model": model_name,
+                        "summary_type": summary_type,
+                        "available": False,
+                        "error": {
+                            "code": "SUMMARY_EMPTY",
+                            "message": "The llama.cpp backend returned an empty summary.",
+                        },
+                        "runtime": {"length_contract": length_contract},
+                    }
 
                 # Context analysis via adapter
                 context = None
@@ -190,13 +256,30 @@ Trả về dạng JSON với các trường: entities, events, relationships, ke
                     except:
                         context = {"raw": context_raw if 'context_raw' in dir() else None}
 
+                if not length_contract["maximum_met"]:
+                    return {
+                        "summary": "",
+                        "context": context,
+                        "model": model_name,
+                        "summary_type": summary_type,
+                        "available": False,
+                        "error": {
+                            "code": "SUMMARY_MAX_LENGTH_EXCEEDED",
+                            "message": (
+                                f"Generated summary contains {length_contract['actual']} "
+                                f"words; maximum is {max_length}."
+                            ),
+                        },
+                        "runtime": {"length_contract": length_contract},
+                    }
                 return {
                     "summary": summary,
                     "context": context,
                     "model": model_name,
                     "summary_type": summary_type,
                     "available": True,
-                    "engine": "llama.cpp"
+                    "engine": "llama.cpp",
+                    "runtime": {"length_contract": length_contract},
                 }
             else:
                 logger.warning(f"[SUMMARY_V2] LlamaCpp failed to load {model_name}, falling back to Ollama")
@@ -210,10 +293,15 @@ Trả về dạng JSON với các trường: entities, events, relationships, ke
         if not llm_mgr.check_availability():
             logger.warning("[SUMMARY_V2] LLM not available")
             return {
-                "summary": "LLM not available for summarization",
+                "summary": "",
                 "context": None,
                 "model": None,
-                "available": False
+                "summary_type": summary_type,
+                "available": False,
+                "error": {
+                    "code": "LLM_UNAVAILABLE",
+                    "message": "LLM not available for summarization.",
+                },
             }
 
         # Select model if not specified
@@ -237,7 +325,8 @@ Trả về dạng JSON với các trường: entities, events, relationships, ke
         # Build prompt based on summary type
         if summary_type == "brief":
             prompt = f"""
-Tóm tắt ngắn gọn cuộc hội thoại sau (1-2 câu, tối đa {min_length} từ):
+Tóm tắt ngắn gọn cuộc hội thoại sau. Mục tiêu khoảng {min_length} từ nếu evidence
+đủ, nhưng không thêm nội dung để đạt độ dài. Tuyệt đối không vượt quá {max_length} từ:
 
 {transcript}
 
@@ -245,7 +334,8 @@ Tóm tắt:
 """
         else:  # detailed
             prompt = f"""
-Tóm tắt chi tiết cuộc hội thoại sau ({min_length}-{max_length} từ):
+Tóm tắt chi tiết cuộc hội thoại sau. Mục tiêu khoảng {min_length} từ nếu evidence
+đủ, nhưng không thêm nội dung để đạt độ dài. Tuyệt đối không vượt quá {max_length} từ:
 - Nội dung chính
 - Các điểm quan trọng
 - Kết luận/quyết định (nếu có)
@@ -268,37 +358,68 @@ Tóm tắt:
         )
 
         # Validate summary
-        if not summary or len(summary) < 10:
-             raise Exception("Generated summary is too short or empty")
+        if not summary or not summary.strip():
+            raise Exception("Generated summary is empty")
+
+        summary = summary.strip()
+        length_contract = evaluate_summary_length(
+            summary,
+            min_length=min_length,
+            max_length=max_length,
+        )
+        if not length_contract["maximum_met"]:
+            return {
+                "summary": "",
+                "context": context,
+                "model": model_name,
+                "summary_type": summary_type,
+                "available": False,
+                "error": {
+                    "code": "SUMMARY_MAX_LENGTH_EXCEEDED",
+                    "message": (
+                        f"Generated summary contains {length_contract['actual']} words; "
+                        f"maximum is {max_length}."
+                    ),
+                },
+                "runtime": {"length_contract": length_contract},
+            }
 
         logger.info("[SUMMARY_V2] Summary complete")
 
         return {
-            "summary": summary.strip(),
+            "summary": summary,
             "context": context,
             "model": model_name,
             "summary_type": summary_type,
             "available": True,
             "runtime": {
                 "visualization_projection": "not_requested",
+                "length_contract": length_contract,
             },
         }
 
     except Exception as e:
         logger.error(f"[SUMMARY_V2] Error: {e}", exc_info=True)
         return {
-            "summary": f"Error: {str(e)}",
+            "summary": "",
             "context": None,
             "model": model_name,
-            "available": False
+            "summary_type": summary_type,
+            "available": False,
+            "error": {
+                "code": "SUMMARY_GENERATION_FAILED",
+                "message": "Summary generation failed.",
+            },
         }
 
 
 def summarize_multi_transcripts_v2(
     transcripts: List[str],
     model_name: str = None,
-    summary_type: str = "detailed",
-    case_id: str = None
+    summary_type: SummaryType = DEFAULT_SUMMARY_TYPE,
+    case_id: str = None,
+    max_length: int = DEFAULT_MULTI_SUMMARY_MAX_WORDS,
+    min_length: int = DEFAULT_MULTI_SUMMARY_MIN_WORDS,
 ) -> Dict:
     """
     Summarize multiple transcripts into one comprehensive summary
@@ -312,15 +433,48 @@ def summarize_multi_transcripts_v2(
     Returns:
         Dict with summary and metadata
     """
+    options = validate_summary_request_options(
+        summary_type=summary_type,
+        min_length=min_length,
+        max_length=max_length,
+    )
+    summary_type = options.summary_type
+    min_length = options.min_length
+    max_length = options.max_length
+
+    if summary_type in {"investigation", "forensic"}:
+        return {
+            "summary": "",
+            "num_transcripts": len(transcripts),
+            "model": model_name,
+            "summary_type": summary_type,
+            "case_id": case_id,
+            "available": False,
+            "error": {
+                "code": "MULTI_EVIDENCE_RELEASE_REQUIRED",
+                "message": (
+                    "Multi-file investigation or forensic summaries require a "
+                    "released evidence narrative."
+                ),
+            },
+        }
+
     try:
         llm_mgr = get_llm_manager()
 
         if not llm_mgr.check_availability():
             logger.warning("[SUMMARY_V2] LLM not available for multi-summary")
             return {
-                "summary": "LLM not available",
+                "summary": "",
                 "num_transcripts": len(transcripts),
-                "available": False
+                "model": model_name,
+                "summary_type": summary_type,
+                "case_id": case_id,
+                "available": False,
+                "error": {
+                    "code": "LLM_UNAVAILABLE",
+                    "message": "LLM not available for multi-summary.",
+                },
             }
 
         if model_name is None:
@@ -351,25 +505,72 @@ Tóm tắt tổng hợp:
             prompt,
             model=model_name,
             temperature=0.7,
-            max_tokens=1024
+            max_tokens=min(2048, max(256, max_length * 4)),
         )
+
+        summary = summary.strip()
+        length_contract = evaluate_summary_length(
+            summary,
+            min_length=min_length,
+            max_length=max_length,
+        )
+        if not summary:
+            return {
+                "summary": "",
+                "num_transcripts": len(transcripts),
+                "model": model_name,
+                "summary_type": summary_type,
+                "case_id": case_id,
+                "available": False,
+                "error": {
+                    "code": "SUMMARY_EMPTY",
+                    "message": "The LLM backend returned an empty multi-summary.",
+                },
+                "runtime": {"length_contract": length_contract},
+            }
+        if not length_contract["maximum_met"]:
+            return {
+                "summary": "",
+                "num_transcripts": len(transcripts),
+                "model": model_name,
+                "summary_type": summary_type,
+                "case_id": case_id,
+                "available": False,
+                "error": {
+                    "code": "SUMMARY_MAX_LENGTH_EXCEEDED",
+                    "message": (
+                        f"Generated multi-summary contains {length_contract['actual']} "
+                        f"words; maximum is {max_length}."
+                    ),
+                },
+                "runtime": {"length_contract": length_contract},
+            }
 
         logger.info("[SUMMARY_V2] Multi-summary complete")
 
         return {
-            "summary": summary.strip(),
+            "summary": summary,
             "num_transcripts": len(transcripts),
             "model": model_name,
+            "summary_type": summary_type,
             "case_id": case_id,
-            "available": True
+            "available": True,
+            "runtime": {"length_contract": length_contract},
         }
 
     except Exception as e:
         logger.error(f"[SUMMARY_V2] Multi-summary error: {e}", exc_info=True)
         return {
-            "summary": f"Error: {str(e)}",
+            "summary": "",
             "num_transcripts": len(transcripts),
-            "available": False
+            "model": model_name,
+            "summary_type": summary_type,
+            "case_id": case_id,
+            "available": False,
+            "error": {
+                "code": "SUMMARY_GENERATION_FAILED",
+                "message": "Multi-summary generation failed.",
+            },
         }
 
 

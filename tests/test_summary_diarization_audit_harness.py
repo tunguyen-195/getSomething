@@ -58,6 +58,7 @@ def test_readiness_source_map_covers_previously_missing_allowlist_paths() -> Non
 
     required = {
         "src/api/endpoints/summary.py",
+        "src/services/audio_service.py",
         "src/services/investigation/discovery.py",
         "src/services/investigation/discovery_contracts.py",
         "src/services/investigation/source_revision.py",
@@ -67,6 +68,16 @@ def test_readiness_source_map_covers_previously_missing_allowlist_paths() -> Non
     }
     assert required.issubset(hashes)
     assert hashes["tests/eval/whole_audio_coverage_cases.jsonl"] is None
+
+
+def test_summary_contract_audits_every_legacy_and_worker_entrypoint() -> None:
+    state = readiness._summary_contract(CANONICAL_ROOT)
+
+    assert state["untyped_summary_type_paths"] == []
+    assert state["legacy_final_maximum_enforcement_present"] is True
+    assert state["legacy_generator_uses_requested_minimum"] is False
+    assert state["summary_visualization_separation_present"] is True
+    assert all(row["valid"] for row in state["summary_entrypoint_contracts"])
 
 
 def test_package_evidence_binds_complete_s3_g1_f1a_and_d1_allowlists() -> None:

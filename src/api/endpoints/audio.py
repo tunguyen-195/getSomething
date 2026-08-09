@@ -39,8 +39,71 @@ from src.core.auth import (
 )
 from src.services.audit_service import log_activity
 from src.core.time import LEGACY_DATABASE_TIMEZONE, utc_isoformat
+from src.services.summarization.contracts import (
+    CaseSummaryRequest,
+    DEFAULT_SUMMARY_MAX_WORDS,
+    DEFAULT_SUMMARY_MIN_WORDS,
+    DEFAULT_SUMMARY_TYPE,
+    MultiSummaryRequest,
+    SummaryMaximumExceeded,
+    SummaryRequest,
+    SummaryRequestContractError,
+    SummaryType,
+    validate_summary_request_options,
+)
 
 router = APIRouter()
+
+
+def _summary_output_failure(result: Any) -> tuple[str, str] | None:
+    if not isinstance(result, dict):
+        return "SUMMARY_RESULT_INVALID", "Summarization service returned an invalid result."
+    if result.get("available") is not True:
+        error = result.get("error") if isinstance(result.get("error"), dict) else {}
+        return (
+            str(error.get("code") or "SUMMARY_UNAVAILABLE"),
+            str(
+                error.get("message")
+                or result.get("summary")
+                or "Summarization service is unavailable."
+            ),
+        )
+    summary = result.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        return "SUMMARY_EMPTY", "Summarization service returned an empty summary."
+    return None
+
+
+def _summary_maximum_http_error(exc: SummaryMaximumExceeded) -> HTTPException:
+    return HTTPException(
+        status_code=502,
+        detail={
+            "code": "SUMMARY_MAX_LENGTH_EXCEEDED",
+            "message": str(exc),
+            "length_contract": exc.contract,
+        },
+    )
+
+
+def _summary_context_patch(
+    *,
+    summary: str,
+    context_analysis: object,
+    model_name: str | None,
+    summary_type: SummaryType,
+    runtime: object = None,
+) -> dict[str, Any]:
+    """Build the only result fields owned by a summary endpoint."""
+
+    return {
+        "summary": summary,
+        "context_analysis": (
+            context_analysis if isinstance(context_analysis, dict) else None
+        ),
+        "summary_model": model_name,
+        "summary_type": summary_type,
+        "summary_runtime": runtime if isinstance(runtime, dict) else {},
+    }
 
 
 def _process_task_in_worker(task_id: str, model_name: str):
@@ -529,41 +592,50 @@ async def create_visualization(
 
 @router.post("/summarize-multi")
 async def summarize_multi(
-    transcripts: Dict[str, List[str]] = Body(...),
-    case_id: str = Body(None),
-    model_name: str = Body(None),
-    context_analysis: dict = Body(None),
+    request: MultiSummaryRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Tóm tắt nhiều transcript thành một summary tổng hợp với model và context tuỳ chọn"""
 
     # Sử dụng model mặc định nếu không chỉ định
-    if model_name is None:
-        model_name = settings.DEFAULT_AI_MODEL
+    model_name = request.model_name or settings.DEFAULT_AI_MODEL
 
     try:
         check_rate_limit(f"rl:process:{current_user.id}", settings.PROCESS_RATE_LIMIT_PER_HOUR, 3600)
-        if case_id:
-            numeric_case_id = int(case_id)
+        if request.case_id:
+            numeric_case_id = int(request.case_id)
             assert_case_access(db, current_user, numeric_case_id, "process")
             all_transcripts = []
             tasks = list_tasks()
             for task in tasks:
                 if task.get("case_id") == numeric_case_id:
-                    all_transcripts.append(task.get("transcript", ""))
+                    task_result = task.get("result") if isinstance(task.get("result"), dict) else {}
+                    transcript = task_result.get("transcription") or task.get("transcript")
+                    if transcript:
+                        all_transcripts.append(transcript)
             summary = summarize_multi_transcripts(
                 all_transcripts,
-                context=context_analysis,
-                model_name=model_name
+                context=request.context_analysis,
+                model_name=model_name,
+                summary_type=request.summary_type,
+                min_length=request.min_length,
+                max_length=request.max_length,
             )
         else:
             summary = summarize_multi_transcripts(
-                transcripts.get("transcripts", []),
-                context=context_analysis,
-                model_name=model_name
+                request.transcripts,
+                context=request.context_analysis,
+                model_name=model_name,
+                summary_type=request.summary_type,
+                min_length=request.min_length,
+                max_length=request.max_length,
             )
         return {"summary": summary}
+    except SummaryMaximumExceeded as exc:
+        raise _summary_maximum_http_error(exc) from exc
+    except SummaryRequestContractError as exc:
+        raise HTTPException(status_code=422, detail=exc.as_error()) from exc
     except HTTPException:
         raise
     except Exception as e:
@@ -572,20 +644,18 @@ async def summarize_multi(
 
 @router.post("/summarize-case")
 def summarize_case(
-    case_id: str = Body(...),
-    model_name: str = Body("google/mt5-base"),
-    context_analysis: dict = Body(None),
+    request: CaseSummaryRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Tóm tắt toàn bộ các file thuộc một case"""
     try:
-        assert_case_access(db, current_user, int(case_id), "process")
+        assert_case_access(db, current_user, int(request.case_id), "process")
         check_rate_limit(f"rl:process:{current_user.id}", settings.PROCESS_RATE_LIMIT_PER_HOUR, 3600)
-        tasks = list_tasks(case_id=case_id)
+        tasks = list_tasks(case_id=request.case_id)
         transcripts = []
         # Nếu context_analysis không truyền lên, tự tổng hợp context từ các task
-        context = context_analysis
+        context = request.context_analysis
         if not context:
             # Lấy context_analysis đầu tiên có trong các task
             for t in tasks:
@@ -597,8 +667,21 @@ def summarize_case(
             transcript = t.get("result", {}).get("transcription") or t.get("result", {}).get("text")
             if transcript:
                 transcripts.append(transcript)
-        summary = summarize_multi_transcripts(transcripts, context=context, model_name=model_name)
+        summary = summarize_multi_transcripts(
+            transcripts,
+            context=context,
+            model_name=request.model_name or settings.DEFAULT_AI_MODEL,
+            summary_type=request.summary_type,
+            min_length=request.min_length,
+            max_length=request.max_length,
+        )
         return {"summary": summary}
+    except SummaryMaximumExceeded as exc:
+        raise _summary_maximum_http_error(exc) from exc
+    except SummaryRequestContractError as exc:
+        raise HTTPException(status_code=422, detail=exc.as_error()) from exc
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error summarizing case: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -710,10 +793,22 @@ def get_ollama_models():
 @router.post("/tasks/{task_id}/resummarize")
 def resummarize_task(
     task_id: str,
+    summary_type: SummaryType = Body(DEFAULT_SUMMARY_TYPE, embed=True),
+    min_length: int = Body(DEFAULT_SUMMARY_MIN_WORDS, embed=True),
+    max_length: int = Body(DEFAULT_SUMMARY_MAX_WORDS, embed=True),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Tóm tắt lại file với user_context_prompt mới (nếu có), luôn ưu tiên model tốt nhất."""
+    try:
+        options = validate_summary_request_options(
+            summary_type=summary_type,
+            min_length=min_length,
+            max_length=max_length,
+        )
+    except SummaryRequestContractError as exc:
+        raise HTTPException(status_code=422, detail=exc.as_error()) from exc
+
     task = get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -739,12 +834,34 @@ def resummarize_task(
     if context is None or not isinstance(context, dict):
         context = {}
     # Tóm tắt với prompt mạnh hơn, tăng max_length
-    summary = summarize_transcript(transcript, context=context, model_name=model_name, user_context_prompt=user_context_prompt, max_length=300, min_length=80)
-    result["summary"] = summary
-    result["context_analysis"] = context
-    result["model_name"] = model_name
-    update_task(task_id, {"result": result})
-    return {"summary": summary, "model": model_name}
+    try:
+        summary = summarize_transcript(
+            transcript,
+            context=context,
+            model_name=model_name,
+            user_context_prompt=user_context_prompt,
+            summary_type=options.summary_type,
+            max_length=options.max_length,
+            min_length=options.min_length,
+        )
+    except SummaryMaximumExceeded as exc:
+        raise _summary_maximum_http_error(exc) from exc
+    except SummaryRequestContractError as exc:
+        raise HTTPException(status_code=422, detail=exc.as_error()) from exc
+    summary_result_patch = _summary_context_patch(
+        summary=summary,
+        context_analysis=context,
+        model_name=model_name,
+        summary_type=options.summary_type,
+    )
+    update_task(task_id, {"result": summary_result_patch})
+    return {
+        "summary": summary,
+        "model": model_name,
+        "summary_type": options.summary_type,
+        "context_analysis": summary_result_patch["context_analysis"],
+        "result": summary_result_patch,
+    }
 
 @router.get("/{audio_id}/download")
 def download_audio(
@@ -984,9 +1101,7 @@ async def transcribe_task(
 @router.post("/summarize-task/{task_id}")
 async def summarize_task(
     task_id: str,
-    model_name: str = Body("gemma2:9b", embed=True),
-    summary_type: str = Body("detailed", embed=True),
-    include_context_analysis: bool = Body(True, embed=True),
+    request: SummaryRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1003,6 +1118,10 @@ async def summarize_task(
     Returns:
         Summary with context analysis
     """
+    model_name = request.model_name or settings.DEFAULT_AI_MODEL
+    summary_type = request.summary_type
+    include_context_analysis = request.include_context
+
     logger.info(
         f"[API] POST /summarize-task/{task_id} | "
         f"model={model_name} | type={summary_type} | context={include_context_analysis}"
@@ -1024,9 +1143,6 @@ async def summarize_task(
                 detail="Task must be transcribed first. Please run transcription before summarization."
             )
 
-        # Get context analysis if needed
-        context = task.get('context_analysis') if include_context_analysis else None
-
         # Summarize using V2
         from src.services.summarization.summary_service_v2 import summarize_transcript_v2
 
@@ -1035,43 +1151,51 @@ async def summarize_task(
             transcript=transcript,
             model_name=model_name,
             summary_type=summary_type,
-            include_context=include_context_analysis
+            include_context=include_context_analysis,
+            user_prompt=request.user_prompt,
+            min_length=request.min_length,
+            max_length=request.max_length,
         )
 
+        failure = _summary_output_failure(result_v2)
+        if failure is not None:
+            error_code, error_message = failure
+            update_task(task_id, {"status": "failed", "error": error_message})
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "code": error_code,
+                    "message": error_message,
+                    "task_id": task_id,
+                },
+            )
+
         summary_text = result_v2.get("summary", "")
-        visualization_data = result_v2.get("visualization_data")
-        has_visualization = result_v2.get("has_visualization", False)
+        summary_result_patch = _summary_context_patch(
+            summary=summary_text,
+            context_analysis=result_v2.get("context"),
+            model_name=result_v2.get("model") or model_name,
+            summary_type=summary_type,
+            runtime=result_v2.get("runtime"),
+        )
 
-        # Prepare existing result from task to update, don't overwrite everything
-        current_result = task.get("result") or {}
-        if isinstance(current_result, str):
-            import json
-            try:
-                current_result = json.loads(current_result)
-            except:
-                current_result = {}
-
-        # Update result dict
-        current_result["summary"] = summary_text
-        if has_visualization:
-            current_result["visualization_data"] = visualization_data
-            current_result["has_visualization"] = True
-
-        # Update task with summary and result
+        # Task service merges this narrow patch against the latest stored result.
         update_task(task_id, {
             "status": "summarized",
             "summary": summary_text,
-            "result": current_result
+            "result": summary_result_patch,
+            "model_name": summary_result_patch["summary_model"],
         })
 
         response = {
             "task_id": task_id,
             "status": "summarized",
             "summary": summary_text,
-            "model_name": model_name,
+            "model_name": summary_result_patch["summary_model"],
             "summary_type": summary_type,
-            "has_visualization": has_visualization,
-            "visualization_data": visualization_data
+            "runtime": result_v2.get("runtime") or {},
+            "context_analysis": summary_result_patch["context_analysis"],
+            "result": summary_result_patch,
         }
 
         logger.info(f"[API] Summary completed for task {task_id}")

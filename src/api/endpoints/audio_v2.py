@@ -1,6 +1,6 @@
 ﻿"""Audio API v2 - Modular"""
 from fastapi import APIRouter, UploadFile, File, HTTPException, Body, Depends, Form, Query
-from typing import Dict, Any
+from typing import Any, Dict
 from src.core.logging import logger
 from src.database.config.database import get_db
 from sqlalchemy.orm import Session
@@ -15,8 +15,42 @@ from src.services.task_service import (
     extract_visualization_payload,
     released_investigation_run_identity,
 )
+from src.services.summarization.contracts import (
+    DEFAULT_SUMMARY_MAX_WORDS,
+    DEFAULT_SUMMARY_MIN_WORDS,
+    DEFAULT_SUMMARY_TYPE,
+    SummaryRequestContractError,
+    SummaryType,
+    validate_summary_request_options,
+)
 
 router = APIRouter()
+
+_SUMMARY_RESPONSE_FIELDS = frozenset(
+    {
+        "available",
+        "summary",
+        "context",
+        "model",
+        "requested_model",
+        "summary_type",
+        "release",
+        "runtime",
+        "error",
+        "num_transcripts",
+        "case_id",
+    }
+)
+
+
+def _summary_response_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Expose summary-owned fields without replaying visualization projections."""
+
+    return {
+        key: value
+        for key, value in result.items()
+        if key in _SUMMARY_RESPONSE_FIELDS
+    }
 
 @router.post("/upload")
 async def upload_audio_v2(
@@ -79,8 +113,31 @@ async def transcribe_v2(task_id: str, enable_diarization: bool = Body(True), dia
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/summarize/{task_id}")
-async def summarize_v2(task_id: str, model_name: str = Body(None), summary_type: str = Body("detailed"), include_context: bool = Body(True), async_mode: bool = Body(True), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def summarize_v2(
+    task_id: str,
+    model_name: str = Body(None),
+    summary_type: SummaryType = Body(DEFAULT_SUMMARY_TYPE),
+    include_context: bool = Body(True),
+    async_mode: bool = Body(True),
+    min_length: int = Body(DEFAULT_SUMMARY_MIN_WORDS),
+    max_length: int = Body(DEFAULT_SUMMARY_MAX_WORDS),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     try:
+        try:
+            options = validate_summary_request_options(
+                summary_type=summary_type,
+                min_length=min_length,
+                max_length=max_length,
+            )
+        except SummaryRequestContractError as exc:
+            raise HTTPException(status_code=422, detail=exc.as_error()) from exc
+
+        summary_type = options.summary_type
+        min_length = options.min_length
+        max_length = options.max_length
+
         from src.services.task_service import get_task, update_task
         task = get_task(task_id)
         if not task:
@@ -102,14 +159,33 @@ async def summarize_v2(task_id: str, model_name: str = Body(None), summary_type:
 
         if async_mode:
             from src.worker.tasks.summarize_task import summarize_transcript_task
-            celery_task = summarize_transcript_task.delay(task_id, model_name, summary_type, include_context, None)
+            celery_task = summarize_transcript_task.delay(
+                task_id=task_id,
+                model_name=model_name,
+                summary_type=summary_type,
+                include_context=include_context,
+                user_prompt=None,
+                min_length=min_length,
+                max_length=max_length,
+            )
             update_task(task_id, {"status": "summarizing"})
             return {"task_id": task_id, "status": "summarizing", "celery_task_id": celery_task.id}
         else:
             from src.services.summarization.summary_service_v2 import summarize_transcript_v2
-            result = summarize_transcript_v2(transcript, model_name, summary_type, include_context)
+            result = summarize_transcript_v2(
+                transcript,
+                model_name,
+                summary_type,
+                include_context,
+                min_length=min_length,
+                max_length=max_length,
+            )
             update_task(task_id, {"status": "summarized", "summary": result["summary"]})
-            return {"task_id": task_id, "status": "summarized", "result": result}
+            return {
+                "task_id": task_id,
+                "status": "summarized",
+                "result": _summary_response_result(result),
+            }
     except HTTPException:
         raise
     except Exception as e:

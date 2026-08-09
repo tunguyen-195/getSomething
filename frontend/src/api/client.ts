@@ -1,5 +1,21 @@
 let csrfToken: string | null = null;
 
+export const SUMMARY_TYPES = ['brief', 'detailed', 'investigation', 'forensic'] as const;
+export type SummaryType = (typeof SUMMARY_TYPES)[number];
+export const DEFAULT_SUMMARY_TYPE: SummaryType = 'detailed';
+export const DEFAULT_SUMMARY_MIN_LENGTH = 50;
+export const DEFAULT_SUMMARY_MAX_LENGTH = 200;
+export const DEFAULT_MULTI_SUMMARY_MIN_LENGTH = 100;
+export const DEFAULT_MULTI_SUMMARY_MAX_LENGTH = 400;
+
+export interface SummaryDialogOptions {
+  model_name: string;
+  summary_type: SummaryType;
+  include_context_analysis: boolean;
+  min_length: number;
+  max_length: number;
+}
+
 const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const API_BASE_URL = typeof window !== 'undefined' && (window as any).API_BASE_URL ? (window as any).API_BASE_URL : '';
 

@@ -47,7 +47,12 @@ import { AlertColor } from '@mui/material/Alert';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
-import { apiFetch } from '../api/client';
+import {
+  apiFetch,
+  DEFAULT_MULTI_SUMMARY_MAX_LENGTH,
+  DEFAULT_MULTI_SUMMARY_MIN_LENGTH,
+  DEFAULT_SUMMARY_TYPE,
+} from '../api/client';
 import { projectInvestigationSummaryContext } from '../utils/investigationProjection';
 
 interface Task {
@@ -298,7 +303,13 @@ const TaskList = () => {
       const res = await apiFetch(`${API_BASE_URL}/api/v1/audio/summarize-multi`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcripts, model_name: 'gemma2:9b' }),
+        body: JSON.stringify({
+          transcripts,
+          model_name: 'gemma2:9b',
+          summary_type: DEFAULT_SUMMARY_TYPE,
+          min_length: DEFAULT_MULTI_SUMMARY_MIN_LENGTH,
+          max_length: DEFAULT_MULTI_SUMMARY_MAX_LENGTH,
+        }),
       });
       const data = await res.json();
       setMultiSummary(data.summary || data.result || '');
@@ -320,7 +331,13 @@ const TaskList = () => {
       const res = await apiFetch(`${API_BASE_URL}/api/v1/audio/summarize-case`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ case_id: selectedCaseForSummary, model_name: 'gemma2:9b' }),
+        body: JSON.stringify({
+          case_id: selectedCaseForSummary,
+          model_name: 'gemma2:9b',
+          summary_type: DEFAULT_SUMMARY_TYPE,
+          min_length: DEFAULT_MULTI_SUMMARY_MIN_LENGTH,
+          max_length: DEFAULT_MULTI_SUMMARY_MAX_LENGTH,
+        }),
       });
       const data = await res.json();
       setCaseSummary(data.summary || data.result || '');
