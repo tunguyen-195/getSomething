@@ -1,0 +1,251 @@
+{
+  "schema_version": "reference-reuse-source-spec-v1",
+  "sources": [
+    {
+      "repo": "lite",
+      "path": "docs/model_artifacts.required.json",
+      "recommendation_ids": ["PR-MODEL-ARTIFACT-FACTS"],
+      "purpose": "Pinned faster-whisper and pyannote artifact facts"
+    },
+    {
+      "repo": "lite",
+      "path": "src/services/analysis_intelligence/schemas.py",
+      "recommendation_ids": ["PR-EVIDENCE-REF-CONTRACT"],
+      "purpose": "Evidence references with source hash, span, time and speaker"
+    },
+    {
+      "repo": "lite",
+      "path": "src/api/endpoints/audio_v2.py",
+      "recommendation_ids": ["PR-HUMAN-REVIEW", "PR-METADATA-DETAIL-API"],
+      "purpose": "Review state and metadata/detail endpoint patterns"
+    },
+    {
+      "repo": "lite",
+      "path": "src/services/analysis_intelligence/storage.py",
+      "recommendation_ids": ["PR-ROW-LOCK-REVISION", "PR-REJECT-JSON-MONOLITH"],
+      "purpose": "Expected revision locking and JSON monolith counterexample"
+    },
+    {
+      "repo": "lite",
+      "path": "src/api/endpoints/audio.py",
+      "recommendation_ids": ["PR-METADATA-DETAIL-API", "PR-REJECT-PHYSICAL-ARCHIVE"],
+      "purpose": "List payload split and destructive archive counterexample"
+    },
+    {
+      "repo": "lite",
+      "path": "src/services/lite_runtime.py",
+      "recommendation_ids": ["PR-GPU-LEASE"],
+      "purpose": "Single-GPU lease pattern"
+    },
+    {
+      "repo": "lite",
+      "path": "src/api/endpoints/system.py",
+      "recommendation_ids": ["PR-RUNTIME-PROFILE"],
+      "purpose": "Runtime profile endpoint pattern"
+    },
+    {
+      "repo": "lite",
+      "path": "src/core/auth.py",
+      "recommendation_ids": ["PR-REJECT-AUTH-FALLBACK"],
+      "purpose": "Task authorization fallback counterexample"
+    },
+    {
+      "repo": "lite",
+      "path": "src/database/init_db.py",
+      "recommendation_ids": ["PR-REJECT-CREATE-ALL"],
+      "purpose": "Production create_all counterexample"
+    },
+    {
+      "repo": "lite",
+      "path": "src/services/summarization/summary_service_v2.py",
+      "recommendation_ids": ["PR-REJECT-FIXED-PROMPT"],
+      "purpose": "Fixed police summary counterexample"
+    },
+    {
+      "repo": "lite",
+      "path": "src/services/summarization/models/llm_manager.py",
+      "recommendation_ids": ["PR-REJECT-FIXED-PROMPT"],
+      "purpose": "Monolithic crime and deception prompt counterexample"
+    },
+    {
+      "repo": "lite",
+      "path": "docker-compose.yml",
+      "recommendation_ids": ["PR-REJECT-NETWORK-DEFAULT"],
+      "purpose": "Internet-dependent provider and setup defaults"
+    },
+    {
+      "repo": "lite",
+      "path": "src/core/config.py",
+      "recommendation_ids": ["PR-REJECT-NETWORK-DEFAULT"],
+      "purpose": "External provider fallback configuration"
+    },
+    {
+      "repo": "cherry",
+      "path": "research/phoguard_asr/artifacts.py",
+      "recommendation_ids": ["CH-ARTIFACT-DISCIPLINE"],
+      "purpose": "Environment and artifact manifest discipline"
+    },
+    {
+      "repo": "cherry",
+      "path": "research/sage_asr/evidence.py",
+      "recommendation_ids": ["CH-ARTIFACT-DISCIPLINE", "CH-SELECTIVE-ASR"],
+      "purpose": "Evidence-mode separation"
+    },
+    {
+      "repo": "cherry",
+      "path": "research/phoguard_asr/gate.py",
+      "recommendation_ids": ["CH-SELECTIVE-ASR"],
+      "purpose": "Transparent risk ranking and abstention"
+    },
+    {
+      "repo": "cherry",
+      "path": "research/sage_asr/calibrator.py",
+      "recommendation_ids": ["CH-SELECTIVE-ASR"],
+      "purpose": "Source-balanced calibration technique"
+    },
+    {
+      "repo": "cherry",
+      "path": "research/sage_asr/conformal.py",
+      "recommendation_ids": ["CH-SELECTIVE-ASR"],
+      "purpose": "Conformal false-accept risk control"
+    },
+    {
+      "repo": "cherry",
+      "path": "core/ports/correction_port.py",
+      "recommendation_ids": ["CH-PORTS-ADAPTERS", "CH-REJECT-MUTATION"],
+      "purpose": "Port abstraction and correction provenance counterexample"
+    },
+    {
+      "repo": "cherry",
+      "path": "application/services/web_job_manager.py",
+      "recommendation_ids": ["CH-GPU-QUEUE", "CH-REJECT-JOB-MANAGER"],
+      "purpose": "Serialized GPU execution idea and self-deadlock counterexample"
+    },
+    {
+      "repo": "cherry",
+      "path": "tests/test_webapp_api.py",
+      "recommendation_ids": ["CH-REJECT-JOB-MANAGER"],
+      "purpose": "Fake job manager test gap"
+    },
+    {
+      "repo": "cherry",
+      "path": "application/services/stt_web_pipeline.py",
+      "recommendation_ids": ["CH-STAGE-ARTIFACTS", "CH-REJECT-MUTATION"],
+      "purpose": "Stage artifacts and destructive correction or speaker mutation"
+    },
+    {
+      "repo": "cherry",
+      "path": "infrastructure/adapters/vad/silero_adapter.py",
+      "recommendation_ids": ["CH-STAGE-ARTIFACTS", "CH-REJECT-MUTATION"],
+      "purpose": "VAD time-map capability and transformed timeline risk"
+    },
+    {
+      "repo": "cherry",
+      "path": "infrastructure/adapters/correction/protonx_adapter.py",
+      "recommendation_ids": ["CH-REJECT-MUTATION"],
+      "purpose": "Correction truncation and concatenation counterexample"
+    },
+    {
+      "repo": "cherry",
+      "path": "infrastructure/adapters/correction/contextual_refiner.py",
+      "recommendation_ids": ["CH-REJECT-MUTATION"],
+      "purpose": "Speaker ID mutation counterexample"
+    },
+    {
+      "repo": "cherry",
+      "path": "application/services/sage_asr_service.py",
+      "recommendation_ids": ["CH-REJECT-SAGE-THRESHOLD"],
+      "purpose": "Embedded research calibrator and threshold"
+    },
+    {
+      "repo": "cherry",
+      "path": "tools/sage_promote_auto_labels.py",
+      "recommendation_ids": ["CH-REJECT-SAGE-THRESHOLD", "CH-MANUAL-AUDIT"],
+      "purpose": "Proxy-label provenance"
+    },
+    {
+      "repo": "cherry",
+      "path": "annotations/sage_stratified_crc_evidence_v1.json",
+      "recommendation_ids": ["CH-SELECTIVE-ASR", "CH-REJECT-SAGE-THRESHOLD"],
+      "purpose": "Coverage and false-accept risk evidence"
+    },
+    {
+      "repo": "cherry",
+      "path": "docs/paper_pack/PHOGUARD_ASR_CUDA_INTERNAL_AB_RESULTS_2026-05-03.md",
+      "recommendation_ids": ["CH-SELECTIVE-ASR", "CH-RESEARCH-CHALLENGERS"],
+      "purpose": "PhoGuard WER, coverage and runtime ablation evidence"
+    },
+    {
+      "repo": "cherry",
+      "path": "docs/paper_pack/EVIDENCE_REGISTRY.md",
+      "recommendation_ids": ["CH-MANUAL-AUDIT", "CH-RESEARCH-CHALLENGERS"],
+      "purpose": "Claim ladder and evidence registry methodology"
+    },
+    {
+      "repo": "cherry",
+      "path": "output/phoguard_asr/p6_cd_pilot_20260505_r1/pilot_summary.json",
+      "recommendation_ids": ["CH-RESEARCH-CHALLENGERS"],
+      "purpose": "P6 negative-result evidence"
+    },
+    {
+      "repo": "cherry",
+      "path": "output/phoguard_asr/p7_head_scan_stage_a_20260506_r1/scan_summary.json",
+      "recommendation_ids": ["CH-RESEARCH-CHALLENGERS"],
+      "purpose": "P7 no-head-signal evidence"
+    },
+    {
+      "repo": "cherry",
+      "path": "docs/paper_pack/AUDIOSAE_P8_DESIGN.md",
+      "recommendation_ids": ["CH-RESEARCH-CHALLENGERS"],
+      "purpose": "P8 metadata-only scope limitation"
+    },
+    {
+      "repo": "cherry",
+      "path": "docs/paper_pack/P11_PARETO_EVIDENCE_GATE_PROTOCOL_2026-05-16.md",
+      "recommendation_ids": ["CH-RESEARCH-CHALLENGERS"],
+      "purpose": "P11 exploratory and non-generalization scope"
+    },
+    {
+      "repo": "cherry",
+      "path": "infrastructure/adapters/llm/vllm_adapter.py",
+      "recommendation_ids": ["CH-REJECT-VLLM"],
+      "purpose": "Incomplete and incompatible vLLM adapter"
+    },
+    {
+      "repo": "cherry",
+      "path": "prompts/templates/deep_investigation.j2",
+      "recommendation_ids": ["CH-REJECT-FIXED-PROMPT"],
+      "purpose": "Mandatory fixed-field prompt counterexample"
+    },
+    {
+      "repo": "cherry",
+      "path": "prompts/templates/investigation.j2",
+      "recommendation_ids": ["CH-REJECT-FIXED-PROMPT"],
+      "purpose": "Hidden-intent and deception prompt counterexample"
+    },
+    {
+      "repo": "cherry",
+      "path": "application/services/analysis_service.py",
+      "recommendation_ids": ["CH-REJECT-FIXED-PROMPT"],
+      "purpose": "One-pass analysis and permissive JSON repair counterexample"
+    },
+    {
+      "repo": "cherry",
+      "path": "scripts/setup_models.py",
+      "recommendation_ids": ["CH-REJECT-MODEL-INVENTORY"],
+      "purpose": "Floating model and Silero downloads"
+    },
+    {
+      "repo": "cherry",
+      "path": "application/services/model_inventory_service.py",
+      "recommendation_ids": ["CH-REJECT-MODEL-INVENTORY"],
+      "purpose": "Path-existence-only model inventory"
+    },
+    {
+      "repo": "cherry",
+      "path": ".gitignore",
+      "recommendation_ids": ["CH-REJECT-DIRTY-RELEASE", "CH-REJECT-MODEL-INVENTORY"],
+      "purpose": "Ignored model and artifact release boundary"
+    }
+  ]
+}

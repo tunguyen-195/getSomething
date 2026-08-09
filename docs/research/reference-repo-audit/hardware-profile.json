@@ -1,0 +1,41 @@
+{
+  "schema_version": "offline-hardware-profile-v1",
+  "generated_at_utc": "2026-08-09T03:35:45.0464510Z",
+  "profile_id": "cand-dev-win4070s-12g-v1",
+  "role": "development_evaluation",
+  "os": {
+    "caption": "Microsoft Windows 11 Pro",
+    "version": "10.0.26200",
+    "architecture": "64-bit"
+  },
+  "cpu": {
+    "name": "AMD Ryzen 7 9800X3D 8-Core Processor",
+    "physical_cores": 8,
+    "logical_processors": 16
+  },
+  "memory": {
+    "physical_bytes": 68719476736,
+    "os_visible_bytes": 66177212416
+  },
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4070 SUPER",
+    "memory_mib": 12282,
+    "driver_version": "591.86",
+    "cuda_api_version": "13.1"
+  },
+  "workspace_volume": {
+    "drive": "D",
+    "filesystem": "NTFS",
+    "total_bytes": 38658674688,
+    "free_bytes": 4298481664
+  },
+  "capture_commands": [
+    "Get-CimInstance Win32_OperatingSystem",
+    "Get-CimInstance Win32_Processor",
+    "Get-CimInstance Win32_PhysicalMemory",
+    "Get-Volume -DriveLetter D",
+    "nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader,nounits",
+    "nvidia-smi"
+  ],
+  "promotion_policy": "Benchmark evidence is valid only for this exact profile; production requires a separate signed target profile."
+}

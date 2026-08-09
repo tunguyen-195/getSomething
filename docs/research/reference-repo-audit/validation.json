@@ -1,0 +1,463 @@
+{
+  "schema_version": "reference-reuse-validation-v1",
+  "generated_at_utc": "2026-08-09T03:40:05.207377+00:00",
+  "valid": true,
+  "checks_total": 103,
+  "checks_failed": [],
+  "checks": [
+    {
+      "id": "artifact:protocol:exists",
+      "passed": true
+    },
+    {
+      "id": "artifact:source_spec:exists",
+      "passed": true
+    },
+    {
+      "id": "artifact:evidence:exists",
+      "passed": true
+    },
+    {
+      "id": "artifact:hardware_profile:exists",
+      "passed": true
+    },
+    {
+      "id": "artifact:prompt_spec:exists",
+      "passed": true
+    },
+    {
+      "id": "artifact:review:exists",
+      "passed": true
+    },
+    {
+      "id": "artifact:plan:exists",
+      "passed": true
+    },
+    {
+      "id": "artifact:plan_audit:exists",
+      "passed": true
+    },
+    {
+      "id": "evidence:schema_version",
+      "passed": true
+    },
+    {
+      "id": "evidence:repository_labels",
+      "passed": true
+    },
+    {
+      "id": "evidence:pair_comparisons",
+      "passed": true
+    },
+    {
+      "id": "evidence:source_spec_hash",
+      "passed": true
+    },
+    {
+      "id": "evidence:source_record_count",
+      "passed": true
+    },
+    {
+      "id": "evidence:source_record_errors",
+      "passed": true
+    },
+    {
+      "id": "evidence:source_record_identity",
+      "passed": true
+    },
+    {
+      "id": "evidence:recommendation_coverage",
+      "passed": true
+    },
+    {
+      "id": "hardware:schema_version",
+      "passed": true
+    },
+    {
+      "id": "hardware:profile_id",
+      "passed": true
+    },
+    {
+      "id": "hardware:gpu_memory",
+      "passed": true
+    },
+    {
+      "id": "hardware:promotion_policy",
+      "passed": true
+    },
+    {
+      "id": "protocol:contains:R1",
+      "passed": true
+    },
+    {
+      "id": "protocol:contains:R10",
+      "passed": true
+    },
+    {
+      "id": "protocol:contains:ADOPT",
+      "passed": true
+    },
+    {
+      "id": "protocol:contains:ADAPT",
+      "passed": true
+    },
+    {
+      "id": "protocol:contains:REJECT",
+      "passed": true
+    },
+    {
+      "id": "protocol:contains:network-denial",
+      "passed": true
+    },
+    {
+      "id": "protocol:contains:deadlock-safe",
+      "passed": true
+    },
+    {
+      "id": "protocol:forbids:TBD",
+      "passed": true
+    },
+    {
+      "id": "review:contains:Critical 1",
+      "passed": true
+    },
+    {
+      "id": "review:contains:SpeechToInfomation-pr",
+      "passed": true
+    },
+    {
+      "id": "review:contains:cherry_core",
+      "passed": true
+    },
+    {
+      "id": "review:contains:PhoGuard",
+      "passed": true
+    },
+    {
+      "id": "review:contains:SAGE",
+      "passed": true
+    },
+    {
+      "id": "review:contains:T4",
+      "passed": true
+    },
+    {
+      "id": "review:contains:LICENSE",
+      "passed": true
+    },
+    {
+      "id": "review:contains:Critical 6",
+      "passed": true
+    },
+    {
+      "id": "review:contains:deadlock",
+      "passed": true
+    },
+    {
+      "id": "review:contains:proxy labels",
+      "passed": true
+    },
+    {
+      "id": "review:contains:original-audio",
+      "passed": true
+    },
+    {
+      "id": "review:contains:PENDING_LICENSE",
+      "passed": true
+    },
+    {
+      "id": "review:forbids:TBD",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:CH-ARTIFACT-DISCIPLINE",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:CH-GPU-QUEUE",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:CH-MANUAL-AUDIT",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:CH-PORTS-ADAPTERS",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:CH-REJECT-DIRTY-RELEASE",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:CH-REJECT-FIXED-PROMPT",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:CH-REJECT-JOB-MANAGER",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:CH-REJECT-MODEL-INVENTORY",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:CH-REJECT-MUTATION",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:CH-REJECT-SAGE-THRESHOLD",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:CH-REJECT-VLLM",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:CH-RESEARCH-CHALLENGERS",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:CH-SELECTIVE-ASR",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:CH-STAGE-ARTIFACTS",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:PR-EVIDENCE-REF-CONTRACT",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:PR-GPU-LEASE",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:PR-HUMAN-REVIEW",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:PR-METADATA-DETAIL-API",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:PR-MODEL-ARTIFACT-FACTS",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:PR-REJECT-AUTH-FALLBACK",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:PR-REJECT-CREATE-ALL",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:PR-REJECT-FIXED-PROMPT",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:PR-REJECT-JSON-MONOLITH",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:PR-REJECT-NETWORK-DEFAULT",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:PR-REJECT-PHYSICAL-ARCHIVE",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:PR-ROW-LOCK-REVISION",
+      "passed": true
+    },
+    {
+      "id": "review:recommendation:PR-RUNTIME-PROFILE",
+      "passed": true
+    },
+    {
+      "id": "prompt_spec:contains:Prompt P1",
+      "passed": true
+    },
+    {
+      "id": "prompt_spec:contains:Prompt P5",
+      "passed": true
+    },
+    {
+      "id": "prompt_spec:contains:reported assertion",
+      "passed": true
+    },
+    {
+      "id": "prompt_spec:contains:omission critic",
+      "passed": true
+    },
+    {
+      "id": "prompt_spec:contains:HumanReviewAttestation",
+      "passed": true
+    },
+    {
+      "id": "prompt_spec:contains:network-denial",
+      "passed": true
+    },
+    {
+      "id": "prompt_spec:contains:chain-of-thought",
+      "passed": true
+    },
+    {
+      "id": "prompt_spec:contains:correction_revision",
+      "passed": true
+    },
+    {
+      "id": "prompt_spec:contains:original-audio",
+      "passed": true
+    },
+    {
+      "id": "prompt_spec:contains:corroborated world finding",
+      "passed": true
+    },
+    {
+      "id": "prompt_spec:contains:Source-assertion-to-world-fact leakage",
+      "passed": true
+    },
+    {
+      "id": "prompt_spec:forbids:TBD",
+      "passed": true
+    },
+    {
+      "id": "plan:contains:Phase R0",
+      "passed": true
+    },
+    {
+      "id": "plan:contains:Phase R9",
+      "passed": true
+    },
+    {
+      "id": "plan:contains:reported speech",
+      "passed": true
+    },
+    {
+      "id": "plan:contains:subject/object reversal",
+      "passed": true
+    },
+    {
+      "id": "plan:contains:legal hold",
+      "passed": true
+    },
+    {
+      "id": "plan:contains:Alembic",
+      "passed": true
+    },
+    {
+      "id": "plan:contains:air-gapped",
+      "passed": true
+    },
+    {
+      "id": "plan:contains:TranscriptCorrectionRevision",
+      "passed": true
+    },
+    {
+      "id": "plan:contains:deadlock",
+      "passed": true
+    },
+    {
+      "id": "plan:contains:fresh, unseen sealed release holdout",
+      "passed": true
+    },
+    {
+      "id": "plan:contains:sealed release holdout",
+      "passed": true
+    },
+    {
+      "id": "plan:contains:benchmark-candidate",
+      "passed": true
+    },
+    {
+      "id": "plan:contains:cand-dev-win4070s-12g-v1",
+      "passed": true
+    },
+    {
+      "id": "plan:forbids:TBD",
+      "passed": true
+    },
+    {
+      "id": "plan_audit:contains:Verdict: PASS",
+      "passed": true
+    },
+    {
+      "id": "plan_audit:contains:source-evidence v2",
+      "passed": true
+    },
+    {
+      "id": "plan_audit:contains:corroborated world finding",
+      "passed": true
+    },
+    {
+      "id": "plan_audit:contains:sealed release holdout",
+      "passed": true
+    },
+    {
+      "id": "plan_audit:contains:ADAPT / PENDING_LICENSE",
+      "passed": true
+    },
+    {
+      "id": "plan_audit:contains:benchmark-candidate",
+      "passed": true
+    },
+    {
+      "id": "plan_audit:contains:hardware profile",
+      "passed": true
+    },
+    {
+      "id": "plan_audit:contains:T4 remains a separate",
+      "passed": true
+    },
+    {
+      "id": "plan_audit:forbids:TBD",
+      "passed": true
+    }
+  ],
+  "artifacts": {
+    "protocol": {
+      "path": "docs/research/reference-repo-reuse-audit-protocol-2026-08-09.md",
+      "bytes": 8217,
+      "sha256": "71a02f7539ad0b3b00e7afba6b1a02c27ab6ecdea661e7f5271eb07dbb0cb0e4"
+    },
+    "source_spec": {
+      "path": "docs/research/reference-repo-audit/source-evidence-spec.json",
+      "bytes": 8946,
+      "sha256": "6defdd4a5fa0ee94adab4c3a9ca5ace83abbd18a32eeb43e8f4f3287c8d30972"
+    },
+    "evidence": {
+      "path": "docs/research/reference-repo-audit/evidence.json",
+      "bytes": 151598,
+      "sha256": "5a41e2bbfa97bc0131e168665a58d0f5fbbd6929fdab0bdd3eca6063ba2ca094"
+    },
+    "hardware_profile": {
+      "path": "docs/research/reference-repo-audit/hardware-profile.json",
+      "bytes": 1276,
+      "sha256": "8024b83ad6d36fbb0e1d8f7fe6ab9ac8730274ec58d854d9b18e1ec1150b0f7b"
+    },
+    "prompt_spec": {
+      "path": "docs/research/cand-audio-intelligence-prompt-technique-spec-2026-08-09.md",
+      "bytes": 20196,
+      "sha256": "304a1f4b42dc684a4575b330cf28c952b9b8ba885f9bd171cc5a8c56b4d23c37"
+    },
+    "review": {
+      "path": "docs/reviews/reference-repository-reuse-audit-2026-08-09.md",
+      "bytes": 21488,
+      "sha256": "7669b9b41e7962e97e1d6e4b3d2513ecd74a6feaeab84d4e73c1b4c2a5bc22ed"
+    },
+    "plan": {
+      "path": "docs/plans/2026-08-09-reference-reuse-offline-cand-plan.md",
+      "bytes": 19496,
+      "sha256": "cc240f0a05202bf64c99c62fd2e0597ce5440690136e02d4bcf0225cc70e57e8"
+    },
+    "plan_audit": {
+      "path": "docs/reviews/reference-repository-reuse-plan-audit-2026-08-09.md",
+      "bytes": 3249,
+      "sha256": "fe179e286c2ad8c06818a2c02dd17a446a8adecda0f0120f0a654f0c6dff7d03"
+    }
+  }
+}
