@@ -34,14 +34,10 @@ import {
     RecordVoiceOver as SpeakerIcon,
     Category as TopicIcon,
 } from '@mui/icons-material';
-
-interface VisualizationData {
-    nodes?: Array<{ id: string; label: string; type?: string }>;
-    edges?: Array<{ from: string; to: string; label?: string }>;
-    timeline?: Array<{ time?: string; event: string }>;
-    main_events?: string[];
-    extracted_entities?: Array<{ type: string; value: string; context?: string }>;
-}
+import {
+    ReleasedVisualizationArtifact,
+    validateReleasedVisualizationArtifact,
+} from '../utils/investigationProjection';
 
 interface FileWithData {
     task_id: string;
@@ -50,7 +46,7 @@ interface FileWithData {
     status: string;
     num_speakers?: number;
     has_visualization?: boolean;
-    visualization_data?: VisualizationData;
+    visualization_data?: unknown;
     segments?: Array<{ speaker?: string; text: string }>;
 }
 
@@ -59,6 +55,10 @@ interface AnalysisPanelProps {
     caseId: string;
     mode?: 'light' | 'dark';
 }
+
+type FileWithReleasedVisualization = FileWithData & {
+    visualization_data: ReleasedVisualizationArtifact;
+};
 
 // Extract key information from summary text
 const extractKeyInfo = (summary: string) => {
@@ -116,7 +116,15 @@ const calculateSpeakerStats = (files: FileWithData[]) => {
 const AnalysisPanel: React.FC<AnalysisPanelProps> = ({ files, caseId }) => {
     const [copiedId, setCopiedId] = useState<string | null>(null);
 
-    const filesWithData = files.filter(f => f.summary || (f.has_visualization && f.visualization_data));
+    const filesWithData = useMemo<FileWithReleasedVisualization[]>(() => (
+        files.flatMap(file => {
+            if (!file.has_visualization) return [];
+            const validation = validateReleasedVisualizationArtifact(file.visualization_data);
+            return validation.ok
+                ? [{ ...file, visualization_data: validation.value }]
+                : [];
+        })
+    ), [files]);
 
     // Aggregate stats
     const stats = useMemo(() => {
@@ -129,16 +137,15 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({ files, caseId }) => {
 
         filesWithData.forEach(f => {
             if (f.visualization_data) {
-                f.visualization_data.nodes?.forEach(n => {
+                f.visualization_data.nodes.forEach(n => {
                     if (n.type?.toLowerCase() === 'person') people.add(n.label);
                     if (['place', 'location'].includes(n.type?.toLowerCase() || '')) places.add(n.label);
                     if (n.type?.toLowerCase() === 'phone') phones.add(n.label);
                 });
-                f.visualization_data.main_events?.forEach(e => events.push(e));
-                f.visualization_data.timeline?.forEach(t => timeline.push({ ...t, file: f.filename }));
+                f.visualization_data.main_events.forEach(e => events.push(e.event));
+                f.visualization_data.timeline.forEach(t => timeline.push({ ...t, file: f.filename }));
 
-                // Use LLM extracted entities if available
-                if (f.visualization_data.extracted_entities) {
+                if (f.visualization_data.extracted_entities.length > 0) {
                     f.visualization_data.extracted_entities.forEach(e => {
                         let icon = <TopicIcon />;
                         let color = '#757575';
@@ -161,10 +168,6 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({ files, caseId }) => {
                 }
             }
 
-            // Only use regex fallback if NO LLM entities found
-            if (f.summary && (!f.visualization_data?.extracted_entities || f.visualization_data.extracted_entities.length === 0)) {
-                // allKeyInfo = [...allKeyInfo, ...extractKeyInfo(f.summary)]; // Regex fallback disabled per user request
-            }
         });
 
         // Dedupe key info
@@ -207,7 +210,9 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({ files, caseId }) => {
         return (
             <Paper sx={{ p: 4, textAlign: 'center', borderRadius: '12px' }}>
                 <AnalyticsIcon sx={{ fontSize: 48, color: '#9c27b0', mb: 2 }} />
-                <Typography color="text.secondary">Chạy "Summarize" hoặc "Visualize" để xem phân tích</Typography>
+                <Typography color="text.secondary">
+                    Chưa có released analysis artifact đủ bằng chứng để hiển thị.
+                </Typography>
             </Paper>
         );
     }

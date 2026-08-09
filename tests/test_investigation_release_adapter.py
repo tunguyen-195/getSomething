@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import builtins
 import copy
 import json
+import socket
 import subprocess
 import sys
 from dataclasses import replace
@@ -60,6 +62,11 @@ from src.services.investigation.verification_contracts import (
     VerificationReplayResult,
     canonical_id,
     verification_batch_sha256,
+)
+from src.services.visualization import (
+    InvestigationVisualization,
+    VisualizationProjectionError,
+    project_released_investigation_run,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -361,6 +368,107 @@ def test_trusted_release_replays_exact_t3_t4_source_and_repository_state(wire_fo
     assert result.run_status == "success"
     assert result.ledger is not None
     assert result.ledger.claims[0].statement.startswith("Minh chuyển")
+
+
+def test_authority_sealed_run_projects_deterministically_without_withheld_data():
+    revision, discovery, _, verification, state = _direct_fact_artifacts()
+    proposed = _proposed_run(revision, verification, state)
+    first_run = _release(revision, discovery, verification, proposed)
+    second_run = _release(revision, discovery, verification, proposed)
+
+    first = project_released_investigation_run(first_run)
+    second = project_released_investigation_run(second_run)
+    payload = first.model_dump(mode="json", exclude_none=True)
+
+    assert first == second
+    assert first.content_hash == second.content_hash
+    assert payload["authority"] == "released_investigation_run"
+    assert payload["run_id"] == "release-fixture-run"
+    assert payload["source_revision_id"] == revision.source_revision_id
+    assert len(payload["nodes"]) == 1
+    assert payload["nodes"][0]["label"].startswith("Người nói SPEAKER_0")
+    assert payload["main_events"][0]["event"] == payload["nodes"][0]["label"]
+
+
+def test_model_construct_copy_of_released_run_is_not_authority_sealed():
+    revision, discovery, _, verification, state = _direct_fact_artifacts()
+    released = _release(
+        revision,
+        discovery,
+        verification,
+        _proposed_run(revision, verification, state),
+    )
+    forged = InvestigationRun.model_construct(**released.__dict__)
+
+    with pytest.raises(VisualizationProjectionError) as exc_info:
+        project_released_investigation_run(forged)
+
+    assert exc_info.value.code == "VISUALIZATION_RELEASED_RUN_REQUIRED"
+
+
+def test_mutation_after_trusted_run_release_is_rejected_by_projector():
+    revision, discovery, _, verification, state = _direct_fact_artifacts()
+    released = _release(
+        revision,
+        discovery,
+        verification,
+        _proposed_run(revision, verification, state),
+    )
+    assert released.projections is not None
+    released.projections.summary.narrative.overview[0].text = "Caller changed text"
+
+    with pytest.raises(VisualizationProjectionError) as exc_info:
+        project_released_investigation_run(released)
+
+    assert exc_info.value.code == "VISUALIZATION_RELEASED_RUN_REQUIRED"
+    assert "changed after trusted release" in str(exc_info.value)
+
+
+def test_projection_of_sealed_run_performs_no_external_io(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    revision, discovery, _, verification, state = _direct_fact_artifacts()
+    released = _release(
+        revision,
+        discovery,
+        verification,
+        _proposed_run(revision, verification, state),
+    )
+
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("projection attempted external I/O")
+
+    monkeypatch.setattr(builtins, "open", forbidden)
+    monkeypatch.setattr(socket, "create_connection", forbidden)
+    monkeypatch.setattr(subprocess, "run", forbidden)
+    monkeypatch.setattr(subprocess, "Popen", forbidden)
+
+    assert project_released_investigation_run(released).run_id == released.run_id
+
+
+def test_visualization_content_hash_rejects_tampering():
+    revision, discovery, _, verification, state = _direct_fact_artifacts()
+    released = _release(
+        revision,
+        discovery,
+        verification,
+        _proposed_run(revision, verification, state),
+    )
+    payload = project_released_investigation_run(released).model_dump(
+        mode="json",
+        exclude_none=True,
+    )
+    payload["nodes"][0]["label"] = "tampered"
+
+    with pytest.raises(ValidationError, match="content_hash"):
+        InvestigationVisualization.model_validate(payload)
+
+
+def test_public_release_closure_does_not_expose_generic_run_sealer():
+    freevars = set(release_investigation_run.__code__.co_freevars)
+
+    assert "sealer" not in freevars
+    assert "_seal_released_run" not in freevars
 
 
 def test_release_narrative_api_returns_sealed_text_and_provenance_metadata():

@@ -33,6 +33,7 @@ import AudioPlayer from 'react-h5-audio-player';
 import 'react-h5-audio-player/lib/styles.css';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { useState } from 'react';
+import { projectInvestigationSummaryContext } from '../utils/investigationProjection';
 
 interface Task {
   id: string;
@@ -111,8 +112,11 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
   const requestedEngine = task.result?.requested_engine;
   const engineUsed = task.result?.engine_used;
   const fallbackReason = task.result?.fallback_reason;
+  const safeContextAnalysis = projectInvestigationSummaryContext(
+    task.result?.context_analysis,
+  );
   const [tab, setTab] = React.useState(
-    (task.result?.summary || task.result?.context_analysis) ? 0 : 1
+    (task.result?.summary || safeContextAnalysis) ? 0 : 1
   );
   const [copiedTranscript, setCopiedTranscript] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
@@ -200,7 +204,7 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
             <Tab label="Details" />
           </Tabs>
           {tab === 0 && (
-            <InvestigationSummaryCard summary={task.result?.summary} contextAnalysis={task.result?.context_analysis} taskId={task.result?.task_id || task.id} />
+            <InvestigationSummaryCard summary={task.result?.summary} contextAnalysis={safeContextAnalysis} taskId={task.result?.task_id || task.id} />
           )}
           {tab === 1 && (
             <Grid container spacing={2}>

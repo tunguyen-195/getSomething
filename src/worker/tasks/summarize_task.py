@@ -78,33 +78,21 @@ def summarize_transcript_task(
             logger.error(f"[CELERY_SUMMARIZE] {error_msg}")
             raise ValueError(error_msg)
 
-        # Get current task result and update it
-        current_task = get_task(task_id)
-        current_result = current_task.get("result", {}) if current_task else {}
-
-        # Update result dict with summary
-        if isinstance(current_result, dict):
-            current_result["summary"] = result["summary"]
-            if result.get("context"):
-                current_result["context_analysis"] = result["context"]
-            current_result["summary_model"] = result.get("model")
-            current_result["summary_type"] = summary_type
-        else:
-            # If result is not a dict, create new one
-            current_result = {
-                "transcription": transcript,
-                "summary": result["summary"],
-                "context_analysis": result.get("context", {}),
-                "summary_model": result.get("model"),
-                "summary_type": summary_type
-            }
+        # Summary owns only this partial result patch. The task service merges it
+        # atomically so independently published visualization bytes stay untouched.
+        summary_result_patch = {
+            "summary": result["summary"],
+            "context_analysis": result.get("context") or None,
+            "summary_model": result.get("model"),
+            "summary_type": summary_type,
+            "summary_runtime": result.get("runtime") or {},
+        }
 
         # Update task with summary
         update_task(task_id, {
             "status": "summarized",
-            "result": current_result,
+            "result": summary_result_patch,
             "summary": result["summary"],  # Also save as direct field for backward compatibility
-            "context": result.get("context"),
             "model_name": result.get("model")
         })
 

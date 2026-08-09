@@ -1,0 +1,151 @@
+{
+  "schema_version": "investigation-visualization-v1",
+  "authority": "released_investigation_run",
+  "run_id": "run-1",
+  "source_revision_id": "revision-1",
+  "release_subject_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "content_hash": "af1b9410daadedff0e40319715c4714c6ae27bb62fe70d649e99b6bd319de62c",
+  "nodes": [
+    {
+      "id": "claim-1",
+      "kind": "claim",
+      "label": "Lan hen gap luc 09:00.",
+      "type": "key_point",
+      "epistemic_type": "source_attributed",
+      "source_revision_id": "revision-1",
+      "claim_refs": ["claim-1"],
+      "evidence": [
+        {
+          "evidence_id": "ev-1",
+          "segment_id": "seg-1",
+          "quote_exact": "Lan hen gap luc 09:00.",
+          "quote_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "source_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "source_revision_id": "revision-1",
+          "start_seconds": 1.0,
+          "end_seconds": 2.0,
+          "speaker_id": "speaker-1"
+        }
+      ]
+    },
+    {
+      "id": "concept-1",
+      "kind": "concept",
+      "label": "Lan",
+      "type": "person",
+      "epistemic_type": "source_attributed",
+      "source_revision_id": "revision-1",
+      "claim_refs": ["claim-1"],
+      "evidence": [
+        {
+          "evidence_id": "ev-1",
+          "segment_id": "seg-1",
+          "quote_exact": "Lan hen gap luc 09:00.",
+          "quote_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "source_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "source_revision_id": "revision-1",
+          "start_seconds": 1.0,
+          "end_seconds": 2.0,
+          "speaker_id": "speaker-1"
+        }
+      ],
+      "role": "participant"
+    }
+  ],
+  "edges": [
+    {
+      "id": "relationship-1",
+      "source": "claim-1",
+      "target": "concept-1",
+      "label": "mentions",
+      "type": "mentions",
+      "epistemic_type": "source_attributed",
+      "source_revision_id": "revision-1",
+      "claim_refs": ["claim-1"],
+      "evidence": [
+        {
+          "evidence_id": "ev-1",
+          "segment_id": "seg-1",
+          "quote_exact": "Lan hen gap luc 09:00.",
+          "quote_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "source_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "source_revision_id": "revision-1",
+          "start_seconds": 1.0,
+          "end_seconds": 2.0,
+          "speaker_id": "speaker-1"
+        }
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "id": "claim-1:ev-1",
+      "time": "00:01.000-00:02.000",
+      "event": "Lan hen gap luc 09:00.",
+      "claim_ref": "claim-1",
+      "epistemic_type": "source_attributed",
+      "source_revision_id": "revision-1",
+      "start_seconds": 1.0,
+      "end_seconds": 2.0,
+      "evidence": [
+        {
+          "evidence_id": "ev-1",
+          "segment_id": "seg-1",
+          "quote_exact": "Lan hen gap luc 09:00.",
+          "quote_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "source_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "source_revision_id": "revision-1",
+          "start_seconds": 1.0,
+          "end_seconds": 2.0,
+          "speaker_id": "speaker-1"
+        }
+      ]
+    }
+  ],
+  "main_events": [
+    {
+      "id": "claim-1",
+      "event": "Lan hen gap luc 09:00.",
+      "type": "key_point",
+      "claim_ref": "claim-1",
+      "epistemic_type": "source_attributed",
+      "source_revision_id": "revision-1",
+      "evidence": [
+        {
+          "evidence_id": "ev-1",
+          "segment_id": "seg-1",
+          "quote_exact": "Lan hen gap luc 09:00.",
+          "quote_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "source_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "source_revision_id": "revision-1",
+          "start_seconds": 1.0,
+          "end_seconds": 2.0,
+          "speaker_id": "speaker-1"
+        }
+      ]
+    }
+  ],
+  "extracted_entities": [
+    {
+      "id": "concept-1",
+      "type": "person",
+      "value": "Lan",
+      "source_revision_id": "revision-1",
+      "claim_refs": ["claim-1"],
+      "evidence": [
+        {
+          "evidence_id": "ev-1",
+          "segment_id": "seg-1",
+          "quote_exact": "Lan hen gap luc 09:00.",
+          "quote_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "source_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "source_revision_id": "revision-1",
+          "start_seconds": 1.0,
+          "end_seconds": 2.0,
+          "speaker_id": "speaker-1"
+        }
+      ],
+      "context": "participant"
+    }
+  ]
+}

@@ -4,7 +4,7 @@ Handles: Transcribe → Visualize (entity graph, timeline, etc.)
 """
 import logging
 from src.worker.worker import celery_app
-from src.services.task_service import get_task, update_task
+from src.services.task_service import get_task
 
 logger = logging.getLogger(__name__)
 
@@ -36,30 +36,16 @@ def visualize_task(
         if not task:
             raise ValueError(f"Task {task_id} not found")
 
-        transcript = task.get("transcript")
-        if not transcript:
-            raise ValueError(f"Task {task_id} has no transcript. Run transcription first.")
+        task_result = task.get("result") if isinstance(task.get("result"), dict) else {}
+        released_run = task_result.get("released_investigation_run")
 
-        # Import here to avoid circular dependencies
-        from src.services.task_service import extract_visualization_payload
+        # Import here to avoid circular dependencies.
         from src.services.visualization_service import generate_visualization
 
-        # Update status
-        update_task(task_id, {"status": "visualizing"})
-
-        # Execute visualization
         result = generate_visualization(
-            task_id=task_id,
+            released_run=released_run,
             visualization_type=visualization_type
         )
-        payload = extract_visualization_payload(result)
-
-        # Update task with visualization data
-        update_task(task_id, {
-            "status": "visualized",
-            "visualization": payload,
-            "has_visualization": True,
-        })
 
         logger.info(f"[CELERY_VISUALIZE] Task complete | task_id={task_id}")
 
@@ -71,12 +57,6 @@ def visualize_task(
 
     except Exception as e:
         logger.error(f"[CELERY_VISUALIZE] Task failed | task_id={task_id} | error={e}", exc_info=True)
-
-        # Update task status
-        try:
-            update_task(task_id, {"status": "failed", "error": str(e)})
-        except:
-            pass
 
         return {
             "status": "error",

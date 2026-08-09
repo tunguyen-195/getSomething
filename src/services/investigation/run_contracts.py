@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, fields, is_dataclass
 from types import MappingProxyType
 from typing import Any, Literal
-from weakref import WeakKeyDictionary
+from weakref import WeakKeyDictionary, ref
 
 from pydantic import (
     BaseModel,
@@ -387,6 +387,7 @@ def _build_release_authority_bridge():
         object,
         tuple[_TrustedInvestigationValidationContext, tuple[Any, ...]],
     ] = WeakKeyDictionary()
+    released: dict[int, tuple[object, tuple[Any, ...]]] = {}
 
     class _OneShotReleaseAuthority:
         __slots__ = ("__weakref__",)
@@ -425,7 +426,10 @@ def _build_release_authority_bridge():
 
         return mint
 
-    def consume(value: object) -> _TrustedInvestigationValidationContext:
+    def consume(
+        value: object,
+        subject: object,
+    ) -> _TrustedInvestigationValidationContext:
         if type(value) is not _OneShotReleaseAuthority:
             raise ValueError(
                 "success requires one-shot authority from the release adapter"
@@ -438,14 +442,36 @@ def _build_release_authority_bridge():
         trusted_context, expected_snapshot = trusted
         if context_snapshot(trusted_context) != expected_snapshot:
             raise ValueError("trusted validation context changed after authority mint")
+        identity = id(subject)
+
+        def forget(_value: object) -> None:
+            released.pop(identity, None)
+
+        released[identity] = (
+            ref(subject, forget),
+            _freeze_trusted_snapshot(subject),
+        )
         return trusted_context
 
-    return take_minter, consume
+    def verify_released(value: object) -> None:
+        if type(value) is not InvestigationRun:
+            raise ValueError("visualization requires a typed InvestigationRun")
+        identity = id(value)
+        registered = released.get(identity)
+        if registered is None or registered[0]() is not value:
+            raise ValueError(
+                "InvestigationRun lacks trusted post-release identity"
+            )
+        if registered[1] != _freeze_trusted_snapshot(value):
+            raise ValueError("InvestigationRun changed after trusted release")
+
+    return take_minter, consume, verify_released
 
 
 (
     _take_release_authority_minter,
     _consume_release_authority,
+    _verify_released_run_seal,
 ) = _build_release_authority_bridge()
 del _build_release_authority_bridge
 
@@ -563,12 +589,13 @@ def _build_trusted_investigation_validation_context_from_artifacts(
 
 def _trusted_release_context(
     info: ValidationInfo,
+    subject: object,
 ) -> _TrustedInvestigationValidationContext:
     context = info.context
     authority = (
         context.get(_VALIDATION_CONTEXT_KEY) if isinstance(context, Mapping) else None
     )
-    return _consume_release_authority(authority)
+    return _consume_release_authority(authority, subject)
 
 
 class InvestigationRunManifest(ManifestEnvelope):
@@ -1148,7 +1175,7 @@ class InvestigationRun(StrictEnvelope):
             raise ValueError("success requires ledger and released projections")
         if self.gate_failures is not None:
             raise ValueError("success cannot include gate failures")
-        trusted_context = _trusted_release_context(info)
+        trusted_context = _trusted_release_context(info, self)
         if trusted_context.manifest_sha256 != _semantic_subject_sha256(self.manifest):
             raise ValueError("run manifest changed after trusted preflight")
         trusted_context.validate_source_provenance(self.provenance)
@@ -1159,6 +1186,7 @@ class InvestigationRun(StrictEnvelope):
             trusted_context,
         )
         return self
+
 
     def _validate_source_revision(self, ledger: CanonicalClaimLedger) -> None:
         for decision in ledger.verification_decisions:

@@ -18,6 +18,7 @@ from src.database.models.models import (
     Task as DBTask,
     User,
 )
+from src.services.investigation.contracts import sha256_canonical_json
 
 logger = logging.getLogger(__name__)
 
@@ -83,33 +84,141 @@ def _as_dict(value: Any) -> Dict[str, Any]:
     return {}
 
 
-def extract_visualization_payload(value: Any) -> Any:
-    """Return the raw visualization graph/timeline payload from wrapper-shaped results."""
+def released_investigation_run_identity(value: Any) -> tuple[str, str, str] | None:
+    """Read routing identity only; this never rehydrates release authority."""
+
     if not isinstance(value, dict):
-        return value
+        return None
+    if (
+        value.get("schema_version") != "investigation-run-v1.0"
+        or value.get("run_status") != "success"
+    ):
+        return None
+    provenance = value.get("provenance")
+    run_id = value.get("run_id")
+    source_revision_id = (
+        provenance.get("source_revision_id")
+        if isinstance(provenance, dict)
+        else None
+    )
+    if not isinstance(run_id, str) or not run_id.strip():
+        return None
+    if not isinstance(source_revision_id, str) or not source_revision_id.strip():
+        return None
+    return run_id, source_revision_id, sha256_canonical_json(value)
+
+
+def extract_visualization_payload(
+    value: Any,
+    *,
+    expected_run_id: str | None = None,
+    expected_source_revision_id: str | None = None,
+    expected_release_subject_sha256: str | None = None,
+) -> Any:
+    """Return an artifact only when it matches the active released run identity."""
+
+    if not isinstance(value, dict):
+        return None
     if "visualization_data" in value:
-        return extract_visualization_payload(value["visualization_data"])
+        return extract_visualization_payload(
+            value["visualization_data"],
+            expected_run_id=expected_run_id,
+            expected_source_revision_id=expected_source_revision_id,
+            expected_release_subject_sha256=expected_release_subject_sha256,
+        )
     if "data" in value and (
         "visualization_type" in value
         or value.get("status") in {"visualization_ready", "visualized", "success"}
         or "task_id" in value
     ):
-        return extract_visualization_payload(value["data"])
+        return extract_visualization_payload(
+            value["data"],
+            expected_run_id=expected_run_id,
+            expected_source_revision_id=expected_source_revision_id,
+            expected_release_subject_sha256=expected_release_subject_sha256,
+        )
     if "result" in value and value.get("status") == "success":
-        return extract_visualization_payload(value["result"])
-    return value
+        return extract_visualization_payload(
+            value["result"],
+            expected_run_id=expected_run_id,
+            expected_source_revision_id=expected_source_revision_id,
+            expected_release_subject_sha256=expected_release_subject_sha256,
+        )
+    if (
+        not expected_run_id
+        or not expected_source_revision_id
+        or not expected_release_subject_sha256
+    ):
+        return None
+    try:
+        from src.services.visualization import InvestigationVisualization
+
+        artifact = InvestigationVisualization.model_validate(value)
+    except (ImportError, TypeError, ValueError):
+        return None
+    if (
+        artifact.run_id != expected_run_id
+        or artifact.source_revision_id != expected_source_revision_id
+        or artifact.release_subject_sha256 != expected_release_subject_sha256
+    ):
+        return None
+    return artifact.model_dump(mode="json", exclude_none=True)
 
 
-def _deep_merge(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
+def extract_active_visualization_payload(result: Any) -> Any:
+    """Project the visualization visible for the current stored release identity."""
+
+    if not isinstance(result, dict):
+        return None
+    identity = released_investigation_run_identity(
+        result.get("released_investigation_run")
+    )
+    if identity is None:
+        return None
+    return extract_visualization_payload(
+        result.get("visualization_data"),
+        expected_run_id=identity[0],
+        expected_source_revision_id=identity[1],
+        expected_release_subject_sha256=identity[2],
+    )
+
+
+def _deep_merge(
+    base: Dict[str, Any],
+    patch: Dict[str, Any],
+    *,
+    bind_visualization: bool = True,
+) -> Dict[str, Any]:
     merged = copy.deepcopy(base)
     for key, value in patch.items():
-        if key == "visualization_data":
-            merged[key] = extract_visualization_payload(value)
+        if key == "has_visualization":
             continue
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
-            merged[key] = _deep_merge(merged[key], value)
+            merged[key] = _deep_merge(
+                merged[key],
+                value,
+                bind_visualization=False,
+            )
         else:
-            merged[key] = value
+            merged[key] = copy.deepcopy(value)
+    if bind_visualization and (
+        "visualization_data" in patch
+        or "released_investigation_run" in patch
+    ):
+        identity = released_investigation_run_identity(
+            merged.get("released_investigation_run")
+        )
+        merged["visualization_data"] = (
+            extract_visualization_payload(
+                merged.get("visualization_data"),
+                expected_run_id=identity[0],
+                expected_source_revision_id=identity[1],
+                expected_release_subject_sha256=identity[2],
+            )
+            if identity is not None
+            else None
+        )
+        merged["has_visualization"] = bool(merged.get("visualization_data"))
     return merged
 
 
@@ -289,7 +398,11 @@ def update_task(task_id: str, data: Dict[str, Any], db: Session | None = None) -
                 if not isinstance(value, dict):
                     logger.error("Task result update must be a dict")
                     return False
-                result_patch = _deep_merge(result_patch, value)
+                result_patch = _deep_merge(
+                    result_patch,
+                    value,
+                    bind_visualization=False,
+                )
             elif hasattr(task, normalized_key):
                 if normalized_key == "status":
                     status_update = value
@@ -297,8 +410,9 @@ def update_task(task_id: str, data: Dict[str, Any], db: Session | None = None) -
                     setattr(task, normalized_key, value)
             elif normalized_key in RESULT_FIELDS:
                 if normalized_key == "visualization_data":
-                    result_patch[normalized_key] = extract_visualization_payload(value)
-                    result_patch["has_visualization"] = bool(result_patch[normalized_key])
+                    result_patch[normalized_key] = copy.deepcopy(value)
+                elif normalized_key == "has_visualization":
+                    continue
                 else:
                     result_patch[normalized_key] = value
             else:

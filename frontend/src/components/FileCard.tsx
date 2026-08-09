@@ -19,12 +19,11 @@ import {
   Delete as DeleteIcon,
   ExpandMore as ExpandMoreIcon,
   Settings as SettingsIcon,
-  Refresh as RefreshIcon,
   CheckCircle as CheckIcon,
-  ContentCopy as ContentCopyIcon,
   Visibility as ViewIcon,
 } from '@mui/icons-material';
 import DateTimeText from './DateTimeText';
+import { validateReleasedVisualizationArtifact } from '../utils/investigationProjection';
 
 interface FileCardProps {
   file: {
@@ -58,12 +57,9 @@ const FileCard: React.FC<FileCardProps> = ({
   onSummarize,
   onVisualize,
   onDelete,
-  onViewTranscript,
 }) => {
-  const [expanded, setExpanded] = useState(false);
   const [transcriptExpanded, setTranscriptExpanded] = useState(false);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
-  const [visualizationExpanded, setVisualizationExpanded] = useState(false);
 
   const [copiedTranscript, setCopiedTranscript] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
@@ -117,7 +113,8 @@ const FileCard: React.FC<FileCardProps> = ({
   const canTranscribe = file.status === 'uploaded' || file.status === 'failed';
   // Fixed: Include 'visualized' status and check for transcript existence
   const canSummarize = ['transcribed', 'summarized', 'visualized'].includes(file.status) || !!file.transcript;
-  const canVisualize = ['transcribed', 'summarized', 'visualized'].includes(file.status) || !!file.transcript;
+  const visualizationValidation = validateReleasedVisualizationArtifact(file.visualization_data);
+  const releasedVisualization = visualizationValidation.ok ? visualizationValidation.value : null;
 
 
   const formatDuration = (seconds?: number) => {
@@ -337,64 +334,50 @@ const FileCard: React.FC<FileCardProps> = ({
             </Box>
           </Box>
 
-          {/* Visualize Action */}
+          {/* Released visualization is view-only; generation belongs to the release pipeline. */}
           <Box>
             <Box display="flex" alignItems="center" gap={1} mb={0.5}>
               <VisualizeIcon sx={{ color: '#9c27b0' }} />
               <Typography variant="body2" fontWeight={600}>
-                Visualize
+                Released analysis
               </Typography>
-              {file.has_visualization && <CheckIcon sx={{ color: '#3f51b5', fontSize: 18 }} />}
+              {releasedVisualization && <CheckIcon sx={{ color: '#3f51b5', fontSize: 18 }} />}
             </Box>
             <Box display="flex" gap={1} ml={4}>
-              {file.status === 'visualizing' ? (
-                <Box display="flex" alignItems="center" gap={1}>
-                  <RefreshIcon sx={{ color: '#673ab7', animation: 'spin 1s linear infinite', '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } } }} />
-                  <Typography variant="caption" color="text.secondary">
-                    Generating visualization...
-                  </Typography>
-                </Box>
-              ) : canVisualize ? (
-                <>
-                  <Button
-                    variant={file.has_visualization ? "outlined" : "contained"}
-                    size="small"
-                    startIcon={file.has_visualization ? <RefreshIcon /> : <VisualizeIcon />}
-                    onClick={onVisualize}
-                    sx={{
-                      bgcolor: file.has_visualization ? 'transparent' : '#9c27b0',
-                      color: file.has_visualization ? '#9c27b0' : '#fff',
-                      borderColor: '#9c27b0',
-                      fontWeight: 700,
-                      borderRadius: '8px',
-                      textTransform: 'none',
-                      '&:hover': {
-                        bgcolor: file.has_visualization ? 'rgba(156, 39, 176, 0.08)' : '#7b1fa2',
-                        borderColor: '#7b1fa2',
-                      },
-                    }}
-                  >
-                    {file.has_visualization ? 'Re-generate' : 'Generate'}
-                  </Button>
-                  {file.has_visualization && (
-                    <Typography variant="caption" color="success.main" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      ✓ Ready
-                    </Typography>
-                  )}
-                </>
+              {releasedVisualization ? (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<ViewIcon />}
+                  onClick={onVisualize}
+                  sx={{
+                    color: '#3f51b5',
+                    borderColor: '#3f51b5',
+                    fontWeight: 700,
+                    borderRadius: '8px',
+                    textTransform: 'none',
+                  }}
+                >
+                  View released visualization
+                </Button>
               ) : (
                 <Typography variant="caption" color="text.secondary">
-                  ⏳ Transcribe first
+                  No release-authorized visualization artifact.
                 </Typography>
               )}
             </Box>
+            {file.visualization_data && !releasedVisualization && (
+              <Typography variant="caption" color="warning.main" display="block" ml={4} mt={0.5}>
+                Stored visualization was withheld because release validation failed.
+              </Typography>
+            )}
           </Box>
         </Box>
 
         <Divider sx={{ my: 2, borderColor: 'rgba(255, 214, 0, 0.3)' }} />
 
         {/* VIEW RESULTS Section - Appears after completion */}
-        {(file.transcript || file.summary) && (
+        {(file.transcript || file.summary || releasedVisualization) && (
           <Box mb={3}>
             <Typography
               variant="subtitle2"
@@ -469,11 +452,11 @@ const FileCard: React.FC<FileCardProps> = ({
                 </Button>
               )}
 
-              {file.has_visualization && (
+              {releasedVisualization && (
                 <Button
                   variant="outlined"
                   startIcon={<ViewIcon />}
-                  onClick={() => setVisualizationExpanded(!visualizationExpanded)}
+                  onClick={onVisualize}
                   sx={{
                     borderColor: '#3f51b5',
                     color: '#3f51b5',
@@ -495,7 +478,7 @@ const FileCard: React.FC<FileCardProps> = ({
                     animationFillMode: 'both',
                   }}
                 >
-                  📈 View Visualization
+                  📈 View Released Visualization
                 </Button>
               )}
             </Box>

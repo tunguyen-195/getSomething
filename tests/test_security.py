@@ -511,61 +511,83 @@ def test_audio_list_derives_summarized_status_from_task(auth_enabled):
     assert item["audio_status"] == "transcribed"
 
 
-def test_visualization_payload_is_unwrapped_across_writers(auth_enabled, monkeypatch):
+def test_legacy_visualization_paths_fail_closed_without_released_run(auth_enabled):
     user_id, username, password = _create_user()
     case_id = _create_case_for_user(user_id)
     task_id = _create_task_for_user(user_id, case_id)
     _create_audio_for_task(user_id, case_id, task_id, status="transcribed")
-    payload = {"nodes": [{"id": "n1"}], "edges": [], "timeline": [], "entity_types": ["person"], "main_events": []}
-    wrapper = {"task_id": task_id, "status": "visualization_ready", "visualization_type": "all", "data": payload}
+    payload = {
+        "nodes": [{"id": "n1"}],
+        "edges": [],
+        "timeline": [],
+        "entity_types": ["person"],
+        "main_events": [],
+    }
+    wrapper = {
+        "task_id": task_id,
+        "status": "visualization_ready",
+        "visualization_type": "all",
+        "data": payload,
+    }
 
-    assert extract_visualization_payload(wrapper) == payload
+    assert extract_visualization_payload(wrapper) is None
     assert update_task(task_id, {"visualization": wrapper})
 
     db = SessionLocal()
     try:
-        assert db.query(Task).filter(Task.id == task_id).first().result["visualization_data"] == payload
+        task_before_routes = db.query(Task).filter(Task.id == task_id).first()
+        assert task_before_routes.result["visualization_data"] is None
+        assert task_before_routes.result["has_visualization"] is False
+        status_before_routes = task_before_routes.status
+        result_before_routes = dict(task_before_routes.result)
     finally:
         db.close()
 
-    class FakeProcessor:
-        def visualize_context(self, transcript: str):
-            return payload
+    from src.services.visualization_service import (
+        VisualizationProjectionError,
+        generate_visualization,
+    )
 
-    monkeypatch.setattr("src.services.visualization_service.OllamaProcessor", lambda: FakeProcessor())
-    from src.services.visualization_service import generate_visualization
-
-    result = generate_visualization(task_id)
-    assert result["visualization_data"] == payload
-
-    monkeypatch.setattr("src.api.endpoints.audio.generate_visualization", lambda *_args, **_kwargs: wrapper)
-    monkeypatch.setattr("src.services.visualization_service.generate_visualization", lambda *_args, **_kwargs: wrapper)
+    with pytest.raises(VisualizationProjectionError, match="InvestigationRun"):
+        generate_visualization(task_id)
+    with pytest.raises(VisualizationProjectionError) as raw_error:
+        generate_visualization(payload)
+    assert raw_error.value.code == "VISUALIZATION_RELEASED_RUN_REQUIRED"
 
     client = _login_client(username, password)
     headers = _csrf_header(client)
+    task_detail = client.get(f"/api/v1/audio/tasks/{task_id}")
+    assert task_detail.status_code == 200, task_detail.text
+    assert task_detail.json()["visualization_data"] is None
+    assert task_detail.json()["has_visualization"] is False
+
     legacy = client.post(
         f"/api/v1/audio/visualize/{task_id}",
         json={"visualization_type": "all"},
         headers=headers,
     )
-    assert legacy.status_code == 200, legacy.text
+    assert legacy.status_code == 409, legacy.text
+    assert legacy.json()["detail"]["code"] == "VISUALIZATION_RELEASED_RUN_REQUIRED"
 
     v2 = client.post(
         f"/api/v1/audio/v2/visualize/{task_id}",
         json={"visualization_type": "all"},
         headers=headers,
     )
-    assert v2.status_code == 200, v2.text
+    assert v2.status_code == 409, v2.text
+    assert v2.json()["detail"]["code"] == "VISUALIZATION_RELEASED_RUN_REQUIRED"
 
     from src.worker.tasks import visualize_task
 
     worker_result = visualize_task.run(task_id, "all")
-    assert worker_result["status"] == "success"
+    assert worker_result["status"] == "error"
+    assert "InvestigationRun" in worker_result["error"]
 
     db = SessionLocal()
     try:
-        stored = db.query(Task).filter(Task.id == task_id).first().result["visualization_data"]
-        assert stored == payload
+        stored_task = db.query(Task).filter(Task.id == task_id).first()
+        assert stored_task.status == status_before_routes
+        assert stored_task.result == result_before_routes
     finally:
         db.close()
 
@@ -589,9 +611,14 @@ def test_task_result_updates_merge_without_dropping_existing_fields():
     case_id = _create_case_for_user(user_id)
     task_id = _create_task_for_user(user_id, case_id)
 
-    assert update_task(task_id, {"transcript": "hello", "segments": [{"start": 0, "end": 1}]})
+    assert update_task(
+        task_id, {"transcript": "hello", "segments": [{"start": 0, "end": 1}]}
+    )
     assert update_task(task_id, {"summary": "short summary"})
-    assert update_task(task_id, {"visualization_data": {"nodes": []}, "has_visualization": True})
+    assert update_task(
+        task_id,
+        {"visualization_data": {"nodes": []}, "has_visualization": True},
+    )
 
     db = SessionLocal()
     try:
@@ -599,8 +626,8 @@ def test_task_result_updates_merge_without_dropping_existing_fields():
         assert result["transcription"] == "hello"
         assert result["summary"] == "short summary"
         assert result["segments"] == [{"start": 0, "end": 1}]
-        assert result["visualization_data"] == {"nodes": []}
-        assert result["has_visualization"] is True
+        assert result["visualization_data"] is None
+        assert result["has_visualization"] is False
     finally:
         db.close()
 

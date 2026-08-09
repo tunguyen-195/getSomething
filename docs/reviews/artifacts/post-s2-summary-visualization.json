@@ -1,0 +1,144 @@
+{
+  "schema_version": "rtk-evidence-v1",
+  "artifact_id": "post-s2-summary-visualization",
+  "observed_at": "2026-08-09T16:36:53.9988867Z",
+  "verdict": "PASS",
+  "verdict_scope": "post-S2 summary projection and visualization authority defect closure",
+  "environment": {
+    "workspace": "E:/research/STT",
+    "branch": "feature/architecture-refactor",
+    "git_head": "fe5fe6d77a962b405d65758e5b5d7f19788520c5",
+    "source_scope": "git_index",
+    "backend_validated_index_tree": "40398d44da15914e18a9b7f94f322434f8f8936e",
+    "frontend_validated_index_tree": "98d1643b6031de97273aebe9852e99bf664bceca",
+    "cached_backend_gate_commit": "db085de9156738bf0621447391a2a47e8e35d251",
+    "cached_frontend_gate_commit": "fd43ec06ad763fe70a6e67dd337c9b258b772a39",
+    "network_used": false,
+    "model_used": false,
+    "database_target_contract": "pytest fixture requires a database name ending in _test"
+  },
+  "requirements": {
+    "key_points_statement_only": true,
+    "duplicate_key_points_removed": true,
+    "rejected_facts_hidden": true,
+    "reasoning_insights_require_release_authority": true,
+    "summary_never_generates_visualization": true,
+    "summary_patch_preserves_visualization_bytes": true,
+    "visualization_requires_authority_sealed_run": true,
+    "visualization_is_deterministic": true,
+    "artifact_binds_run_source_release_subject_and_content_hash": true,
+    "stale_or_standalone_artifacts_hidden": true,
+    "hidden_visualization_status_downgraded": true,
+    "legacy_and_v2_paths_fail_closed_without_state_mutation": true,
+    "frontend_never_posts_or_regenerates_visualization": true
+  },
+  "tests": {
+    "working_tree_backend": {
+      "command": "venv/Scripts/python.exe -m pytest -q tests/test_adaptive_summary_contracts.py tests/test_investigation_release_adapter.py tests/test_investigation_visualization.py tests/test_summary_visualization_separation.py tests/test_local_llm_optimization.py tests/test_security.py",
+      "passed": 240,
+      "failed": 0,
+      "warnings": 13,
+      "duration_seconds": 108.35
+    },
+    "cached_index_backend": {
+      "command": "E:/research/STT/venv/Scripts/python.exe -m pytest -q tests/test_adaptive_summary_contracts.py tests/test_investigation_release_adapter.py tests/test_investigation_visualization.py tests/test_summary_visualization_separation.py tests/test_local_llm_optimization.py tests/test_security.py",
+      "worktree": "output/cached-post-s2-gate-20260809-1631-v2",
+      "passed": 225,
+      "failed": 0,
+      "warnings": 13,
+      "duration_seconds": 104.0
+    },
+    "cached_frontend_semantic": {
+      "command": "node tests/investigationProjection.test.ts",
+      "passed": 9,
+      "failed": 0,
+      "duration_milliseconds": 16.3882,
+      "negative_one_sided_timestamp": true
+    },
+    "cached_frontend_build": {
+      "command": "npm run build",
+      "passed": true,
+      "modules_transformed": 12066,
+      "vite_version": "5.4.19",
+      "bundle_kb": 694.58,
+      "bundle_gzip_kb": 212.66,
+      "duration_seconds": 7.15,
+      "advisory": "one minified chunk remains above 500 kB"
+    }
+  },
+  "runtime_smoke": {
+    "frontend_http_status": 200,
+    "backend_health_http_status": 200,
+    "backend_health_body": {"status": "ok"},
+    "celery_nodes_online": 1,
+    "celery_ping": "pong",
+    "postgres_port_5432_listening": true,
+    "redis_port_6379_listening": true
+  },
+  "browser_evidence": {
+    "path": "output/playwright/ui-viz-final-smoke.png",
+    "bytes": 25257,
+    "sha256": "72eb9e72a763608da0ea4c895243a384a98e45bda930194786a46c950b331d3f",
+    "scope": "login shell render; unauthenticated auth probes intentionally return 401"
+  },
+  "independent_audits": [
+    {
+      "scope": "frontend cached index",
+      "status": "PASS",
+      "blocking_findings": 0,
+      "post_audit_fix": "reject one-sided evidence timestamps"
+    },
+    {
+      "scope": "backend cached index",
+      "status": "PASS",
+      "blocking_findings": 0,
+      "residual": "C1 trusted persistence and rehydration is not implemented"
+    }
+  ],
+  "defense_in_depth_residual": {
+    "severity": "low",
+    "description": "The synchronous frontend guard validates content_hash shape but does not recompute canonical SHA-256. Backend canonical validation remains authoritative before exposure."
+  },
+  "accepted_limitation": {
+    "code": "VISUALIZATION_RELEASED_RUN_REQUIRED",
+    "description": "Stored JSON is not trusted release authority. Visualization POST returns 409 until C1 provides an authority-preserving persistence and rehydration gateway.",
+    "unsafe_workaround_forbidden": "public model_validate rehydration"
+  },
+  "excluded_unstaged_scope": [
+    "S3 summary type and length contract",
+    "S4 synchronous summary fail-closed",
+    "G1 GPU lease quarantine handoff and recovery",
+    "frontend runtime profile and model alias",
+    "case pagination",
+    "diarization and model artifact delta"
+  ],
+  "source_sha256": {
+    "frontend/src/App.tsx": "9d86a233b52bb092a163c0a587a9863b63db11f11d250dd61340c971a2b243b1",
+    "frontend/src/components/AnalysisPanel.tsx": "7d1fc2f338419f41d3c957e617604a084325cf437886f23061d177d2ec5b1f78",
+    "frontend/src/components/FileCard.tsx": "45f88896e19cd62b601a407c94001357f46a2350dbcde954d2e1423646aba543",
+    "frontend/src/components/FileTable.tsx": "86720bba33e036a14ea83da6f450e515986c5c7e4e25936ee95a0e2b1acb0aa9",
+    "frontend/src/components/InvestigationSummaryCard.tsx": "4bc143dcd1e11e483dacca82f82efb823871cf8e5c36edd5c13082f897a4bcfc",
+    "frontend/src/components/TaskList.tsx": "628ef6372de82a95b067434ff323336cff7f82a1e53857745dd0d96fcbfccd60",
+    "frontend/src/components/TaskListItem.tsx": "aa2be20b6383c6ecb019c2a4b963daaa10c9cb9b6d63e89736258639f477fe10",
+    "frontend/src/components/VisualizationDialog.tsx": "27d94df80ae589d23fdcd85428ef8496263e0db61aa54b8a7796187ece4f0a7b",
+    "frontend/src/utils/investigationProjection.ts": "2a047c91af74696de1e17c93221be49decdb8421c7423e96ed74db262ba55d42",
+    "frontend/tests/fixtures/investigationVisualization.json": "7655f0bfa4b26b883a48ba00795adcc70b03293eb8ed46ad3e0ad8eca4976bd0",
+    "frontend/tests/investigationProjection.test.ts": "7333ce660321b5c8a4bd27178359f0b15d3d5d97c512aa24a9516d731bb94fb4",
+    "src/api/endpoints/audio.py": "d90318c66174d03461e57553716f768055dda464af164ab3bb49219208efb8a4",
+    "src/api/endpoints/audio_v2.py": "b3e8fa61e3d101ae37e4e500d5ff924eafdeceefca4f9b6e5f131494c641fed4",
+    "src/services/investigation/run_contracts.py": "1a3bf79c42d210ffb1ec50ca8b499967a1114f6c80e6c6d2d30dfe622c8ed1fe",
+    "src/services/summarization/projections.py": "107d458a1fee5b2cd7e69c141728682b1312c639ff8c2d2ace7b4cfadb1c2432",
+    "src/services/summarization/summary_service_v2.py": "3002e49c2a1187523b4e56ad0a8cd360c725d4dde5c77fcb0a08904d686f90ff",
+    "src/services/task_service.py": "e5c60c9a22d71ae094d108922b23c1997bbb3ea4f1f790b41b4583395683e221",
+    "src/services/visualization/__init__.py": "3c4aef5558eaba8691b83dfd9d416690ecd36e600ee15e9e96afc4df47214178",
+    "src/services/visualization/contracts.py": "527ff87ebb340039c93f30502349eb195accf69277399d9c6098abb18507cc09",
+    "src/services/visualization/projector.py": "db972fd0d84abf5be3fcdfce528c597d18b6a5949ecaf4b7a4045792d4c2c28d",
+    "src/services/visualization_service.py": "bdc730eebf44519d67e771f1f4e7d2b21fc5c9ab6ef1e432fc77295e5ce49566",
+    "src/worker/tasks/summarize_task.py": "352c520a0d1b44faa5ac1b37e6e7dc5bf75062c68b94c861e32a66103121f346",
+    "src/worker/tasks/visualize_task.py": "9f645f454f6fc698ef7e7e754bf484b44633d4afc96c09f32f5eab0ecdac0b73",
+    "tests/test_investigation_release_adapter.py": "dcb5134a7790861fd1cff00f3f29a4a4530f5f15655ec6e0ea0d32e720ec1134",
+    "tests/test_investigation_visualization.py": "87a0fdf30e39f8c606a14d1cfbc6a8eee773836eac575d4d694fd1db6f8c2709",
+    "tests/test_security.py": "d9efe4159efada7313c678472986d7c8a2f6f56acaabb45fbecc5de517f4798a",
+    "tests/test_summary_visualization_separation.py": "99e762d9bf327e8cd3d3dca7ad9b5415bb2fbe81961c9089a4022b35a24ca26e"
+  }
+}

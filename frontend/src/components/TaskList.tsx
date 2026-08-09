@@ -48,6 +48,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import { apiFetch } from '../api/client';
+import { projectInvestigationSummaryContext } from '../utils/investigationProjection';
 
 interface Task {
   id: string;
@@ -67,6 +68,20 @@ interface Case {
   title: string;
   description?: string;
   tasks: Task[];
+}
+
+function sanitizeTaskForDisplay(task: Task): Task {
+  if (!task.result || typeof task.result !== 'object' || Array.isArray(task.result)) {
+    return task;
+  }
+  const result = { ...task.result };
+  const projectedContext = projectInvestigationSummaryContext(result.context_analysis);
+  if (projectedContext) {
+    result.context_analysis = projectedContext;
+  } else {
+    delete result.context_analysis;
+  }
+  return { ...task, result };
 }
 
 // Helper lấy API base URL
@@ -130,18 +145,18 @@ const TaskList = () => {
     }
 
     try {
-      console.log('[fetchTasks] Fetching:', url);
       const res = await apiFetch(url);
-      console.log('[fetchTasks] Response:', res);
       const data = await res.json();
-      console.log('[fetchTasks] Data:', data);
+      const sanitizedTasks = Array.isArray(data)
+        ? data.map((task: Task) => sanitizeTaskForDisplay(task))
+        : [];
       if (filterCaseId) {
           setTasks(prevTasks => {
               const tasksWithoutCurrentCase = prevTasks.filter(task => task.case_id !== filterCaseId);
-              return [...tasksWithoutCurrentCase, ...data];
+              return [...tasksWithoutCurrentCase, ...sanitizedTasks];
           });
       } else {
-          setTasks(data);
+          setTasks(sanitizedTasks);
       }
 
     } catch (e) {

@@ -32,6 +32,7 @@ import {
 } from '@mui/icons-material';
 import DateTimeText from './DateTimeText';
 import { apiDateTimeToEpoch } from '../utils/dateTime';
+import { validateReleasedVisualizationArtifact } from '../utils/investigationProjection';
 
 interface FileData {
     task_id: string;
@@ -41,6 +42,7 @@ interface FileData {
     duration?: string;
     num_speakers?: number;
     has_visualization?: boolean;
+    visualization_data?: unknown;
     transcript?: string;
     summary?: string;
     created_at?: string;
@@ -181,6 +183,8 @@ const FileTable: React.FC<FileTableProps> = ({
                     {sortedFiles.map((file) => {
                         const isExpanded = expandedRows.has(file.task_id);
                         const isProcessing = processingTaskId === file.task_id;
+                        const hasReleasedVisualization = file.has_visualization === true
+                            && validateReleasedVisualizationArtifact(file.visualization_data).ok;
 
                         return (
                             <React.Fragment key={file.task_id}>
@@ -283,11 +287,11 @@ const FileTable: React.FC<FileTableProps> = ({
                                                         size="small"
                                                         startIcon={<VisualizeIcon />}
                                                         onClick={(e) => { e.stopPropagation(); onVisualize(file.task_id); }}
-                                                        disabled={isProcessing || !file.transcript}
+                                                        disabled={isProcessing || !hasReleasedVisualization}
                                                         sx={{ textTransform: 'none' }}
                                                         color="secondary"
                                                     >
-                                                        Visualize
+                                                        View visualization
                                                     </Button>
                                                 </Box>
 

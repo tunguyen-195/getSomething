@@ -9,7 +9,12 @@ from src.core.auth import assert_case_access, assert_task_access, check_rate_lim
 from src.core.config import settings
 from src.database.models.models import AudioFile, User
 from src.core.time import LEGACY_DATABASE_TIMEZONE, utc_isoformat
-from src.services.task_service import effective_task_status, extract_visualization_payload
+from src.services.task_service import (
+    effective_task_status,
+    extract_active_visualization_payload,
+    extract_visualization_payload,
+    released_investigation_run_identity,
+)
 
 router = APIRouter()
 
@@ -165,6 +170,12 @@ async def get_status_v2(
             except:
                 result_data = {}
 
+        if isinstance(result_data, dict):
+            result_data = dict(result_data)
+            visualization_data = extract_active_visualization_payload(result_data)
+            result_data["visualization_data"] = visualization_data
+            result_data["has_visualization"] = bool(visualization_data)
+
         # Get transcript from task result (standardized to "transcription")
         transcript = None
         if isinstance(result_data, dict):
@@ -200,19 +211,29 @@ async def get_status_v2(
             segments = result_data.get("segments", [])
             context_analysis = result_data.get("context_analysis", {})
             visualization_data = result_data.get("visualization_data")
-            has_visualization = result_data.get("has_visualization", False)
+            has_visualization = bool(visualization_data)
             audio_id = result_data.get("audio_id") or (audio.id if audio else None)
             download_url = result_data.get("download_url")
             requested_engine = result_data.get("requested_engine")
             engine_used = result_data.get("engine_used")
             fallback_reason = result_data.get("fallback_reason")
 
+        response_status = task.get("status")
+        if response_status == "visualized" and not has_visualization:
+            response_status = (
+                "summarized"
+                if summary
+                else "transcribed"
+                if transcript
+                else "uploaded"
+            )
+
         # Build comprehensive response
         response = {
             "task_id": task_id,
             "audio_id": audio_id,
             "download_url": download_url,
-            "status": task.get("status"),
+            "status": response_status,
             "transcript": transcript,
             "summary": summary,
             "num_speakers": num_speakers,
@@ -260,8 +281,11 @@ async def visualize_v2(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        from src.services.task_service import get_task, update_task
-        from src.services.visualization_service import generate_visualization
+        from src.services.task_service import get_task
+        from src.services.visualization_service import (
+            VisualizationProjectionError,
+            generate_visualization,
+        )
 
         task = get_task(task_id)
         if not task:
@@ -269,21 +293,40 @@ async def visualize_v2(
         assert_task_access(db, current_user, task_id, "process")
         check_rate_limit(f"rl:process:{current_user.id}", settings.PROCESS_RATE_LIMIT_PER_HOUR, 3600)
 
-        update_task(task_id, {"status": "visualizing"}, db=db)
-        db.commit()
-
-        result = generate_visualization(task_id, visualization_type)
-        payload = extract_visualization_payload(result)
-        update_task(
-            task_id,
-            {"status": "visualized", "visualization_data": payload, "has_visualization": True},
-            db=db,
+        task_result = task.get("result") if isinstance(task.get("result"), dict) else {}
+        released_run = task_result.get("released_investigation_run")
+        active_identity = released_investigation_run_identity(released_run)
+        try:
+            result = generate_visualization(released_run, visualization_type)
+        except VisualizationProjectionError as exc:
+            status_code = 409 if exc.code == "VISUALIZATION_RELEASED_RUN_REQUIRED" else 412
+            raise HTTPException(
+                status_code=status_code,
+                detail={"code": exc.code, "message": str(exc), "task_id": task_id},
+            ) from exc
+        payload = (
+            extract_visualization_payload(
+                result,
+                expected_run_id=active_identity[0],
+                expected_source_revision_id=active_identity[1],
+                expected_release_subject_sha256=active_identity[2],
+            )
+            if active_identity is not None
+            else None
         )
-        db.commit()
+        if payload is None:
+            raise HTTPException(
+                status_code=412,
+                detail={
+                    "code": "VISUALIZATION_ACTIVE_RUN_MISMATCH",
+                    "message": "Visualization does not match the active released run.",
+                    "task_id": task_id,
+                },
+            )
 
         return {
             "task_id": task_id,
-            "status": "visualized",
+            "status": "visualization_ready",
             "visualization_data": payload,
             "has_visualization": True,
             "result": result,
@@ -292,10 +335,4 @@ async def visualize_v2(
         raise
     except Exception as e:
         logger.error(f"[API_V2] Visualize error: {e}", exc_info=True)
-        try:
-            from src.services.task_service import update_task
-            update_task(task_id, {"status": "failed", "error": str(e)}, db=db)
-            db.commit()
-        except Exception:
-            db.rollback()
         raise HTTPException(status_code=500, detail=str(e))

@@ -22,6 +22,7 @@ import AnalysisPanel from './components/AnalysisPanel';
 import DiarizationPanel from './components/DiarizationPanel';
 import DateTimeText from './components/DateTimeText';
 import { apiFetch, getCurrentUser, login, logout } from './api/client';
+import { validateReleasedVisualizationArtifact } from './utils/investigationProjection';
 
 interface Case {
   id: string;
@@ -782,24 +783,22 @@ function App() {
                     setSelectedTaskId(taskId);
                     setSummarizeDialogOpen(true);
                   }}
-                  onVisualize={async (taskId) => {
+                  onVisualize={(taskId) => {
                     const file = files.find(f => f.task_id === taskId);
                     if (!file) return;
-                    try {
-                      setSnackbar({ open: true, message: '🎨 Generating visualization...', severity: 'info' });
-                      const response = await apiFetch(`${API_V2_BASE}/visualize/${taskId}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ visualization_type: 'all' })
+                    const releasedArtifact = validateReleasedVisualizationArtifact(
+                      file.visualization_data
+                    );
+                    if (!file.has_visualization || !releasedArtifact.ok) {
+                      setSnackbar({
+                        open: true,
+                        message: 'Visualization chưa có released artifact để hiển thị.',
+                        severity: 'warning'
                       });
-                      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                      await fetchFiles();
-                      setVisualizeTaskId(taskId);
-                      setVisualizeDialogOpen(true);
-                      setSnackbar({ open: true, message: '✅ Visualization ready!', severity: 'success' });
-                    } catch (error: any) {
-                      setSnackbar({ open: true, message: `❌ Error: ${error.message}`, severity: 'error' });
+                      return;
                     }
+                    setVisualizeTaskId(taskId);
+                    setVisualizeDialogOpen(true);
                   }}
                   onDelete={async (taskId) => {
                     const file = files.find(f => f.task_id === taskId);

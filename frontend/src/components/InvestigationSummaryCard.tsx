@@ -1,26 +1,42 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, Typography, Box, Button, Collapse, Alert, List, ListItem, Checkbox, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Divider, Tabs, Tab, Tooltip, Chip, Avatar, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Snackbar, CardHeader, Grid, ListItemIcon, ListItemText } from '@mui/material';
+import React, { useState } from 'react';
+import { Card, CardContent, Typography, Box, Button, Collapse, Alert, List, ListItem, Checkbox, Divider, Tabs, Tab, Tooltip, Chip, Avatar, CardHeader, Grid, ListItemIcon, ListItemText } from '@mui/material';
 import { Timeline, TimelineItem, TimelineSeparator, TimelineConnector, TimelineContent, TimelineDot } from '@mui/lab';
 import ReactFlow, { Background, Controls, MiniMap } from 'react-flow-renderer';
 import InfoIcon from '@mui/icons-material/Info';
 import SecurityIcon from '@mui/icons-material/Security';
 import EmojiEmotionsIcon from '@mui/icons-material/EmojiEmotions';
 import InsightsIcon from '@mui/icons-material/Insights';
-import { CopyToClipboard } from 'react-copy-to-clipboard';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import EventIcon from '@mui/icons-material/Event';
 import PlaceIcon from '@mui/icons-material/Place';
 import LabelIcon from '@mui/icons-material/Label';
-import { apiFetch } from '../api/client';
 import { formatAnalysisValue, formatSlangDetected } from '../utils/analysisRender';
+import type { InvestigationVerificationStatus } from '../utils/investigationProjection';
+import {
+  selectKeyPoints,
+  selectReleasedInsightStatements,
+} from '../utils/investigationProjection';
 
 // Kiểu dữ liệu cho props
 interface InvestigationSummaryCardProps {
   summary: string | object | null;
   contextAnalysis?: object | string | null;
   taskId?: string;
+}
+
+function verificationPresentation(status: InvestigationVerificationStatus): {
+  checked: boolean;
+  color: 'success' | 'warning' | 'error';
+  label: string;
+} {
+  if (status === 'human_verified') {
+    return { checked: true, color: 'success', label: 'Đã xác minh' };
+  }
+  if (status === 'rejected') {
+    return { checked: false, color: 'error', label: 'Đã bác bỏ' };
+  }
+  return { checked: false, color: 'warning', label: 'Chưa xác minh' };
 }
 
 // Helper: parse JSON nếu có, fallback text, tự động cắt ```json ... ``` hoặc ``` ... ```
@@ -41,71 +57,13 @@ function parseJsonOrText(data: any) {
   return null;
 }
 
-function highlightSummary(text: string) {
-  // Highlight số điện thoại, email, CCCD, tên riêng (giả lập)
-  let t = text.replace(/(0\d{9,10})/g, '<mark title="Số điện thoại">$1</mark>');
-  t = t.replace(/([\w\.-]+@[\w\.-]+)/g, '<mark title="Email">$1</mark>');
-  t = t.replace(/(\b\d{9,12}\b)/g, '<mark title="CCCD/Số giấy tờ">$1</mark>');
-  t = t.replace(/(Quyên|Marriott|Hà Nội)/g, '<mark title="Tên riêng/Địa danh">$1</mark>');
-  return t;
-}
-
-// Sửa lỗi linter: ép kiểu cho CopyToClipboard
-const CopyToClipboardAny = CopyToClipboard as any;
-
-// Helper lấy API base URL
-const API_BASE_URL = typeof window !== 'undefined' && (window as any).API_BASE_URL ? (window as any).API_BASE_URL : '';
-const ANALYZE_ENDPOINT = API_BASE_URL + '/api/v1/summaries/analyze';
-
-// Helper gọi API với model fallback
-async function analyzeSummaryWithFallback(summary: string, taskId?: string) {
-  let res = await apiFetch(ANALYZE_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ summary, task_id: taskId })
-  });
-  let data = await res.json();
-  if (data.context_analysis) return data.context_analysis;
-  throw new Error('Phân tích thất bại');
-}
-
-const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ summary, contextAnalysis, taskId }) => {
+const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ summary, contextAnalysis }) => {
   const [showSensitive, setShowSensitive] = useState(false);
   const [tab, setTab] = useState(0);
   const [copied, setCopied] = useState<string | false>(false);
-  const [analysis, setAnalysis] = useState<any>(contextAnalysis || null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [pendingTab, setPendingTab] = useState<number | null>(null);
-  const [snackbar, setSnackbar] = useState<{open: boolean, message: string, severity: 'success'|'error'}>({open: false, message: '', severity: 'success'});
-
-  // Tự động gọi AI khi lần đầu vào tab visualize mà chưa có contextAnalysis
-  useEffect(() => {
-    if ([1,2,3,4,5].includes(tab) && !analysis && summary) {
-      setLoading(true);
-      setError(null);
-      analyzeSummaryWithFallback(typeof summary === 'string' ? summary : JSON.stringify(summary), taskId)
-        .then(setAnalysis)
-        .catch(e => setError(e.message))
-        .finally(() => setLoading(false));
-    }
-  }, [tab, analysis, summary, taskId]);
-
-  // Đảm bảo tab luôn hợp lệ
-  useEffect(() => {
-    if (tab == null || isNaN(tab) || tab < 0 || tab > 5) setTab(0);
-  }, [tab]);
-
-  // Khi có lỗi backend hoặc context_analysis không hợp lệ, hiển thị lỗi rõ ràng và reset tab về 0
-  useEffect(() => {
-    if (error || (analysis && typeof analysis !== 'object')) {
-      setTab(0);
-    }
-  }, [error, analysis]);
 
   // Parse lại analysis nếu là chuỗi JSON hoặc object có field summary là chuỗi JSON
-  let parsedAnalysis = parseJsonOrText(analysis);
+  let parsedAnalysis = parseJsonOrText(contextAnalysis ?? summary);
   if (parsedAnalysis && typeof parsedAnalysis.summary === 'string') {
     const inner = parseJsonOrText(parsedAnalysis.summary);
     if (inner && typeof inner === 'object') {
@@ -124,7 +82,8 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
       return `${time}${speaker ? ` · ${speaker}` : ''}: “${formatAnalysisValue(item.quote)}”`;
     })
     .join('\n');
-  const summaryText = formatAnalysisValue(parsedAnalysis?.summary);
+  const summaryText = formatAnalysisValue(parsedAnalysis?.summary)
+    || (typeof summary === 'string' ? summary.trim() : '');
   // Mapping lại các trường tổng quan từ parsedAnalysis
   const mappedOverview = {
     title: summaryText || formatAnalysisValue(parsedAnalysis?.context?.topic) || formatAnalysisValue(parsedAnalysis?.context?.purpose),
@@ -138,18 +97,12 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
     ? knowledge.entities
     : (Array.isArray(parsedAnalysis?.entities) ? parsedAnalysis.entities : (Array.isArray(parsedAnalysis?.entities?.people) ? parsedAnalysis.entities.people : []));
   const relationships = Array.isArray(knowledge?.relationships) ? knowledge.relationships : [];
-  const events = Array.isArray(knowledge?.events) ? knowledge.events : [];
-  const sensitive = Array.isArray(parsedAnalysis?.sensitive_info) ? parsedAnalysis.sensitive_info : [];
-  const keypoints = Array.isArray(knowledge?.facts) ? knowledge.facts : [];
-  const actions = Array.isArray(parsedAnalysis?.actions) ? parsedAnalysis.actions : [];
-  const offers = Array.isArray(parsedAnalysis?.offers) ? parsedAnalysis.offers : [];
-  const decisions = Array.isArray(parsedAnalysis?.decisions) ? parsedAnalysis.decisions : [];
+  const keypoints = selectKeyPoints(parsedAnalysis);
   const sentiment = formatAnalysisValue(
     typeof parsedAnalysis?.sentiment === 'string' ? parsedAnalysis.sentiment : parsedAnalysis?.sentiment?.overall,
   );
-  const risk = Array.isArray(knowledge?.hypotheses) ? knowledge.hypotheses : [];
   const notes = knowledge ? '' : formatAnalysisValue(parsedAnalysis?.notes);
-  const insight = Array.isArray(knowledge?.facts) ? knowledge.facts : [];
+  const insight = selectReleasedInsightStatements(parsedAnalysis);
   const slang = formatSlangDetected(parsedAnalysis?.slang_detected);
   const hiddenRelationships = knowledge ? [] : (Array.isArray(parsedAnalysis?.hidden_relationships) ? parsedAnalysis.hidden_relationships : (parsedAnalysis?.hidden_relationships ? [parsedAnalysis.hidden_relationships] : []));
 
@@ -204,41 +157,24 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
     return <EmojiEmotionsIcon color="warning" sx={{ mr: 1 }} />;
   };
 
-  // Helper: insight checklist
-  const insightChecklist = [
-    ...(offers.length ? offers.map((o: any) => ({ label: `Ưu đãi: ${formatAnalysisValue(o.content || o)}`, icon: <InsightsIcon color="primary" /> })) : []),
-    ...(decisions.length ? decisions.map((d: any) => ({ label: `Quyết định: ${formatAnalysisValue(d.content || d)}`, icon: <InfoIcon color="info" /> })) : []),
-    ...(actions.length ? actions.map((a: any) => ({ label: `Hành động: ${formatAnalysisValue(a.content || a)}`, icon: <InfoIcon color="secondary" /> })) : []),
-    ...(sentiment ? [{ label: `Cảm xúc: ${sentiment}`, icon: sentimentIcon(sentiment) }] : []),
-  ];
-
-  const handleTabChange = (_: any, v: number) => {
-    // Nếu chuyển sang tab visualize (1-5) và đã có analysis, hỏi xác nhận
-    if ([1,2,3,4,5].includes(v) && analysis) {
-      setPendingTab(v);
-      setConfirmOpen(true);
-    } else {
-      setTab(v);
-    }
-  };
+  const insightChecklist = insight.map((statement) => ({
+    label: statement,
+    icon: <InsightsIcon color="primary" />,
+  }));
+  const activeTab = tab === 3 && insight.length === 0 ? 0 : tab;
 
   return (
     <Card sx={{ mb: 3, borderRadius: 2, boxShadow: '0 2px 8px #b388ff11', background: '#fff', border: '1px solid #e0e7ef' }}>
       <CardContent>
-        <Tabs value={typeof tab === 'number' && tab >= 0 && tab <= 5 ? tab : 0} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
-          <Tab label="Tổng quan" />
-          <Tab label="Sơ đồ quan hệ" />
-          <Tab label="Timeline" />
-          <Tab label="Insight" />
-          <Tab label="Nhạy cảm" />
-          <Tab label="Cảm xúc" />
+        <Tabs value={activeTab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
+          <Tab value={0} label="Tổng quan" />
+          <Tab value={1} label="Sơ đồ quan hệ" />
+          <Tab value={2} label="Timeline" />
+          {insight.length > 0 && <Tab value={3} label="Insight" />}
+          <Tab value={4} label="Nhạy cảm" />
+          <Tab value={5} label="Cảm xúc" />
         </Tabs>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-        {tab === 0 && (
+        {activeTab === 0 && (
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', background: '#f6fafd', borderRadius: 2, p: 2, mb: 2 }}>
               <Typography variant="subtitle1" fontWeight={500} color="#333" sx={{ flex: 1, lineHeight: 1.7 }}>
@@ -314,35 +250,44 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
               <Box mb={2}>
                 <Typography variant="subtitle1" fontWeight={700}>Các điểm mấu chốt</Typography>
                 <List>
-                  {keypoints.map((kp: any, idx: number) => (
-                    <ListItem key={idx}>
-                      <Checkbox checked disabled />
-                      <Typography>{formatAnalysisValue(kp)}</Typography>
-                    </ListItem>
-                  ))}
+                  {keypoints.map((item, idx) => {
+                    const verification = verificationPresentation(item.verification_status);
+                    return (
+                      <ListItem key={`${item.statement}-${idx}`} sx={{ gap: 1, alignItems: 'flex-start' }}>
+                        <Checkbox checked={verification.checked} disabled />
+                        <Box sx={{ flex: 1 }}>
+                          <Typography>{item.statement}</Typography>
+                          <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
+                            <Tooltip title={item.evidence_ids.length > 0 ? `Evidence: ${item.evidence_ids.join(', ')}` : 'Chưa có evidence reference'}>
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                color={verification.color}
+                                label={verification.label}
+                              />
+                            </Tooltip>
+                            {item.model_generated && (
+                              <Chip size="small" variant="outlined" label="AI trích xuất" />
+                            )}
+                          </Box>
+                        </Box>
+                      </ListItem>
+                    );
+                  })}
                 </List>
               </Box>
             )}
           </Box>
         )}
-        {tab === 1 && (
+        {activeTab === 1 && (
           <Box>
             <Typography variant="h6" color="secondary" fontWeight={700} mb={1}>Sơ đồ quan hệ</Typography>
             <Box sx={{ height: 300, background: '#e3f2fd', borderRadius: 2, mb: 2 }}>
-              {loading ? (
-                <Box display="flex" alignItems="center" justifyContent="center" minHeight={180}>
-                  <CircularProgress />
-                  <Typography ml={2}>Đang phân tích dữ liệu bằng AI...</Typography>
-                </Box>
-              ) : error ? (
-                <Alert severity="error">{error}</Alert>
-              ) : (
-                <ReactFlow nodes={nodes} edges={edges} fitView>
-                  <MiniMap />
-                  <Controls />
-                  <Background />
-                </ReactFlow>
-              )}
+              <ReactFlow nodes={nodes} edges={edges} fitView>
+                <MiniMap />
+                <Controls />
+                <Background />
+              </ReactFlow>
             </Box>
             <Box>
               <Typography variant="subtitle2" fontWeight={700}>Thực thể:</Typography>
@@ -368,7 +313,7 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
             </Box>
           </Box>
         )}
-        {tab === 2 && timelineEvents.length > 0 && (
+        {activeTab === 2 && timelineEvents.length > 0 && (
           <Box>
             <Typography variant="h6" color="secondary" fontWeight={700} mb={1}>Timeline sự kiện</Typography>
             <Timeline position="right">
@@ -387,11 +332,10 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
             </Timeline>
           </Box>
         )}
-        {tab === 3 && (
+        {activeTab === 3 && insight.length > 0 && (
           <Box>
             <Typography variant="h6" color="primary" fontWeight={700} mb={1}>Insight & Checklist</Typography>
             <List>
-              {insightChecklist.length === 0 && <ListItem><Typography>Không có insight nổi bật.</Typography></ListItem>}
               {insightChecklist.map((ins, idx) => (
                 <ListItem key={idx}>
                   <Avatar sx={{ bgcolor: 'white', color: 'primary.main', mr: 1 }}>{ins.icon}</Avatar>
@@ -401,7 +345,7 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
             </List>
           </Box>
         )}
-        {tab === 4 && (
+        {activeTab === 4 && (
           <Box>
             <Button variant="contained" color="error" onClick={() => setShowSensitive(v => !v)} sx={{ mb: 1 }}>
               {showSensitive ? 'Ẩn thông tin nhạy cảm' : 'Hiện thông tin nhạy cảm'}
@@ -437,7 +381,7 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
             </Alert>
           </Box>
         )}
-        {tab === 5 && (
+        {activeTab === 5 && (
           <Box>
             <Typography variant="h6" color="primary" fontWeight={700} mb={2}>Cảm xúc hội thoại</Typography>
             <Box display="flex" alignItems="center" mb={2}>
@@ -446,14 +390,9 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
             </Box>
           </Box>
         )}
-        {/* Cảnh báo risk, notes, slang, hidden_relationships */}
-        {(risk.length > 0 || notes || slang || hiddenRelationships.length > 0) && (
+        {/* Legacy notes remain informational; hypotheses are never promoted to risk. */}
+        {(notes || slang || hiddenRelationships.length > 0) && (
           <Box mb={2}>
-            {risk.length > 0 && (
-              <Alert severity="error" sx={{ mb: 1 }}>
-                <b>Nguy cơ/rủi ro:</b> {risk.map((r: any, idx: number) => <span key={idx}>{formatAnalysisValue(r)}<br/></span>)}
-              </Alert>
-            )}
             {slang && (
               <Alert severity="warning" sx={{ mb: 1 }}>
                 <b>Phát hiện tiếng lóng/mật ngữ:</b> {slang}
@@ -469,63 +408,12 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
             )}
           </Box>
         )}
-        {/* Checklist insight riêng */}
-        {insight.length > 0 && (
-          <Box mb={2}>
-            <Typography variant="h6" color="secondary" fontWeight={700} mb={1}>Insight nghiệp vụ</Typography>
-            <List>
-              {insight.map((ins: any, idx: number) => (
-                <Tooltip key={idx} title="Insight nghiệp vụ, dấu hiệu bất thường, nguy cơ, hành vi nghi vấn, mối liên hệ ẩn..." arrow>
-                  <ListItem>
-                    <Checkbox checked disabled />
-                    <Typography>{formatAnalysisValue(ins)}</Typography>
-                  </ListItem>
-                </Tooltip>
-              ))}
-            </List>
-          </Box>
-        )}
         {/* Nếu dữ liệu trống hoặc không parse được */}
         {!parsedAnalysis && (
           <Box mt={2}>
             <Alert severity="warning">Không có dữ liệu phân tích hoặc dữ liệu trả về không hợp lệ từ backend.</Alert>
           </Box>
         )}
-        {/* Dialog xác nhận visualize lại */}
-        <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
-          <DialogTitle>Xác nhận phân tích lại bằng AI?</DialogTitle>
-          <DialogContent>Bạn đã có dữ liệu phân tích. Bạn có muốn gửi lại summary cho AI để phân tích lại và cập nhật visualize không?</DialogContent>
-          <DialogActions>
-            <Button onClick={() => { setConfirmOpen(false); setTab(pendingTab!); }}>Không, dùng dữ liệu cũ</Button>
-            <Button onClick={async () => {
-              setConfirmOpen(false);
-              setLoading(true);
-              setError(null);
-              try {
-                const result = await analyzeSummaryWithFallback(typeof summary === 'string' ? summary : JSON.stringify(summary), taskId);
-                setAnalysis(result);
-                setSnackbar({open: true, message: 'Phân tích lại thành công!', severity: 'success'});
-                setTab(pendingTab!);
-              } catch (e: any) {
-                setError(e.message);
-                setSnackbar({open: true, message: e.message, severity: 'error'});
-              } finally {
-                setLoading(false);
-              }
-            }} color="primary" variant="contained">Có, phân tích lại</Button>
-          </DialogActions>
-        </Dialog>
-        {/* Thêm nút "Phân tích lại" (Visualize lại) chỉ hiển thị khi đã có analysis và đang ở tab visualize (1-5) */}
-        {[1,2,3,4,5].includes(tab) && analysis && (
-          <Box mb={2} display="flex" justifyContent="flex-end">
-            <Button variant="outlined" color="primary" onClick={() => setConfirmOpen(true)}>
-              Phân tích lại bằng AI
-            </Button>
-          </Box>
-        )}
-        <Snackbar open={snackbar.open} autoHideDuration={3000} onClose={() => setSnackbar({...snackbar, open: false})} anchorOrigin={{vertical:'top',horizontal:'center'}}>
-          <Alert severity={snackbar.severity} sx={{ fontSize: 16 }}>{snackbar.message}</Alert>
-        </Snackbar>
       </CardContent>
     </Card>
   );
