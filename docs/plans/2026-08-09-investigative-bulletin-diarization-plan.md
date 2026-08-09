@@ -58,7 +58,7 @@ No task may expand its allowlist during implementation without first updating it
 |---|---|---|
 | P0A | `tests/conftest.py` | `tests/test_test_database_isolation.py`; `scripts/verify_test_database_isolation.py`; `docs/reviews/artifacts/p0-test-isolation.json` |
 | S1 | `docs/plans/2026-08-09-investigative-bulletin-diarization-plan.md`; `scripts/audit_summary_diarization_readiness.py`; `src/services/summarization/models/context_analysis.py`; `src/services/summarization/models/investigation_knowledge.py`; `src/services/summarization/models/llm_manager.py`; `src/services/summarization/context_service.py`; `src/services/summarization/legacy_context_adapter.py`; `src/services/audio_service.py`; `src/summarization/summarizer.py`; `src/web_interface/app.py` | `scripts/evaluate_context_analysis.py`; `tests/test_summary_diarization_audit_harness.py`; `tests/test_context_analysis.py`; `tests/test_investigation_knowledge.py`; `tests/test_context_eval_harness.py`; `docs/reviews/artifacts/s1-summary-schema.json` |
-| S2 | `src/services/investigation/contracts.py`; `src/services/investigation/run_contracts.py`; `src/services/investigation/narrative_attestation.py`; `src/services/investigation/release_adapter.py`; `src/services/summarization/summary_service_v2.py` | `tests/test_adaptive_summary_contracts.py`; `tests/test_investigation_release_adapter.py`; `tests/test_local_llm_optimization.py`; `docs/reviews/artifacts/s2-narrative-release.json` |
+| S2 | `docs/plans/2026-08-09-investigative-bulletin-diarization-plan.md`; `src/services/investigation/__init__.py`; `src/services/investigation/canonicalization.py`; `src/services/investigation/claim_semantics.py`; `src/services/investigation/contracts.py`; `src/services/investigation/contradictions.py`; `src/services/investigation/narrative_attestation.py`; `src/services/investigation/reasoning_contracts.py`; `src/services/investigation/release_adapter.py`; `src/services/investigation/run_contracts.py`; `src/services/investigation/verification.py`; `src/services/investigation/verification_contracts.py`; `src/services/summarization/summary_service_v2.py` | `scripts/audit_summary_diarization_readiness.py`; `tests/test_adaptive_summary_contracts.py`; `tests/test_investigation_canonicalization.py`; `tests/test_investigation_release_adapter.py`; `tests/test_investigation_verification.py`; `tests/test_local_llm_optimization.py`; `tests/test_summary_diarization_audit_harness.py`; `docs/reviews/artifacts/s2-narrative-release.json` |
 | S3 | `src/services/summarization/contracts.py`; `src/services/summarization/summary_service_v2.py`; `src/api/endpoints/audio_v2.py`; `src/api/endpoints/audio.py`; `src/api/endpoints/summary.py`; `src/worker/tasks/summarize_task.py`; `frontend/src/api/client.ts`; `frontend/src/components/SummarizeDialog.tsx` | `tests/test_summary_request_contract.py`; `tests/test_local_llm_optimization.py`; `docs/reviews/artifacts/s3-summary-request-contract.json` |
 | S4 | `src/api/endpoints/audio_v2.py`; `src/api/endpoints/audio.py`; `src/worker/tasks/summarize_task.py`; `src/services/task_service.py` | `tests/test_summary_fail_closed.py`; `docs/reviews/artifacts/s4-summary-state-transitions.json` |
 | G1 | `src/services/model_runtime/gpu_lease.py`; `src/services/model_runtime/__init__.py`; `src/services/summarization/models/openai_compatible_client.py`; `src/services/summarization/summary_service_v2.py`; `src/services/transcription/transcribe_service_v2.py`; `src/worker/tasks/summarize_task.py`; `src/worker/tasks/transcribe_task.py`; `scripts/recover_gpu_quarantine.py`; `scripts/start_llama_server.ps1`; `docs/runbooks/gpu-quarantine-recovery.md` | `tests/test_model_runtime.py`; `tests/test_openai_compatible_llm.py`; `tests/test_gpu_quarantine_subprocess.py`; `docs/reviews/artifacts/gpu-handoff-live.json` |
@@ -124,31 +124,53 @@ No task may expand its allowlist during implementation without first updating it
 
 **Owned surface**
 
+- `docs/plans/2026-08-09-investigative-bulletin-diarization-plan.md` for the audited dependency-closure allowlist
+- `src/services/investigation/__init__.py`
+- `src/services/investigation/canonicalization.py`
+- `src/services/investigation/claim_semantics.py`
 - `src/services/investigation/contracts.py`
+- `src/services/investigation/contradictions.py`
 - `src/services/investigation/run_contracts.py`
 - `src/services/investigation/narrative_attestation.py` as the T5 narrative-stage authority, not a Transformer T5 model dependency
+- `src/services/investigation/reasoning_contracts.py`
+- `src/services/investigation/release_adapter.py`
+- `src/services/investigation/verification.py`
+- `src/services/investigation/verification_contracts.py`
 - `src/services/summarization/summary_service_v2.py`
-- contract and release tests
+- readiness evidence validator plus contract, canonicalization, verification, and release tests
+
+The initial five-file production allowlist was not a clean-index dependency closure:
+the trusted release adapter replays T4 and therefore imports the canonicalization,
+claim-semantics, contradiction, verification, and verification-contract modules.
+`__init__.py` must also remove the legacy context-builder export, while the reasoning
+contract adds the counterevidence disjointness used by the release validators. These
+paths are included here before staging and require a new independent allowlist audit;
+no GPU, API, worker, frontend, or request-length path is added to S2.
 
 **Implementation**
 
 - Extend `NarrativeSentence` with required `sentence_id`, derived non-empty `evidence_refs`, `content_sha256`, and `semantic_attestation_ref`.
 - Add `narrated_claim_refs` coverage: every released claim appears in narrative; every critical claim appears in overview or a critical-detail sentence.
 - Add typed salience/category metadata needed to gate important and sensitive omission without closing the business ontology.
+- Type each released fact as either a verified source assertion or a corroborated world finding. Current T4 source-only claims use `source_attributed`; deterministic prose must render speaker/time attribution and may never restate the proposition as world truth.
+- Order narrative claims by source time/offset, place up to four critical claims in the overview, and retain the remaining claims without duplication in critical/thematic detail.
 - Reject new names/numbers/exact values not present in referenced claims/evidence.
 - Define `NarrativeAttestationArtifact` with schema version, producer ID, source revision, exact sentence hash, exact claim/evidence hashes, renderer/prompt/model digest, decision, and replay verifier result. The producer is either the deterministic renderer or a pinned verifier executed inside the trusted run context; caller-supplied JSON is never an authority.
 - First safe vertical slice uses a deterministic renderer over released claims to keep one LLM call. An LLM narrative challenger may be added only with atomic sentence re-verification and fail-closed `needs_review`.
+- The sealed projection exposes immutable sentence-to-claim/evidence bindings so API/service consumers do not receive untraceable flat prose.
 - Keep evidence-backed insights factual only when all premise claims are released and the derivation is attested.
 
 **Negative tests**
 
-- Fabricated confession with valid claim ref, hallucinated phone/account/amount/time, released claim omitted from narrative, critical claim omitted from overview/detail, dangling evidence, hypothesis leakage, and duplicate primary theme.
+- Fabricated confession with valid claim ref, exact-source confession/accusation/sensitive transfer attribution, source-attribution-to-world-fact tamper, more-than-four-claim source ordering, hallucinated phone/account/amount/time, released claim omitted from narrative, critical claim omitted from overview/detail, dangling evidence, hypothesis leakage, duplicate primary theme, and untrusted world-finding promotion.
 
 **Gate**
 
 - Factual sentence semantic support and evidence resolution: 100% in contract fixtures.
 - Released-claim narrative coverage: 100%.
 - Critical-claim required placement: 100%.
+- Verified source assertions rendered with explicit attribution: 100%; world-truth promotion from source-only evidence: 0.
+- Corroborated world findings remain unsupported until a trusted cross-source corroboration authority and replay artifact are implemented.
 - Severe hallucination and hypothesis leakage: 0.
 
 **Commit boundary:** one atomic S2 narrative release commit using only the S2 allowlist, followed by an independent S2 audit.

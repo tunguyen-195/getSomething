@@ -62,6 +62,8 @@ PACKAGE_EVIDENCE_REQUIREMENTS = {
             "sentence_semantic_support_100_percent",
             "released_claim_narrative_coverage_100_percent",
             "critical_claim_placement_100_percent",
+            "source_assertion_attribution_100_percent",
+            "world_truth_promotion_zero",
             "severe_hallucination_zero",
             "hypothesis_leakage_zero",
         },

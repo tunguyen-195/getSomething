@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from types import MappingProxyType
 from typing import Any, Literal
+from weakref import WeakKeyDictionary
 
 from pydantic import (
     BaseModel,
@@ -29,6 +30,8 @@ from .contracts import (
     GroundedClaim,
     GroundedRelationship,
     ManifestEnvelope,
+    NarrativeAttestationArtifact,
+    NarrativeClaimClassification,
     NarrativeSynthesis,
     ProjectionEligibility,
     RiskTier,
@@ -43,6 +46,16 @@ from .contracts import (
     sha256_utf8,
 )
 from .evidence_selector import VerifiedEvidenceSelectorArtifact
+from .narrative_attestation import (
+    CANONICAL_THEME_ID,
+    CANONICAL_THEME_TITLE,
+    NARRATIVE_PRODUCER_DIGEST,
+    classify_released_claim,
+    expected_narrative_evidence_refs,
+    expected_narrative_sentence_kind,
+    expected_narrative_sentence_text,
+    narrative_subject_sha256,
+)
 from .reasoning_contracts import (
     EvidenceBackedInsight,
     Hypothesis,
@@ -53,6 +66,37 @@ from .reasoning_contracts import (
 def _validate_sha256(value: str, label: str) -> None:
     if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
         raise ValueError(f"{label} must be a lowercase SHA-256")
+
+
+def _freeze_trusted_snapshot(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return (
+            value.__class__.__qualname__,
+            _freeze_trusted_snapshot(
+                value.model_dump(mode="json", exclude_none=True)
+            ),
+        )
+    if is_dataclass(value) and not isinstance(value, type):
+        return (
+            value.__class__.__qualname__,
+            tuple(
+                (field.name, _freeze_trusted_snapshot(getattr(value, field.name)))
+                for field in fields(value)
+            ),
+        )
+    if isinstance(value, Mapping):
+        return tuple(
+            sorted(
+                (
+                    str(key),
+                    _freeze_trusted_snapshot(item),
+                )
+                for key, item in value.items()
+            )
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_trusted_snapshot(item) for item in value)
+    return value
 
 
 @dataclass(frozen=True)
@@ -182,13 +226,28 @@ def _semantic_subject_sha256(subject: BaseModel) -> str:
     )
 
 
+def _risk_subject_sha256(subject: BaseModel) -> str:
+    """Hash risk-screened semantics without the circular attestation reference."""
+
+    payload = subject.model_dump(mode="json", exclude_none=True)
+    payload.pop("risk_screening_artifact_ref", None)
+    return sha256_canonical_json(
+        {
+            "subject_class": subject.__class__.__name__,
+            "subject": payload,
+        }
+    )
+
+
 def _verification_subject_sha256(
     decision: "VerificationDecision",
     claim: GroundedClaim | None,
+    candidate: "DiscoveryCandidate",
 ) -> str:
     return sha256_canonical_json(
         {
             "verification": decision.model_dump(mode="json", exclude_none=True),
+            "candidate": candidate.model_dump(mode="json", exclude_none=True),
             "canonical_claim_sha256": (
                 _semantic_subject_sha256(claim) if claim is not None else None
             ),
@@ -205,6 +264,7 @@ class _TrustedInvestigationValidationContext:
     verification_eligibility: Mapping[str, _TrustedEligibilityAssessment]
     relationship_eligibility: Mapping[str, _TrustedEligibilityAssessment]
     reasoning_eligibility: Mapping[str, _TrustedEligibilityAssessment]
+    narrative_attestations: Mapping[str, NarrativeAttestationArtifact]
     manifest_sha256: str
     _sealed: bool
     __slots__ = (
@@ -214,6 +274,7 @@ class _TrustedInvestigationValidationContext:
         "verification_eligibility",
         "relationship_eligibility",
         "reasoning_eligibility",
+        "narrative_attestations",
         "manifest_sha256",
         "_sealed",
     )
@@ -227,6 +288,7 @@ class _TrustedInvestigationValidationContext:
         verification_eligibility: Mapping[str, _TrustedEligibilityAssessment],
         relationship_eligibility: Mapping[str, _TrustedEligibilityAssessment],
         reasoning_eligibility: Mapping[str, _TrustedEligibilityAssessment],
+        narrative_attestations: Mapping[str, NarrativeAttestationArtifact],
         manifest_sha256: str,
         _authority: object,
     ) -> None:
@@ -261,6 +323,11 @@ class _TrustedInvestigationValidationContext:
             self,
             "reasoning_eligibility",
             MappingProxyType(dict(reasoning_eligibility)),
+        )
+        object.__setattr__(
+            self,
+            "narrative_attestations",
+            MappingProxyType(dict(narrative_attestations)),
         )
         _validate_sha256(manifest_sha256, "trusted manifest hash")
         object.__setattr__(self, "manifest_sha256", manifest_sha256)
@@ -314,6 +381,75 @@ _TRUSTED_CONTEXT_AUTHORITY = object()
 _VALIDATION_CONTEXT_KEY = "investigation_release_authority"
 
 
+def _build_release_authority_bridge():
+    minter_taken = False
+    minted: WeakKeyDictionary[
+        object,
+        tuple[_TrustedInvestigationValidationContext, tuple[Any, ...]],
+    ] = WeakKeyDictionary()
+
+    class _OneShotReleaseAuthority:
+        __slots__ = ("__weakref__",)
+
+    def context_snapshot(
+        trusted_context: _TrustedInvestigationValidationContext,
+    ) -> tuple[Any, ...]:
+        return (
+            _freeze_trusted_snapshot(trusted_context.selector_attestations),
+            _freeze_trusted_snapshot(trusted_context.relationship_attestations),
+            _freeze_trusted_snapshot(trusted_context.risk_assessments),
+            _freeze_trusted_snapshot(trusted_context.verification_eligibility),
+            _freeze_trusted_snapshot(trusted_context.relationship_eligibility),
+            _freeze_trusted_snapshot(trusted_context.reasoning_eligibility),
+            _freeze_trusted_snapshot(trusted_context.narrative_attestations),
+            trusted_context.manifest_sha256,
+        )
+
+    def take_minter():
+        nonlocal minter_taken
+        if minter_taken:
+            raise RuntimeError("release authority minter is already installed")
+        minter_taken = True
+
+        def mint(
+            trusted_context: _TrustedInvestigationValidationContext,
+        ) -> object:
+            if not isinstance(
+                trusted_context,
+                _TrustedInvestigationValidationContext,
+            ):
+                raise TypeError("release authority requires a trusted context")
+            authority = _OneShotReleaseAuthority()
+            minted[authority] = (trusted_context, context_snapshot(trusted_context))
+            return authority
+
+        return mint
+
+    def consume(value: object) -> _TrustedInvestigationValidationContext:
+        if type(value) is not _OneShotReleaseAuthority:
+            raise ValueError(
+                "success requires one-shot authority from the release adapter"
+            )
+        trusted = minted.pop(value, None)
+        if trusted is None:
+            raise ValueError(
+                "success requires one-shot authority from the release adapter"
+            )
+        trusted_context, expected_snapshot = trusted
+        if context_snapshot(trusted_context) != expected_snapshot:
+            raise ValueError("trusted validation context changed after authority mint")
+        return trusted_context
+
+    return take_minter, consume
+
+
+(
+    _take_release_authority_minter,
+    _consume_release_authority,
+) = _build_release_authority_bridge()
+del _build_release_authority_bridge
+
+
 def _build_trusted_investigation_validation_context(
     *,
     selector_attestations: Mapping[str, _TrustedSelectorAttestation],
@@ -322,6 +458,7 @@ def _build_trusted_investigation_validation_context(
     verification_eligibility: Mapping[str, _TrustedEligibilityAssessment],
     relationship_eligibility: Mapping[str, _TrustedEligibilityAssessment],
     reasoning_eligibility: Mapping[str, _TrustedEligibilityAssessment] | None = None,
+    narrative_attestations: Mapping[str, NarrativeAttestationArtifact] | None = None,
     manifest_sha256: str,
 ) -> _TrustedInvestigationValidationContext:
     """Internal adapter seam for trusted T2 selector and T4 safety registries."""
@@ -333,6 +470,7 @@ def _build_trusted_investigation_validation_context(
         verification_eligibility=verification_eligibility,
         relationship_eligibility=relationship_eligibility,
         reasoning_eligibility=reasoning_eligibility or {},
+        narrative_attestations=narrative_attestations or {},
         manifest_sha256=manifest_sha256,
         _authority=_TRUSTED_CONTEXT_AUTHORITY,
     )
@@ -392,7 +530,7 @@ def _selector_attestations_from_verified_artifacts(
     return attestations
 
 
-def build_trusted_investigation_validation_context_from_artifacts(
+def _build_trusted_investigation_validation_context_from_artifacts(
     *,
     selector_artifacts: Mapping[str, VerifiedEvidenceSelectorArtifact],
     relationship_selector_artifacts: Mapping[str, VerifiedEvidenceSelectorArtifact],
@@ -400,6 +538,7 @@ def build_trusted_investigation_validation_context_from_artifacts(
     verification_eligibility: Mapping[str, _TrustedEligibilityAssessment],
     relationship_eligibility: Mapping[str, _TrustedEligibilityAssessment],
     reasoning_eligibility: Mapping[str, _TrustedEligibilityAssessment] | None = None,
+    narrative_attestations: Mapping[str, NarrativeAttestationArtifact] | None = None,
     manifest_sha256: str,
 ) -> _TrustedInvestigationValidationContext:
     """Build the production T2 trust portion only from replayed artifacts."""
@@ -417,6 +556,7 @@ def build_trusted_investigation_validation_context_from_artifacts(
         verification_eligibility=verification_eligibility,
         relationship_eligibility=relationship_eligibility,
         reasoning_eligibility=reasoning_eligibility,
+        narrative_attestations=narrative_attestations,
         manifest_sha256=manifest_sha256,
     )
 
@@ -428,11 +568,7 @@ def _trusted_release_context(
     authority = (
         context.get(_VALIDATION_CONTEXT_KEY) if isinstance(context, Mapping) else None
     )
-    if not isinstance(authority, _TrustedInvestigationValidationContext):
-        raise ValueError(
-            "success requires trusted T2 selector and T4 risk validation context"
-        )
-    return authority
+    return _consume_release_authority(authority)
 
 
 class InvestigationRunManifest(ManifestEnvelope):
@@ -538,9 +674,12 @@ class VerificationDecision(StrictEnvelope):
                 raise ValueError("projectable decisions require verified evidence")
             if self.eligibility_artifact_ref is None:
                 raise ValueError("projectable decisions require eligibility artifact")
-        if self.projection_eligibility == "factual" and self.disposition != "supported":
+        if self.projection_eligibility in {
+            "source_attributed",
+            "factual",
+        } and self.disposition != "supported":
             raise ValueError(
-                "factual projection eligibility requires supported evidence"
+                "source-attributed or factual eligibility requires supported evidence"
             )
         if (
             self.projection_eligibility == "non_factual"
@@ -562,6 +701,13 @@ class CanonicalClaimLedger(StrictEnvelope):
     insights: list[EvidenceBackedInsight] | None = None
     hypotheses: list[Hypothesis] | None = None
     verification_actions: list[VerificationAction] | None = None
+    attributed_assertion_candidate_refs: list[str] | None = None
+    contradiction_refs: list[str] | None = None
+    contradiction_set_sha256: Sha256Hex | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    contradiction_count: int = Field(default=0, ge=0)
 
     @classmethod
     def _allowed_sparse_empty_paths(cls, value: Any) -> frozenset[tuple[str, ...]]:
@@ -569,6 +715,22 @@ class CanonicalClaimLedger(StrictEnvelope):
 
     @model_validator(mode="after")
     def validate_ledger_graph(self) -> "CanonicalClaimLedger":
+        if self.contradiction_count == 0:
+            if self.contradiction_refs is not None or (
+                self.contradiction_set_sha256 is not None
+            ):
+                raise ValueError(
+                    "empty contradiction state cannot carry refs or a digest"
+                )
+        else:
+            if not self.contradiction_refs or self.contradiction_set_sha256 is None:
+                raise ValueError(
+                    "non-empty contradiction state requires refs and a digest"
+                )
+            if len(self.contradiction_refs) != self.contradiction_count:
+                raise ValueError("contradiction count must match contradiction refs")
+            _ensure_unique(self.contradiction_refs, "contradiction refs")
+
         collections: tuple[tuple[str, list[Any], str], ...] = (
             ("candidate", self.candidates, "candidate_id"),
             ("verification", self.verification_decisions, "verification_id"),
@@ -604,6 +766,28 @@ class CanonicalClaimLedger(StrictEnvelope):
             raise ValueError("each discovery candidate requires exactly one decision")
         if set(decision_candidate_refs) != candidate_ids:
             raise ValueError("every discovery candidate requires exactly one decision")
+        if self.attributed_assertion_candidate_refs:
+            _ensure_unique(
+                self.attributed_assertion_candidate_refs,
+                "attributed assertion candidate refs",
+            )
+            _require_refs(
+                self.attributed_assertion_candidate_refs,
+                candidate_ids,
+                "attributed assertion candidate refs",
+            )
+            decisions_by_candidate = {
+                decision.candidate_ref: decision
+                for decision in self.verification_decisions
+            }
+            for candidate_ref in self.attributed_assertion_candidate_refs:
+                decision = decisions_by_candidate[candidate_ref]
+                if decision.projection_eligibility != "withheld" or (
+                    "factual_modality" not in (decision.failure_codes or [])
+                ):
+                    raise ValueError(
+                        "attributed assertions must remain explicitly withheld"
+                    )
 
         for candidate in self.candidates:
             _require_refs(
@@ -623,6 +807,9 @@ class CanonicalClaimLedger(StrictEnvelope):
                     raise ValueError("candidate cannot use itself as a premise")
 
         claim_by_id = {claim.claim_id: claim for claim in self.claims}
+        candidate_by_id = {
+            candidate.candidate_id: candidate for candidate in self.candidates
+        }
         linked_decisions: dict[str, list[VerificationDecision]] = {}
         for decision in self.verification_decisions:
             if decision.verified_evidence_refs:
@@ -631,11 +818,7 @@ class CanonicalClaimLedger(StrictEnvelope):
                     evidence_ids,
                     "verification evidence refs",
                 )
-                candidate = next(
-                    item
-                    for item in self.candidates
-                    if item.candidate_id == decision.candidate_ref
-                )
+                candidate = candidate_by_id[decision.candidate_ref]
                 if not set(decision.verified_evidence_refs).issubset(
                     candidate.evidence_refs
                 ):
@@ -659,12 +842,22 @@ class CanonicalClaimLedger(StrictEnvelope):
                     raise ValueError(
                         "verification disposition must match the canonical claim"
                     )
-                expected_eligibility = (
-                    "factual"
-                    if claim.epistemic_status == "fact"
-                    and claim.disposition == "supported"
-                    else "non_factual"
-                )
+                if (
+                    claim.claim_type != candidate.claim_type
+                    or claim.statement != candidate.statement
+                    or claim.polarity != candidate.polarity
+                    or claim.epistemic_status != candidate.epistemic_status
+                ):
+                    raise ValueError(
+                        "canonical claim semantics must match every source candidate"
+                    )
+                expected_eligibility = "non_factual"
+                if claim.epistemic_status == "fact" and claim.disposition == "supported":
+                    expected_eligibility = (
+                        "source_attributed"
+                        if claim.factual_scope == "verified_source_assertion"
+                        else "factual"
+                    )
                 if claim.disposition == "unverifiable":
                     expected_eligibility = "withheld"
                 if (
@@ -683,6 +876,17 @@ class CanonicalClaimLedger(StrictEnvelope):
             if not claim.candidate_refs:
                 raise ValueError("canonical claims require source candidate refs")
             _require_refs(claim.candidate_refs, candidate_ids, "claim candidate_refs")
+            for candidate_ref in claim.candidate_refs:
+                candidate = candidate_by_id[candidate_ref]
+                if (
+                    claim.claim_type != candidate.claim_type
+                    or claim.statement != candidate.statement
+                    or claim.polarity != candidate.polarity
+                    or claim.epistemic_status != candidate.epistemic_status
+                ):
+                    raise ValueError(
+                        "merged claims require identical candidate semantics"
+                    )
             if claim.premise_claim_refs:
                 _require_refs(
                     claim.premise_claim_refs,
@@ -800,14 +1004,18 @@ class SummaryProjection(StrictEnvelope):
         "investigation-summary-projection-v1.0"
     ] = SUMMARY_PROJECTION_VERSION
     released_claim_refs: list[str] = Field(min_length=1)
+    narrated_claim_refs: list[str] = Field(min_length=1)
+    claim_classifications: list[NarrativeClaimClassification] = Field(min_length=1)
     insight_refs: list[str] | None = None
     hypothesis_refs: list[str] | None = None
     verification_action_refs: list[str] | None = None
     themes: list[AdaptiveTheme] = Field(min_length=1)
     narrative: NarrativeSynthesis
+    narrative_attestations: list[NarrativeAttestationArtifact] = Field(min_length=1)
 
     @field_validator(
         "released_claim_refs",
+        "narrated_claim_refs",
         "insight_refs",
         "hypothesis_refs",
         "verification_action_refs",
@@ -827,6 +1035,7 @@ class AnalysisProjection(StrictEnvelope):
         "investigation-analysis-projection-v1.0"
     ] = ANALYSIS_PROJECTION_VERSION
     released_claim_refs: list[str] = Field(min_length=1)
+    source_attributed_claim_refs: list[str] | None = None
     fact_claim_refs: list[str] | None = None
     qualified_claim_refs: list[str] | None = None
     insight_refs: list[str] | None = None
@@ -837,6 +1046,7 @@ class AnalysisProjection(StrictEnvelope):
 
     @field_validator(
         "released_claim_refs",
+        "source_attributed_claim_refs",
         "fact_claim_refs",
         "qualified_claim_refs",
         "insight_refs",
@@ -978,6 +1188,9 @@ class InvestigationRun(StrictEnvelope):
             )
 
         claim_by_id = {claim.claim_id: claim for claim in ledger.claims}
+        candidate_by_id = {
+            candidate.candidate_id: candidate for candidate in ledger.candidates
+        }
         concept_by_id = {
             concept.concept_id: concept for concept in ledger.concepts or []
         }
@@ -1028,6 +1241,7 @@ class InvestigationRun(StrictEnvelope):
             if assessment.subject_sha256 != _verification_subject_sha256(
                 decision,
                 claim,
+                candidate_by_id[decision.candidate_ref],
             ):
                 raise ValueError(
                     "verification semantics do not match trusted verifier context"
@@ -1067,6 +1281,16 @@ class InvestigationRun(StrictEnvelope):
                 raise ValueError(
                     "non-factual intelligence requires its dedicated typed contract"
                 )
+            if claim.factual_scope not in {
+                "verified_source_assertion",
+                "corroborated_world_finding",
+            }:
+                raise ValueError("released facts require an explicit factual scope")
+            if claim.factual_scope == "corroborated_world_finding":
+                raise ValueError(
+                    "production corroborated world findings are unsupported "
+                    "without a trusted cross-source corroboration authority"
+                )
             if any(
                 decision.evidence_resolution != "resolved"
                 or decision.source_revision_id != self.provenance.source_revision_id
@@ -1084,15 +1308,16 @@ class InvestigationRun(StrictEnvelope):
                 raise ValueError("released claim evidence must be verifier-attested")
             if not claim.candidate_refs:
                 raise ValueError("released claims must retain source candidate refs")
-            if claim.disposition == "unverifiable":
-                raise ValueError("unverifiable claims cannot be released")
-            if claim.disposition != "supported" and not (
-                claim.requires_human_verification
-            ):
-                raise ValueError("qualified claims require human verification")
+            if claim.disposition != "supported":
+                raise ValueError(
+                    "non-supported claims require a completed review attestation "
+                    "and must remain withheld in this contract version"
+                )
 
             expected_eligibility = (
-                "factual" if claim.disposition == "supported" else "non_factual"
+                "source_attributed"
+                if claim.factual_scope == "verified_source_assertion"
+                else "factual"
             )
             if not all(
                 decision.projection_eligibility == expected_eligibility
@@ -1311,8 +1536,12 @@ class InvestigationRun(StrictEnvelope):
             summary,
             summary_claim_ids,
             claim_by_id,
+            evidence_by_id,
             insight_by_id,
             summary_reasoning_refs,
+            self.provenance,
+            self.manifest,
+            trusted_context,
         )
         self._validate_analysis_projection(analysis, summary_claim_ids, claim_by_id)
         self._validate_relationship_projection(
@@ -1380,7 +1609,7 @@ class InvestigationRun(StrictEnvelope):
             raise ValueError("declared risk tier does not match trusted screening")
         if artifact_ref is None or artifact_ref != assessment.artifact_ref:
             raise ValueError("risk screening artifact does not match trusted context")
-        if assessment.subject_sha256 != _semantic_subject_sha256(subject):
+        if assessment.subject_sha256 != _risk_subject_sha256(subject):
             raise ValueError("risk-screened semantics changed after trusted review")
 
     @staticmethod
@@ -1401,8 +1630,12 @@ class InvestigationRun(StrictEnvelope):
         summary: SummaryProjection,
         released_claim_ids: set[str],
         claim_by_id: dict[str, GroundedClaim],
+        evidence_by_id: dict[str, EvidenceSpan],
         insight_by_id: dict[str, EvidenceBackedInsight],
         reasoning_refs: dict[str, set[str]],
+        provenance: SourceProvenance,
+        manifest: InvestigationRunManifest,
+        trusted_context: _TrustedInvestigationValidationContext,
     ) -> None:
         theme_ids: set[str] = set()
         primary_claim_ids: set[str] = set()
@@ -1451,19 +1684,59 @@ class InvestigationRun(StrictEnvelope):
                 raise ValueError(
                     f"every released {label} requires exactly one primary theme"
                 )
+        if len(summary.themes) != 1 or summary.themes[0].theme_id != CANONICAL_THEME_ID:
+            raise ValueError("released narrative requires the canonical verified-facts theme")
+        if summary.themes[0].title != CANONICAL_THEME_TITLE:
+            raise ValueError("released theme title must be deterministically rendered")
 
-        groups = summary.narrative.thematic_groups
-        if not groups:
-            raise ValueError("released summary requires thematic narrative groups")
+        groups = summary.narrative.thematic_groups or []
         group_theme_refs = [group.theme_ref for group in groups]
         if len(group_theme_refs) != len(set(group_theme_refs)):
             raise ValueError("primary themes cannot have duplicate narrative groups")
-        if set(group_theme_refs) != theme_ids:
+        if groups and set(group_theme_refs) != theme_ids:
             raise ValueError("every primary theme requires one narrative group")
 
-        sentences = list(summary.narrative.overview)
+        overview_sentences = list(summary.narrative.overview)
+        if any(sentence.placement_role != "overview" for sentence in overview_sentences):
+            raise ValueError("overview sentences require overview placement")
+        detail_sentences = []
         for group in groups:
-            sentences.extend(group.sentences)
+            if any(sentence.placement_role == "overview" for sentence in group.sentences):
+                raise ValueError("thematic sentences cannot claim overview placement")
+            detail_sentences.extend(group.sentences)
+        sentences = [*overview_sentences, *detail_sentences]
+        sentence_ids = [sentence.sentence_id for sentence in sentences]
+        if len(sentence_ids) != len(set(sentence_ids)):
+            raise ValueError("released narrative sentence IDs must be unique")
+
+        classification_by_ref = {
+            classification.claim_ref: classification
+            for classification in summary.claim_classifications
+        }
+        if len(classification_by_ref) != len(summary.claim_classifications):
+            raise ValueError("released claim classifications must be unique")
+        if set(classification_by_ref) != released_claim_ids:
+            raise ValueError("claim classifications must cover exact released claims")
+        for claim_ref, classification in classification_by_ref.items():
+            expected = classify_released_claim(claim_by_id[claim_ref])
+            if classification != expected:
+                raise ValueError("released claim classification is not deterministic")
+
+        public_attestation_by_id = {
+            artifact.artifact_id: artifact
+            for artifact in summary.narrative_attestations
+        }
+        if len(public_attestation_by_id) != len(summary.narrative_attestations):
+            raise ValueError("narrative attestation artifact IDs must be unique")
+        sentence_attestation_refs = {
+            sentence.semantic_attestation_ref for sentence in sentences
+        }
+        if set(public_attestation_by_id) != sentence_attestation_refs:
+            raise ValueError("narrative attestations must cover exact released sentences")
+        if set(trusted_context.narrative_attestations) != sentence_attestation_refs:
+            raise ValueError("trusted T5 attestations must cover exact released sentences")
+
+        narrated_claim_refs: set[str] = set()
         for sentence in sentences:
             _require_refs(
                 sentence.claim_refs,
@@ -1476,10 +1749,15 @@ class InvestigationRun(StrictEnvelope):
                 reasoning_refs["insight"],
                 "released narrative insight refs",
             )
-            if sentence.sentence_kind != "factual" and sentence_insight_refs:
-                raise ValueError("evidence-backed insights require factual synthesis")
-            if sentence.sentence_kind != "factual":
-                continue
+            expected_kind = expected_narrative_sentence_kind(
+                claim_refs=sentence.claim_refs,
+                insight_refs=sentence_insight_refs,
+                claim_by_id=claim_by_id,
+            )
+            if sentence.sentence_kind != expected_kind:
+                raise ValueError(
+                    "released deterministic narrative kind conflicts with claim scope"
+                )
             for claim_ref in sentence.claim_refs:
                 claim = claim_by_id[claim_ref]
                 if claim.epistemic_status != "fact" or claim.disposition != "supported":
@@ -1492,6 +1770,95 @@ class InvestigationRun(StrictEnvelope):
                     raise ValueError(
                         "factual insight sentence must map every premise claim"
                     )
+            expected_text = expected_narrative_sentence_text(
+                claim_refs=sentence.claim_refs,
+                insight_refs=sentence_insight_refs,
+                claim_by_id=claim_by_id,
+                evidence_by_id=evidence_by_id,
+                insight_by_id=insight_by_id,
+            )
+            if sentence.text != expected_text:
+                raise ValueError(
+                    "narrative sentence text is not exactly supported by referenced semantics"
+                )
+            expected_evidence_refs = expected_narrative_evidence_refs(
+                claim_refs=sentence.claim_refs,
+                insight_refs=sentence_insight_refs,
+                claim_by_id=claim_by_id,
+                insight_by_id=insight_by_id,
+            )
+            if sentence.evidence_refs != expected_evidence_refs:
+                raise ValueError(
+                    "narrative evidence refs must equal referenced claim and insight evidence"
+                )
+
+            public_artifact = public_attestation_by_id[
+                sentence.semantic_attestation_ref
+            ]
+            trusted_artifact = trusted_context.narrative_attestations.get(
+                sentence.semantic_attestation_ref
+            )
+            if public_artifact != trusted_artifact:
+                raise ValueError("narrative attestation does not match trusted T5 context")
+            if (
+                public_artifact.sentence_id != sentence.sentence_id
+                or public_artifact.sentence_kind != sentence.sentence_kind
+                or public_artifact.placement_role != sentence.placement_role
+                or public_artifact.content_sha256 != sentence.content_sha256
+                or public_artifact.claim_refs != sentence.claim_refs
+                or public_artifact.evidence_refs != sentence.evidence_refs
+                or (public_artifact.insight_refs or []) != sentence_insight_refs
+            ):
+                raise ValueError("narrative sentence does not match its T5 attestation")
+            if (
+                public_artifact.source_revision_id != provenance.source_revision_id
+                or public_artifact.source_provenance_sha256
+                != narrative_subject_sha256(provenance)
+                or public_artifact.generation_manifest_sha256
+                != narrative_subject_sha256(manifest)
+                or public_artifact.producer_digest != NARRATIVE_PRODUCER_DIGEST
+            ):
+                raise ValueError("narrative attestation provenance or producer mismatch")
+            expected_claim_hashes = {
+                ref: narrative_subject_sha256(claim_by_id[ref])
+                for ref in sentence.claim_refs
+            }
+            expected_evidence_hashes = {
+                ref: narrative_subject_sha256(evidence_by_id[ref])
+                for ref in sentence.evidence_refs
+            }
+            expected_insight_hashes = {
+                ref: narrative_subject_sha256(insight_by_id[ref])
+                for ref in sentence_insight_refs
+            }
+            if (
+                public_artifact.claim_sha256 != expected_claim_hashes
+                or public_artifact.evidence_sha256 != expected_evidence_hashes
+                or (public_artifact.insight_sha256 or {}) != expected_insight_hashes
+            ):
+                raise ValueError("narrative attestation semantic hashes mismatch")
+            narrated_claim_refs.update(sentence.claim_refs)
+
+        if narrated_claim_refs != released_claim_ids:
+            raise ValueError("released claim narrative coverage must be 100 percent")
+        if set(summary.narrated_claim_refs) != narrated_claim_refs or (
+            summary.narrated_claim_refs != summary.released_claim_refs
+        ):
+            raise ValueError("narrated_claim_refs must equal exact released claim refs")
+
+        critical_claim_refs = {
+            claim_ref
+            for claim_ref, classification in classification_by_ref.items()
+            if classification.salience == "critical"
+        }
+        critically_placed_refs = {
+            claim_ref
+            for sentence in sentences
+            if sentence.placement_role in {"overview", "critical_detail"}
+            for claim_ref in sentence.claim_refs
+        }
+        if not critical_claim_refs.issubset(critically_placed_refs):
+            raise ValueError("critical claims require overview or critical-detail placement")
 
         narrated_insight_refs = {
             insight_ref
@@ -1510,6 +1877,7 @@ class InvestigationRun(StrictEnvelope):
         claim_by_id: dict[str, GroundedClaim],
     ) -> None:
         buckets: dict[str, list[str]] = {
+            "source_attributed": analysis.source_attributed_claim_refs or [],
             "fact": analysis.fact_claim_refs or [],
             "qualified": analysis.qualified_claim_refs or [],
         }
@@ -1518,17 +1886,30 @@ class InvestigationRun(StrictEnvelope):
             raise ValueError("analysis epistemic buckets cannot overlap")
         if set(bucket_refs) != released_claim_ids:
             raise ValueError("analysis epistemic buckets must cover released claims")
-        for claim_ref in buckets["fact"]:
+        if buckets["qualified"]:
+            raise ValueError(
+                "analysis qualified bucket requires a completed review attestation"
+            )
+        for claim_ref in buckets["source_attributed"]:
             claim = claim_by_id[claim_ref]
-            if claim.epistemic_status != "fact" or claim.disposition != "supported":
-                raise ValueError("analysis fact bucket requires supported facts")
-        for claim_ref in buckets["qualified"]:
-            claim = claim_by_id[claim_ref]
-            if claim.disposition == "supported" or not (
-                claim.requires_human_verification
+            if (
+                claim.epistemic_status != "fact"
+                or claim.disposition != "supported"
+                or claim.factual_scope != "verified_source_assertion"
             ):
                 raise ValueError(
-                    "analysis qualified bucket requires visible human review"
+                    "analysis source-attributed bucket requires supported "
+                    "verified source assertions"
+                )
+        for claim_ref in buckets["fact"]:
+            claim = claim_by_id[claim_ref]
+            if (
+                claim.epistemic_status != "fact"
+                or claim.disposition != "supported"
+                or claim.factual_scope != "corroborated_world_finding"
+            ):
+                raise ValueError(
+                    "analysis fact bucket requires supported corroborated world findings"
                 )
 
     def _validate_relationship_projection(
@@ -1693,26 +2074,20 @@ def build_investigation_run_manifest(
     )
 
 
-def validate_investigation_run(
-    value: Any,
-    *,
-    trusted_context: _TrustedInvestigationValidationContext | None = None,
-) -> InvestigationRun:
-    """Validate a release-safe lifecycle run and all shared projections."""
+def validate_investigation_run(value: Any) -> InvestigationRun:
+    """Validate diagnostic/non-release runs without accepting caller authority.
 
-    context = (
-        {_VALIDATION_CONTEXT_KEY: trusted_context}
-        if trusted_context is not None
-        else None
-    )
+    Successful factual publication must use ``release_investigation_run`` so the
+    T3/T4/source and repository state are replayed inside one trusted boundary.
+    """
+
     if isinstance(value, str):
-        return InvestigationRun.model_validate_json(value, context=context)
+        return InvestigationRun.model_validate_json(value)
     if isinstance(value, InvestigationRun):
         return InvestigationRun.model_validate_json(
-            value.model_dump_json(exclude_none=True),
-            context=context,
+            value.model_dump_json(exclude_none=True)
         )
-    return InvestigationRun.model_validate(value, context=context)
+    return InvestigationRun.model_validate(value)
 
 
 __all__ = [
@@ -1727,9 +2102,15 @@ __all__ = [
     "InvestigationSummaryProjection",
     "SummaryProjection",
     "VerificationDecision",
-    "build_trusted_investigation_validation_context_from_artifacts",
     "build_investigation_run_manifest",
     "investigation_run_json_schema",
     "investigation_run_schema_sha256",
     "validate_investigation_run",
 ]
+
+
+# Complete the release-adapter handshake before a direct run_contracts import
+# returns, closing the import-order window around the one-shot minter.
+from . import release_adapter as _release_adapter  # noqa: E402
+
+del _release_adapter

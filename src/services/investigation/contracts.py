@@ -42,11 +42,20 @@ ANALYSIS_PROJECTION_VERSION: Literal[
 ] = "investigation-analysis-projection-v1.0"
 
 EpistemicKind = Literal["fact", "inference", "hypothesis", "verification_action"]
+FactualScope = Literal[
+    "verified_source_assertion",
+    "corroborated_world_finding",
+]
 VerificationDisposition = Literal[
     "supported", "partially_supported", "contradicted", "unverifiable"
 ]
 EvidenceResolutionStatus = Literal["resolved", "unresolved", "revision_mismatch"]
-ProjectionEligibility = Literal["factual", "non_factual", "withheld"]
+ProjectionEligibility = Literal[
+    "source_attributed",
+    "factual",
+    "non_factual",
+    "withheld",
+]
 RiskTier = Literal["ordinary", "high_risk"]
 DerivationType = Literal[
     "aggregation",
@@ -57,6 +66,19 @@ DerivationType = Literal[
     "constraint_inference",
 ]
 CounterevidenceStatus = Literal["none_found", "present", "not_evaluated"]
+NarrativeCategory = Literal[
+    "person_role",
+    "event_action",
+    "temporal",
+    "location",
+    "money_quantity",
+    "contact",
+    "identifier_object",
+    "exact_value",
+    "general",
+]
+NarrativeSalience = Literal["critical", "supporting"]
+NarrativePlacement = Literal["overview", "critical_detail", "thematic_detail"]
 
 _FILLER_VALUES = {
     "không có thông tin",
@@ -314,6 +336,7 @@ class GroundedClaim(StrictEnvelope):
     ]
     disposition: VerificationDisposition
     epistemic_status: EpistemicKind = "fact"
+    factual_scope: FactualScope = "verified_source_assertion"
     risk_tier: RiskTier | None = None
     risk_screening_artifact_ref: str | None = Field(default=None, min_length=1)
     requires_human_verification: bool = False
@@ -321,6 +344,7 @@ class GroundedClaim(StrictEnvelope):
     concept_refs: list[str] | None = None
     candidate_refs: list[str] | None = None
     premise_claim_refs: list[str] | None = None
+    corroboration_evidence_refs: list[str] | None = None
     attributes: dict[str, JsonValue] | None = None
 
     @field_validator(
@@ -328,6 +352,7 @@ class GroundedClaim(StrictEnvelope):
         "concept_refs",
         "candidate_refs",
         "premise_claim_refs",
+        "corroboration_evidence_refs",
     )
     @classmethod
     def unique_refs(cls, values: list[str] | None) -> list[str] | None:
@@ -337,6 +362,25 @@ class GroundedClaim(StrictEnvelope):
 
     @model_validator(mode="after")
     def protect_high_risk_claims(self) -> "GroundedClaim":
+        if self.factual_scope == "verified_source_assertion" and (
+            self.corroboration_evidence_refs
+        ):
+            raise ValueError(
+                "verified source assertions cannot declare corroboration evidence"
+            )
+        if self.factual_scope == "corroborated_world_finding":
+            if not self.corroboration_evidence_refs:
+                raise ValueError(
+                    "corroborated world findings require independent evidence refs"
+                )
+            if len(self.corroboration_evidence_refs) < 2:
+                raise ValueError(
+                    "corroborated world findings require at least two evidence refs"
+                )
+            if not set(self.corroboration_evidence_refs).issubset(self.evidence_refs):
+                raise ValueError(
+                    "corroboration evidence refs must be included in claim evidence"
+                )
         if self.epistemic_status != "fact" and not self.requires_human_verification:
             raise ValueError("non-factual claims require human verification")
         if self.risk_tier == "high_risk":
@@ -439,18 +483,97 @@ class AdaptiveTheme(StrictEnvelope):
         return _ensure_unique(values, "theme claim_refs")
 
 
-class NarrativeSentence(StrictEnvelope):
-    text: str = Field(min_length=1)
-    sentence_kind: Literal["factual", "uncertainty"] = "factual"
+class NarrativeClaimClassification(StrictEnvelope):
+    claim_ref: str = Field(min_length=1)
+    category: NarrativeCategory
+    salience: NarrativeSalience
+    required_placement: Literal["overview_or_critical_detail", "narrative"]
+
+
+class NarrativeAttestationArtifact(StrictEnvelope):
+    schema_version: Literal["narrative-attestation-v2"] = (
+        "narrative-attestation-v2"
+    )
+    artifact_id: str = Field(pattern=r"^t5attv1:[0-9a-f]{64}$")
+    producer_id: Literal["deterministic-source-attribution-renderer-v2"] = (
+        "deterministic-source-attribution-renderer-v2"
+    )
+    producer_digest: Sha256Hex = Field(pattern=r"^[0-9a-f]{64}$")
+    source_revision_id: str = Field(min_length=1)
+    source_provenance_sha256: Sha256Hex = Field(pattern=r"^[0-9a-f]{64}$")
+    generation_manifest_sha256: Sha256Hex = Field(pattern=r"^[0-9a-f]{64}$")
+    sentence_id: str = Field(min_length=1)
+    sentence_kind: Literal[
+        "source_attributed",
+        "factual",
+        "derived_insight",
+        "uncertainty",
+    ]
+    placement_role: NarrativePlacement
+    content_sha256: Sha256Hex = Field(pattern=r"^[0-9a-f]{64}$")
     claim_refs: list[str] = Field(min_length=1)
+    claim_sha256: dict[str, Sha256Hex] = Field(min_length=1)
+    evidence_refs: list[str] = Field(min_length=1)
+    evidence_sha256: dict[str, Sha256Hex] = Field(min_length=1)
+    insight_refs: list[str] | None = None
+    insight_sha256: dict[str, Sha256Hex] | None = None
+    decision: Literal["supported"] = "supported"
+    replay_verified: Literal[True] = True
+
+    @field_validator("claim_refs", "evidence_refs", "insight_refs")
+    @classmethod
+    def unique_attestation_refs(
+        cls,
+        values: list[str] | None,
+    ) -> list[str] | None:
+        if values is None:
+            return None
+        return _ensure_unique(values, "narrative attestation references")
+
+    @model_validator(mode="after")
+    def validate_attestation_identity(self) -> "NarrativeAttestationArtifact":
+        if set(self.claim_sha256) != set(self.claim_refs):
+            raise ValueError("claim hashes must cover exact narrative claim refs")
+        if set(self.evidence_sha256) != set(self.evidence_refs):
+            raise ValueError("evidence hashes must cover exact narrative evidence refs")
+        if set(self.insight_sha256 or {}) != set(self.insight_refs or []):
+            raise ValueError("insight hashes must cover exact narrative insight refs")
+        payload = self.model_dump(mode="json", exclude_none=True)
+        payload.pop("artifact_id", None)
+        expected = f"t5attv1:{sha256_canonical_json(payload)}"
+        if self.artifact_id != expected:
+            raise ValueError("narrative attestation artifact ID is not canonical")
+        return self
+
+
+class NarrativeSentence(StrictEnvelope):
+    sentence_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    sentence_kind: Literal[
+        "source_attributed",
+        "factual",
+        "derived_insight",
+        "uncertainty",
+    ]
+    placement_role: NarrativePlacement
+    claim_refs: list[str] = Field(min_length=1)
+    evidence_refs: list[str] = Field(min_length=1)
+    content_sha256: Sha256Hex = Field(pattern=r"^[0-9a-f]{64}$")
+    semantic_attestation_ref: str = Field(pattern=r"^t5attv1:[0-9a-f]{64}$")
     insight_refs: list[str] | None = None
 
-    @field_validator("claim_refs", "insight_refs")
+    @field_validator("claim_refs", "evidence_refs", "insight_refs")
     @classmethod
     def unique_claim_refs(cls, values: list[str] | None) -> list[str] | None:
         if values is None:
             return None
         return _ensure_unique(values, "narrative claim_refs")
+
+    @model_validator(mode="after")
+    def validate_content_hash(self) -> "NarrativeSentence":
+        if self.content_sha256 != sha256_utf8(self.text):
+            raise ValueError("narrative content_sha256 must match exact sentence text")
+        return self
 
 
 class ThematicNarrative(StrictEnvelope):
@@ -686,12 +809,19 @@ class AdaptiveSummaryAnalysisContract(StrictEnvelope):
         missing = sorted(set(sentence.claim_refs) - claim_ids)
         if missing:
             raise ValueError(f"dangling narrative claim_refs: {', '.join(missing)}")
-        if sentence.sentence_kind != "factual":
+        if sentence.sentence_kind not in {"factual", "source_attributed"}:
             return
         for claim_ref in sentence.claim_refs:
             claim = claim_by_id[claim_ref]
             if claim.epistemic_status != "fact" or claim.disposition != "supported":
                 raise ValueError("factual narrative requires fact + supported claims")
+            if (
+                sentence.sentence_kind == "source_attributed"
+                and claim.factual_scope != "verified_source_assertion"
+            ):
+                raise ValueError(
+                    "source-attributed narrative requires verified source assertions"
+                )
 
 
 # The evaluator consumes the extraction envelope; released product views are
@@ -812,6 +942,7 @@ __all__ = [  # noqa: F822 - names are provided by the lazy compatibility facade.
     "ConceptMention",
     "DiscoveryCandidate",
     "EvidenceSpan",
+    "FactualScope",
     "GateFailure",
     "GroundedClaim",
     "GroundedRelationship",
@@ -823,6 +954,11 @@ __all__ = [  # noqa: F822 - names are provided by the lazy compatibility facade.
     "InvestigationRun",
     "InvestigationRunManifest",
     "InvestigationSummaryProjection",
+    "NarrativeAttestationArtifact",
+    "NarrativeCategory",
+    "NarrativeClaimClassification",
+    "NarrativePlacement",
+    "NarrativeSalience",
     "NarrativeSentence",
     "NarrativeSynthesis",
     "RunManifest",

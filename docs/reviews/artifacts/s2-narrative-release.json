@@ -1,0 +1,179 @@
+{
+  "schema_version": "rtk-evidence-v1",
+  "artifact_id": "s2-narrative-release",
+  "observed_at": "2026-08-09T14:43:23.3827785Z",
+  "verdict": "PASS",
+  "verdict_scope": "S2 contract-core narrative release only",
+  "exit_code": 0,
+  "command": [
+    "E:/research/STT/venv/Scripts/python.exe",
+    "-m",
+    "pytest",
+    "--noconftest",
+    "-p",
+    "no:cacheprovider",
+    "-q",
+    "tests/test_adaptive_summary_contracts.py",
+    "tests/test_investigation_canonicalization.py",
+    "tests/test_investigation_release_adapter.py",
+    "tests/test_investigation_verification.py",
+    "tests/test_local_llm_optimization.py",
+    "tests/test_summary_diarization_audit_harness.py::test_s2_evidence_requires_attribution_and_world_truth_gates"
+  ],
+  "environment": {
+    "workspace": "E:/research/STT",
+    "snapshot": "git_index",
+    "git_head": "7e8a0afe876ae85de69a74a24a25456e4f4bd70e",
+    "branch": "feature/architecture-refactor",
+    "network_used": false,
+    "model_used": false,
+    "database_fixture_loaded": false,
+    "pytest_conftest_disabled": true
+  },
+  "source_scope": "git_index",
+  "harness_path": "tests/test_investigation_release_adapter.py",
+  "harness_sha256": "11b25e48d3a72e5440595d2c83f894333b7a8dc0d9f79ac43e36f2dc5effba42",
+  "source_sha256": {
+    "docs/plans/2026-08-09-investigative-bulletin-diarization-plan.md": "bf44e8751cc37e3d8b53235682890a17c6f0664e3b7d5f8623281c02e2bcb424",
+    "scripts/audit_summary_diarization_readiness.py": "be5d7174bb335703addc6b051a06bf9fad104214feb623c12b0e08f47188db37",
+    "src/services/investigation/__init__.py": "7a1d8faa299976019cf4ca98533a9d32e3d5a83fa546c92c54fb0ba151b912d8",
+    "src/services/investigation/canonicalization.py": "30d46eb8f2f7ea24765562485f3ad27d955c958a5a56e8fe56590b2b98c3689d",
+    "src/services/investigation/claim_semantics.py": "e7d668bddfa179f8fa743dbfbbb5b509fb020ebb38b2af01e87b01cd0bf5f1ce",
+    "src/services/investigation/contracts.py": "2aac313bcdbaf57d29dc752d75e997db399890ce779d68a1cef6c52cb489875a",
+    "src/services/investigation/contradictions.py": "6bc874761d6a93e2b49301e38545b491976bef7674cc52bc5925b05054e502ea",
+    "src/services/investigation/narrative_attestation.py": "322311cf2297cc18f8ece9b0698c9f991225dd772b1bd10f6d750641bb91eb7b",
+    "src/services/investigation/reasoning_contracts.py": "0aa4fbf447196d1a3fa2899f5b135052ebdc133663ab5f061bf7cc1b9d8e535b",
+    "src/services/investigation/release_adapter.py": "8d1ff3c2702b7b0fdc0a44681c6c0fe6efba461245f02d23611a6810eb794fb4",
+    "src/services/investigation/run_contracts.py": "680cd5f23e2409d18b04e62c063cc289b0468e5da5ef76ae00754c1b95550c3c",
+    "src/services/investigation/verification.py": "56b4a04227a15b5e3986316a72d633cb8e495121324a4132d1979f35040564f9",
+    "src/services/investigation/verification_contracts.py": "e75f770c5d554aa21ac50c6b8cbc7a042cfce22ac34ec9183b4e6f446fe92701",
+    "src/services/summarization/summary_service_v2.py": "92e483a47805de261f153a557f6043e283c9919b17180ab9470bbf2ca4686e79",
+    "tests/test_adaptive_summary_contracts.py": "2ebcddd9285bed4079f87141b324726ec654bf4938f508d2c44ec3d4a226a0b9",
+    "tests/test_investigation_canonicalization.py": "1aacce314cd2778bccb5a0ad7015f4923d0c869515da069c127b9b820bb470ac",
+    "tests/test_investigation_release_adapter.py": "11b25e48d3a72e5440595d2c83f894333b7a8dc0d9f79ac43e36f2dc5effba42",
+    "tests/test_investigation_verification.py": "7ab87c7877c1eb1146178b8eb6b6ebf096cf6b1c599859321b01eeb071ac60c9",
+    "tests/test_local_llm_optimization.py": "d7837718cc23bc3d251f7977edc1425b73e7824f5711aed5b074ba1ea9132acd",
+    "tests/test_summary_diarization_audit_harness.py": "667b0c3ab482de9b059789b433fe9ae407f187d0eb8c9ef93d7c686d291b32cf"
+  },
+  "results": {
+    "exact_index_suite": {
+      "passed": 207,
+      "failed": 0,
+      "warnings": 2,
+      "duration_seconds": 13.58
+    },
+    "focused_release_gate": {
+      "passed": 24,
+      "failed": 0,
+      "duration_seconds": 3.15
+    },
+    "bound_paths_hashed": 20,
+    "bound_paths_missing": 0
+  },
+  "checks": {
+    "sentence_semantic_support_100_percent": true,
+    "released_claim_narrative_coverage_100_percent": true,
+    "critical_claim_placement_100_percent": true,
+    "source_assertion_attribution_100_percent": true,
+    "world_truth_promotion_zero": true,
+    "severe_hallucination_zero": true,
+    "hypothesis_leakage_zero": true
+  },
+  "check_evidence": {
+    "sentence_semantic_support_100_percent": {
+      "enforced_fixtures": 8,
+      "total_fixtures": 8,
+      "nodeids": [
+        "tests/test_investigation_release_adapter.py::test_release_narrative_api_returns_sealed_text_and_provenance_metadata",
+        "tests/test_investigation_release_adapter.py::test_fabricated_confession_with_valid_claim_and_evidence_refs_is_rejected",
+        "tests/test_investigation_release_adapter.py::test_source_attribution_cannot_be_resealed_as_world_fact",
+        "tests/test_investigation_release_adapter.py::test_hallucinated_exact_value_with_valid_refs_is_rejected[phone]",
+        "tests/test_investigation_release_adapter.py::test_hallucinated_exact_value_with_valid_refs_is_rejected[account]",
+        "tests/test_investigation_release_adapter.py::test_hallucinated_exact_value_with_valid_refs_is_rejected[amount]",
+        "tests/test_investigation_release_adapter.py::test_hallucinated_exact_value_with_valid_refs_is_rejected[time]",
+        "tests/test_investigation_release_adapter.py::test_dangling_narrative_evidence_ref_is_rejected"
+      ]
+    },
+    "released_claim_narrative_coverage_100_percent": {
+      "enforced_fixtures": 1,
+      "total_fixtures": 1,
+      "nodeids": [
+        "tests/test_investigation_release_adapter.py::test_released_claim_omission_from_narrative_is_rejected"
+      ]
+    },
+    "critical_claim_placement_100_percent": {
+      "enforced_fixtures": 3,
+      "total_fixtures": 3,
+      "nodeids": [
+        "tests/test_investigation_release_adapter.py::test_general_people_and_object_transfer_facts_receive_critical_placement",
+        "tests/test_investigation_release_adapter.py::test_critical_claim_in_thematic_detail_is_rejected",
+        "tests/test_investigation_release_adapter.py::test_more_than_four_claims_preserve_source_order_and_detail_coverage"
+      ]
+    },
+    "source_assertion_attribution_100_percent": {
+      "attributed_fixtures": 5,
+      "total_fixtures": 5,
+      "nodeids": [
+        "tests/test_investigation_release_adapter.py::test_release_narrative_api_returns_sealed_text_and_provenance_metadata",
+        "tests/test_investigation_release_adapter.py::test_exact_source_sensitive_assertions_are_attributed_not_world_facts[confession]",
+        "tests/test_investigation_release_adapter.py::test_exact_source_sensitive_assertions_are_attributed_not_world_facts[accusation]",
+        "tests/test_investigation_release_adapter.py::test_exact_source_sensitive_assertions_are_attributed_not_world_facts[sensitive-transfer]",
+        "tests/test_investigation_release_adapter.py::test_normalized_source_assertion_quotes_exact_evidence_not_model_statement"
+      ]
+    },
+    "world_truth_promotion_zero": {
+      "released_attacks": 0,
+      "attack_fixtures": 6,
+      "nodeids": [
+        "tests/test_investigation_release_adapter.py::test_source_attribution_cannot_be_resealed_as_world_fact",
+        "tests/test_adaptive_summary_contracts.py::test_production_world_finding_release_requires_external_authority",
+        "tests/test_adaptive_summary_contracts.py::test_corroborated_world_finding_requires_multiple_corroboration_refs",
+        "tests/test_adaptive_summary_contracts.py::test_source_assertion_cannot_be_promoted_to_analysis_fact_bucket",
+        "tests/test_adaptive_summary_contracts.py::test_analysis_epistemic_buckets_require_matching_factual_scope",
+        "tests/test_adaptive_summary_contracts.py::test_analysis_source_and_world_fact_buckets_cannot_overlap"
+      ]
+    },
+    "severe_hallucination_zero": {
+      "released_attacks": 0,
+      "attack_fixtures": 5,
+      "nodeids": [
+        "tests/test_investigation_release_adapter.py::test_fabricated_confession_with_valid_claim_and_evidence_refs_is_rejected",
+        "tests/test_investigation_release_adapter.py::test_hallucinated_exact_value_with_valid_refs_is_rejected[phone]",
+        "tests/test_investigation_release_adapter.py::test_hallucinated_exact_value_with_valid_refs_is_rejected[account]",
+        "tests/test_investigation_release_adapter.py::test_hallucinated_exact_value_with_valid_refs_is_rejected[amount]",
+        "tests/test_investigation_release_adapter.py::test_hallucinated_exact_value_with_valid_refs_is_rejected[time]"
+      ]
+    },
+    "hypothesis_leakage_zero": {
+      "released_attacks": 0,
+      "attack_fixtures": 2,
+      "nodeids": [
+        "tests/test_investigation_release_adapter.py::test_hypothesis_text_or_refs_cannot_leak_into_factual_narrative",
+        "tests/test_adaptive_summary_contracts.py::test_supported_high_risk_hypothesis_cannot_be_factual_narrative"
+      ]
+    }
+  },
+  "release_contract": {
+    "production_reasoning_release": "unsupported",
+    "production_world_finding_release": "unsupported_without_cross_source_authority",
+    "released_claim_scope": "claims already released by trusted T4 verification",
+    "source_or_category_recall_claimed": false,
+    "production_callers_wired": false,
+    "api_or_worker_projection_serialization": false,
+    "reader_facing_sentence_claim_evidence_mapping": true,
+    "same_process_reflective_rce": "outside payload threat model",
+    "analysis_source_assertion_bucket": "source_attributed_claim_refs",
+    "analysis_world_fact_bucket": "corroborated_world_finding_only"
+  },
+  "dependency_boundary": {
+    "readiness_nodeid_only": "tests/test_summary_diarization_audit_harness.py::test_s2_evidence_requires_attribution_and_world_truth_gates",
+    "reason": "Other tests in that module exercise uncommitted G1/F1a model-runtime dependencies outside the S2 exact-index snapshot."
+  },
+  "residual_uncertainty": [
+    "S2 does not prove that whole-audio discovery found every important person, object, event, time, location, amount, phone, account, or plate.",
+    "Current API and Celery callers do not yet mint or pass a trusted released narrative, so this package is not a reader-visible product improvement by itself.",
+    "The sealed projection is process-local; broker and database reconstruction remain unimplemented.",
+    "Production T4 reasoning attestations and corroborated world findings are unsupported and fail closed.",
+    "Reader-facing Summary and Visualization still require a separate projection/UX package to remove duplicated technical fact metadata."
+  ]
+}

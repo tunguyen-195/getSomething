@@ -46,6 +46,13 @@ def test_plan_and_validator_package_sets_match_exactly() -> None:
         assert requirement["artifact"] in allowlists[package]
 
 
+def test_s2_evidence_requires_attribution_and_world_truth_gates() -> None:
+    assert {
+        "source_assertion_attribution_100_percent",
+        "world_truth_promotion_zero",
+    }.issubset(PACKAGE_EVIDENCE_REQUIREMENTS["s2"]["checks"])
+
+
 def test_readiness_source_map_covers_previously_missing_allowlist_paths() -> None:
     hashes = _source_hashes(CANONICAL_ROOT)
 

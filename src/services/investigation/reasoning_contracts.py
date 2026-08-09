@@ -54,6 +54,10 @@ class EvidenceBackedInsight(StrictEnvelope):
             raise ValueError("present counterevidence requires claim refs")
         if self.counterevidence_status == "none_found" and has_counterevidence:
             raise ValueError("none_found counterevidence cannot include claim refs")
+        if set(self.premise_claim_refs) & set(self.counterevidence_claim_refs or []):
+            raise ValueError(
+                "insight premise and counterevidence refs must be disjoint"
+            )
         if self.risk_tier == "high_risk":
             raise ValueError("high-risk reasoning must remain a hypothesis")
         return self
@@ -99,6 +103,10 @@ class Hypothesis(StrictEnvelope):
             raise ValueError("present counterevidence requires claim refs")
         if self.counterevidence_status == "none_found" and has_counterevidence:
             raise ValueError("none_found counterevidence cannot include claim refs")
+        if set(self.premise_claim_refs) & set(self.counterevidence_claim_refs or []):
+            raise ValueError(
+                "hypothesis premise and counterevidence refs must be disjoint"
+            )
         return self
 
 

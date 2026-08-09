@@ -3,10 +3,13 @@ import hashlib
 import json
 import subprocess
 import sys
+from unittest import mock
 
 import pytest
 from pydantic import ValidationError
 
+import src.services.investigation as investigation
+import src.services.investigation.run_contracts as run_contracts
 from src.services.investigation.contracts import (
     ADAPTIVE_CONTRACT_VERSION,
     ADAPTIVE_DISCOVERY_PROMPT_VERSION,
@@ -16,7 +19,9 @@ from src.services.investigation.contracts import (
     AdaptiveSummaryAnalysisContract,
     AdaptiveSummaryContract,
     AnalysisProjection,
+    DiscoveryCandidate,
     EvidenceBackedInsight,
+    EvidenceSpan,
     GroundedClaim,
     GroundedRelationship,
     Hypothesis,
@@ -24,6 +29,7 @@ from src.services.investigation.contracts import (
     InvestigationRun,
     InvestigationRunManifest,
     InvestigationSummaryProjection,
+    NarrativeAttestationArtifact,
     ProjectionEligibility,
     RiskTier,
     RunManifest,
@@ -41,7 +47,6 @@ from src.services.investigation.contracts import (
     sanitize_sparse_payload,
     sha256_canonical_json,
     sha256_utf8,
-    validate_investigation_run,
 )
 from src.services.investigation.run_contracts import (
     _TrustedEvidenceFingerprint,
@@ -49,13 +54,67 @@ from src.services.investigation.run_contracts import (
     _TrustedRiskAssessment,
     _TrustedSelectorAttestation,
     _build_trusted_investigation_validation_context,
+    _risk_subject_sha256,
     _semantic_subject_sha256,
     _verification_subject_sha256,
+)
+from src.services.investigation.narrative_attestation import (
+    NarrativeReleaseBundle,
+    build_deterministic_narrative_release,
 )
 
 
 def _hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def test_legacy_context_builder_is_not_a_public_investigation_export():
+    legacy_name = "build_trusted_investigation_validation_context_from_artifacts"
+
+    assert legacy_name not in investigation.__all__
+    assert legacy_name not in dir(investigation)
+
+
+def test_insight_premise_cannot_also_be_counterevidence():
+    with pytest.raises(
+        ValidationError,
+        match="insight premise and counterevidence refs must be disjoint",
+    ):
+        EvidenceBackedInsight(
+            insight_id="insight-1",
+            statement="Hai nguồn mô tả cùng một giao dịch.",
+            derivation_type="aggregation",
+            premise_claim_refs=["claim-1"],
+            evidence_refs=["evidence-1"],
+            counterevidence_status="present",
+            counterevidence_claim_refs=["claim-1"],
+            risk_tier="ordinary",
+            risk_screening_artifact_ref="risk-1",
+            projection_eligibility="factual",
+            eligibility_artifact_ref="eligibility-1",
+        )
+
+
+def test_hypothesis_premise_cannot_also_be_counterevidence():
+    with pytest.raises(
+        ValidationError,
+        match="hypothesis premise and counterevidence refs must be disjoint",
+    ):
+        Hypothesis(
+            hypothesis_id="hypothesis-1",
+            statement="Hai người có thể đang phối hợp.",
+            premise_claim_refs=["claim-1"],
+            evidence_refs=["evidence-1"],
+            alternative_explanations=["Hai sự kiện có thể chỉ trùng thời điểm."],
+            counterevidence_status="present",
+            counterevidence_claim_refs=["claim-1"],
+            uncertainty_reason="Chưa xác minh quan hệ giữa hai người.",
+            risk_tier="high_risk",
+            risk_screening_artifact_ref="risk-1",
+            projection_eligibility="non_factual",
+            eligibility_artifact_ref="eligibility-1",
+            requires_human_verification=True,
+        )
 
 
 _FIXTURE_QUOTE = "Người nói phủ nhận việc đã chuyển khoản."
@@ -89,6 +148,10 @@ def _trusted_context(
         claim["claim_id"]: GroundedClaim.model_validate(claim)
         for claim in ledger.get("claims", [])
     }
+    candidate_models = {
+        candidate["candidate_id"]: DiscoveryCandidate.model_validate(candidate)
+        for candidate in ledger.get("candidates", [])
+    }
     decision_models = {
         decision["verification_id"]: VerificationDecision.model_validate(decision)
         for decision in ledger.get("verification_decisions", [])
@@ -109,6 +172,7 @@ def _trusted_context(
             subject_sha256=_verification_subject_sha256(
                 decision_model,
                 claim_model,
+                candidate_models[decision_model.candidate_ref],
             ),
         )
         if decision_model.evidence_resolution != "resolved":
@@ -175,7 +239,7 @@ def _trusted_context(
                 getattr(subject_model, "risk_tier") or "ordinary",
             ),
             artifact_ref=artifact_ref or f"risk-screening-{subject_ref}",
-            subject_sha256=_semantic_subject_sha256(subject_model),
+            subject_sha256=_risk_subject_sha256(subject_model),
         )
 
     reasoning_eligibility_overrides = reasoning_eligibility_overrides or {}
@@ -198,6 +262,16 @@ def _trusted_context(
         verification_eligibility=verification_eligibility,
         relationship_eligibility=relationship_eligibility,
         reasoning_eligibility=reasoning_eligibility,
+        narrative_attestations={
+            artifact["artifact_id"]: NarrativeAttestationArtifact.model_validate(
+                artifact
+            )
+            for artifact in (
+                payload.get("projections", {})
+                .get("summary", {})
+                .get("narrative_attestations", [])
+            )
+        },
         manifest_sha256=_semantic_subject_sha256(
             InvestigationRunManifest.model_validate(payload["manifest"])
         ),
@@ -205,10 +279,13 @@ def _trusted_context(
 
 
 def _validate_run(payload: dict, *, trusted_context=None) -> InvestigationRun:
-    return validate_investigation_run(
-        payload,
-        trusted_context=trusted_context or _trusted_context(payload),
-    )
+    context = trusted_context or _trusted_context(payload)
+    with mock.patch.object(
+        run_contracts,
+        "_trusted_release_context",
+        return_value=context,
+    ):
+        return InvestigationRun.model_validate(payload)
 
 
 def _manifest(
@@ -233,7 +310,7 @@ def _manifest(
 def _base_payload() -> dict:
     quote = _FIXTURE_QUOTE
     source = _FIXTURE_SOURCE
-    return {
+    payload = {
         "schema_version": ADAPTIVE_CONTRACT_VERSION,
         "run_status": "success",
         "claims": [
@@ -285,33 +362,6 @@ def _base_payload() -> dict:
                 "evidence_refs": ["ev-1"],
             }
         ],
-        "themes": [
-            {
-                "theme_id": "thm-1",
-                "title": "Chủ đề được khám phá",
-                "claim_refs": ["clm-1"],
-            }
-        ],
-        "narrative": {
-            "overview": [
-                {
-                    "text": "Nguồn ghi nhận một lời phủ nhận.",
-                    "sentence_kind": "factual",
-                    "claim_refs": ["clm-1"],
-                }
-            ],
-            "thematic_groups": [
-                {
-                    "theme_ref": "thm-1",
-                    "sentences": [
-                        {
-                            "text": "Chi tiết được giữ trong một primary theme.",
-                            "claim_refs": ["clm-1"],
-                        }
-                    ],
-                }
-            ],
-        },
         "provenance": {
             "source_revision_id": "src-1",
             "raw_transcript_sha256": _hash(source),
@@ -326,6 +376,17 @@ def _base_payload() -> dict:
         },
         "manifest": _manifest(),
     }
+    release = build_deterministic_narrative_release(
+        released_claims=[GroundedClaim.model_validate(payload["claims"][0])],
+        evidence=[EvidenceSpan.model_validate(payload["evidence"][0])],
+        source_provenance=payload["provenance"],
+        generation_manifest=payload["manifest"],
+    )
+    payload["themes"] = release.model_dump(mode="json", exclude_none=True)["themes"]
+    payload["narrative"] = release.model_dump(mode="json", exclude_none=True)[
+        "narrative"
+    ]
+    return payload
 
 
 def _no_claims_payload() -> dict:
@@ -384,6 +445,14 @@ def _investigation_run_payload() -> dict:
         projection_eligibility="factual",
         eligibility_artifact_ref="eligibility-rel-1",
     )
+    manifest = _investigation_run_manifest()
+    provenance = copy.deepcopy(extraction["provenance"])
+    narrative_release = build_deterministic_narrative_release(
+        released_claims=[GroundedClaim.model_validate(claim)],
+        evidence=[EvidenceSpan.model_validate(item) for item in extraction["evidence"]],
+        source_provenance=provenance,
+        generation_manifest=manifest,
+    )
     return {
         "schema_version": INVESTIGATION_RUN_VERSION,
         "run_id": "run-1",
@@ -411,7 +480,7 @@ def _investigation_run_payload() -> dict:
                     "resolution_artifact_ref": "selector-artifact-ver-1",
                     "verified_evidence_refs": ["ev-1"],
                     "canonical_claim_ref": "clm-1",
-                    "projection_eligibility": "factual",
+                    "projection_eligibility": "source_attributed",
                     "eligibility_artifact_ref": "eligibility-ver-1",
                 }
             ],
@@ -421,20 +490,16 @@ def _investigation_run_payload() -> dict:
             "relationships": [relationship],
         },
         "projections": {
-            "summary": {
-                "released_claim_refs": ["clm-1"],
-                "themes": copy.deepcopy(extraction["themes"]),
-                "narrative": copy.deepcopy(extraction["narrative"]),
-            },
+            "summary": narrative_release.model_dump(mode="json", exclude_none=True),
             "analysis": {
                 "released_claim_refs": ["clm-1"],
-                "fact_claim_refs": ["clm-1"],
+                "source_attributed_claim_refs": ["clm-1"],
                 "relationship_refs": ["rel-1"],
             },
         },
-        "provenance": copy.deepcopy(extraction["provenance"]),
+        "provenance": provenance,
         "safety": copy.deepcopy(extraction["safety"]),
-        "manifest": _investigation_run_manifest(),
+        "manifest": manifest,
     }
 
 
@@ -512,7 +577,7 @@ def _add_released_fact_without_theme(payload: dict) -> None:
             "resolution_artifact_ref": "selector-artifact-ver-2",
             "verified_evidence_refs": ["ev-1"],
             "canonical_claim_ref": "clm-2",
-            "projection_eligibility": "factual",
+            "projection_eligibility": "source_attributed",
             "eligibility_artifact_ref": "eligibility-ver-2",
         }
     )
@@ -532,7 +597,39 @@ def _add_released_fact_without_theme(payload: dict) -> None:
     projections = payload["projections"]
     projections["summary"]["released_claim_refs"].append("clm-2")
     projections["analysis"]["released_claim_refs"].append("clm-2")
-    projections["analysis"]["fact_claim_refs"].append("clm-2")
+    projections["analysis"]["source_attributed_claim_refs"].append("clm-2")
+
+
+def _refresh_narrative_release(payload: dict) -> NarrativeReleaseBundle:
+    ledger = payload["ledger"]
+    summary = payload["projections"]["summary"]
+    preserved = {
+        key: copy.deepcopy(summary[key])
+        for key in ("hypothesis_refs", "verification_action_refs")
+        if key in summary
+    }
+    release = build_deterministic_narrative_release(
+        released_claims=[
+            GroundedClaim.model_validate(claim)
+            for claim in ledger["claims"]
+            if claim["claim_id"] in summary["released_claim_refs"]
+        ],
+        evidence=[EvidenceSpan.model_validate(item) for item in ledger["evidence"]],
+        source_provenance=payload["provenance"],
+        generation_manifest=payload["manifest"],
+        released_insights=[
+            EvidenceBackedInsight.model_validate(insight)
+            for insight in ledger.get("insights", [])
+            if insight["insight_id"] in summary.get("insight_refs", [])
+        ],
+    )
+    summary.clear()
+    summary.update(release.model_dump(mode="json", exclude_none=True))
+    summary.update(preserved)
+    for key in ("hypothesis_refs", "verification_action_refs"):
+        if key in preserved:
+            summary["themes"][0][key] = copy.deepcopy(preserved[key])
+    return release
 
 
 def _add_released_insight(payload: dict) -> None:
@@ -554,8 +651,7 @@ def _add_released_insight(payload: dict) -> None:
     ]
     summary = payload["projections"]["summary"]
     summary["insight_refs"] = ["ins-1"]
-    summary["themes"][0]["insight_refs"] = ["ins-1"]
-    summary["narrative"]["overview"][0]["insight_refs"] = ["ins-1"]
+    _refresh_narrative_release(payload)
     analysis = payload["projections"]["analysis"]
     analysis["insight_refs"] = ["ins-1"]
 
@@ -782,6 +878,55 @@ def test_unsupported_high_risk_fact_is_rejected():
         AdaptiveSummaryAnalysisContract.model_validate(payload)
 
 
+def test_corroborated_world_finding_requires_multiple_corroboration_refs():
+    claim = copy.deepcopy(_base_payload()["claims"][0])
+    claim.update(
+        factual_scope="corroborated_world_finding",
+        corroboration_evidence_refs=["ev-1"],
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="corroborated world findings require at least two evidence refs",
+    ):
+        GroundedClaim.model_validate(claim)
+
+
+def test_production_world_finding_release_requires_external_authority():
+    payload = _investigation_run_payload()
+    ledger = payload["ledger"]
+    second_evidence = copy.deepcopy(ledger["evidence"][0])
+    second_quote = "Nguồn thứ hai xác nhận cùng một sự kiện."
+    second_evidence.update(
+        evidence_id="ev-2",
+        segment_id="seg-2",
+        quote_exact=second_quote,
+        raw_char_start=100,
+        raw_char_end=100 + len(second_quote),
+        start_seconds=3.0,
+        end_seconds=5.0,
+        quote_sha256=_hash(second_quote),
+        source_sha256=_hash(second_quote),
+    )
+    ledger["evidence"].append(second_evidence)
+    claim = ledger["claims"][0]
+    claim.update(
+        factual_scope="corroborated_world_finding",
+        evidence_refs=["ev-1", "ev-2"],
+        corroboration_evidence_refs=["ev-1", "ev-2"],
+    )
+    ledger["candidates"][0]["evidence_refs"] = ["ev-1", "ev-2"]
+    decision = ledger["verification_decisions"][0]
+    decision["verified_evidence_refs"] = ["ev-1", "ev-2"]
+    decision["projection_eligibility"] = "factual"
+
+    with pytest.raises(
+        ValidationError,
+        match="production corroborated world findings are unsupported",
+    ):
+        _validate_run(payload)
+
+
 def test_supported_high_risk_hypothesis_cannot_be_factual_narrative():
     payload = _base_payload()
     claim = payload["claims"][0]
@@ -798,9 +943,6 @@ def test_supported_high_risk_hypothesis_cannot_be_factual_narrative():
         AdaptiveSummaryAnalysisContract.model_validate(payload)
 
     payload["narrative"]["overview"][0]["sentence_kind"] = "uncertainty"
-    payload["narrative"]["thematic_groups"][0]["sentences"][0][
-        "sentence_kind"
-    ] = "uncertainty"
     result = AdaptiveSummaryAnalysisContract.model_validate(payload)
     assert result.claims[0].requires_human_verification is True
 
@@ -822,11 +964,11 @@ def test_success_cannot_validate_without_internal_release_context():
 
     with pytest.raises(
         ValidationError,
-        match="success requires trusted T2 selector and T4 risk validation context",
+        match="success requires one-shot authority from the release adapter",
     ):
         InvestigationRun.model_validate(payload)
 
-    with pytest.raises(ValidationError, match="success requires trusted"):
+    with pytest.raises(ValidationError, match="one-shot authority"):
         InvestigationRun.model_validate(
             payload,
             context={"investigation_release_authority": payload},
@@ -865,6 +1007,9 @@ def test_trusted_context_is_bound_to_claim_and_relationship_semantics():
     claim = payload["ledger"]["claims"][0]
     claim["claim_type"] = "accusation.organized_crime"
     claim["statement"] = "Người được nhắc điều hành một đường dây tội phạm."
+    candidate = payload["ledger"]["candidates"][0]
+    candidate["claim_type"] = claim["claim_type"]
+    candidate["statement"] = claim["statement"]
 
     with pytest.raises(ValidationError, match="verification semantics do not match"):
         _validate_run(payload, trusted_context=trusted_context)
@@ -915,6 +1060,7 @@ def test_release_requires_trusted_risk_screening_not_payload_defaults(subject_re
     if subject_ref == "clm-1":
         subject = payload["ledger"]["claims"][0]
         subject["statement"] = "Người được nhắc đã thực hiện hành vi phạm tội."
+        payload["ledger"]["candidates"][0]["statement"] = subject["statement"]
     else:
         subject = payload["ledger"]["relationships"][0]
         subject["relationship_type"] = "accused_of_crime"
@@ -1100,6 +1246,70 @@ def test_success_without_released_projections_fails_closed():
         _validate_run(payload)
 
 
+def test_source_assertion_cannot_be_promoted_to_analysis_fact_bucket():
+    payload = _investigation_run_payload()
+    analysis = payload["projections"]["analysis"]
+    analysis.pop("source_attributed_claim_refs")
+    analysis["fact_claim_refs"] = ["clm-1"]
+
+    with pytest.raises(
+        ValidationError,
+        match="analysis fact bucket requires supported corroborated world findings",
+    ):
+        _validate_run(payload)
+
+
+def test_analysis_epistemic_buckets_require_matching_factual_scope():
+    source_claim = GroundedClaim(
+        claim_id="clm-source",
+        claim_type="source.assertion",
+        statement="Nguồn phát biểu một nội dung.",
+        polarity="reported",
+        disposition="supported",
+        evidence_refs=["ev-source"],
+    )
+    world_claim = GroundedClaim(
+        claim_id="clm-world",
+        claim_type="world.finding",
+        statement="Một dữ kiện đã được đối chiếu độc lập.",
+        polarity="affirmed",
+        disposition="supported",
+        factual_scope="corroborated_world_finding",
+        evidence_refs=["ev-world-1", "ev-world-2"],
+        corroboration_evidence_refs=["ev-world-1", "ev-world-2"],
+    )
+
+    InvestigationRun._validate_analysis_projection(
+        AnalysisProjection(
+            released_claim_refs=[source_claim.claim_id],
+            source_attributed_claim_refs=[source_claim.claim_id],
+        ),
+        {source_claim.claim_id},
+        {source_claim.claim_id: source_claim},
+    )
+    InvestigationRun._validate_analysis_projection(
+        AnalysisProjection(
+            released_claim_refs=[world_claim.claim_id],
+            fact_claim_refs=[world_claim.claim_id],
+        ),
+        {world_claim.claim_id},
+        {world_claim.claim_id: world_claim},
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="source-attributed bucket requires supported verified source assertions",
+    ):
+        InvestigationRun._validate_analysis_projection(
+            AnalysisProjection(
+                released_claim_refs=[world_claim.claim_id],
+                source_attributed_claim_refs=[world_claim.claim_id],
+            ),
+            {world_claim.claim_id},
+            {world_claim.claim_id: world_claim},
+        )
+
+
 def test_every_released_claim_requires_exactly_one_primary_theme():
     payload = _investigation_run_payload()
     _add_released_fact_without_theme(payload)
@@ -1118,16 +1328,17 @@ def test_partially_supported_claim_cannot_enter_factual_narrative():
     decision["disposition"] = "partially_supported"
     decision["projection_eligibility"] = "non_factual"
     analysis = payload["projections"]["analysis"]
-    analysis.pop("fact_claim_refs")
+    analysis.pop("source_attributed_claim_refs")
     analysis["qualified_claim_refs"] = ["clm-1"]
 
     with pytest.raises(
-        ValidationError, match=r"factual narrative requires fact \+ supported"
+        ValidationError,
+        match="non-supported claims require a completed review attestation",
     ):
         _validate_run(payload)
 
 
-def test_partially_supported_claim_is_visible_only_as_qualified_output():
+def test_partially_supported_claim_remains_withheld_without_review_attestation():
     payload = _investigation_run_payload()
     claim = payload["ledger"]["claims"][0]
     claim["disposition"] = "partially_supported"
@@ -1137,18 +1348,15 @@ def test_partially_supported_claim_is_visible_only_as_qualified_output():
     decision["projection_eligibility"] = "non_factual"
     summary = payload["projections"]["summary"]
     summary["narrative"]["overview"][0]["sentence_kind"] = "uncertainty"
-    summary["narrative"]["thematic_groups"][0]["sentences"][0][
-        "sentence_kind"
-    ] = "uncertainty"
     analysis = payload["projections"]["analysis"]
-    analysis.pop("fact_claim_refs")
+    analysis.pop("source_attributed_claim_refs")
     analysis["qualified_claim_refs"] = ["clm-1"]
 
-    result = _validate_run(payload)
-
-    assert result.projections.analysis.fact_claim_refs is None
-    assert result.projections.analysis.qualified_claim_refs == ["clm-1"]
-    assert result.ledger.claims[0].requires_human_verification is True
+    with pytest.raises(
+        ValidationError,
+        match="non-supported claims require a completed review attestation",
+    ):
+        _validate_run(payload)
 
 
 def test_generic_non_factual_claim_cannot_replace_typed_hypothesis():
@@ -1492,7 +1700,9 @@ def test_non_factual_relationship_cannot_depend_on_withheld_premise():
 def test_summary_and_analysis_must_use_the_same_released_claim_set():
     payload = _investigation_run_payload()
     payload["projections"]["analysis"]["released_claim_refs"] = ["clm-other"]
-    payload["projections"]["analysis"]["fact_claim_refs"] = ["clm-other"]
+    payload["projections"]["analysis"]["source_attributed_claim_refs"] = [
+        "clm-other"
+    ]
 
     with pytest.raises(
         ValidationError, match="Summary and Analysis must project the same"
@@ -1507,11 +1717,22 @@ def test_every_non_withheld_verified_claim_must_be_projected():
     analysis = payload["projections"]["analysis"]
     summary["released_claim_refs"].remove("clm-2")
     analysis["released_claim_refs"].remove("clm-2")
-    analysis["fact_claim_refs"].remove("clm-2")
+    analysis["source_attributed_claim_refs"].remove("clm-2")
 
     with pytest.raises(
         ValidationError,
         match="released projections must include every non-withheld verified claim",
+    ):
+        _validate_run(payload)
+
+
+def test_analysis_source_and_world_fact_buckets_cannot_overlap():
+    payload = _investigation_run_payload()
+    payload["projections"]["analysis"]["fact_claim_refs"] = ["clm-1"]
+
+    with pytest.raises(
+        ValidationError,
+        match="analysis epistemic buckets cannot overlap",
     ):
         _validate_run(payload)
 
@@ -1598,13 +1819,16 @@ def test_resolved_state_requires_explicit_t2_selector_attestation():
 def test_all_non_withheld_decisions_must_match_claim_eligibility():
     payload = _investigation_run_payload()
     ledger = payload["ledger"]
+    claim = ledger["claims"][0]
     ledger["candidates"].append(
         {
             "candidate_id": "cand-merge",
-            "claim_type": "unseen.financial.negated_transfer",
-            "statement": "Candidate merge thứ hai.",
-            "polarity": "negated",
-            "evidence_refs": ["ev-1"],
+            "claim_type": claim["claim_type"],
+            "statement": claim["statement"],
+            "polarity": claim["polarity"],
+            "evidence_refs": claim["evidence_refs"],
+            "concept_refs": claim["concept_refs"],
+            "attributes": copy.deepcopy(claim["attributes"]),
         }
     )
     ledger["claims"][0]["candidate_refs"].append("cand-merge")
@@ -1798,6 +2022,9 @@ def test_investigation_run_schema_separates_ledger_and_projections():
     assert definitions["SummaryProjection"]["additionalProperties"] is False
     assert definitions["AnalysisProjection"]["additionalProperties"] is False
     assert definitions["GateFailure"]["additionalProperties"] is False
+    assert "source_attributed_claim_refs" in definitions["AnalysisProjection"][
+        "properties"
+    ]
     epistemic_schema = definitions["GroundedClaim"]["properties"]["epistemic_status"]
     assert set(epistemic_schema["enum"]) == {
         "fact",

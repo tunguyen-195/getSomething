@@ -40,9 +40,7 @@ _SELECTOR_EXPORTS = frozenset(
         "verify_evidence_selector_artifact",
     }
 )
-_RUN_EXPORTS = frozenset(
-    {"build_trusted_investigation_validation_context_from_artifacts"}
-)
+_RUN_EXPORTS = frozenset()
 
 
 def __getattr__(name: str) -> Any:

@@ -4,10 +4,108 @@ OPTIONAL: Only called when user explicitly requests summarization
 """
 import logging
 from typing import Dict, Optional, List
+from src.services.investigation.narrative_attestation import (
+    released_narrative_metadata,
+    render_released_narrative_text,
+)
 from .models.llm_manager import get_llm_manager
 from .context_service import analyze_conversation_context
 
 logger = logging.getLogger(__name__)
+
+
+def _summarize_released_investigation_narrative(
+    *,
+    released_narrative: object | None,
+    model_name: str | None,
+    source_metadata: dict | None,
+) -> Dict:
+    """Render only the deterministic projection minted by the T5 release gate."""
+
+    if released_narrative is None:
+        return {
+            "summary": "",
+            "context": None,
+            "model": None,
+            "requested_model": model_name,
+            "summary_type": "investigation",
+            "available": False,
+            "error": {
+                "code": "INVESTIGATION_NARRATIVE_ATTESTATION_REQUIRED",
+                "message": (
+                    "Investigation summaries require a trusted released narrative."
+                ),
+            },
+        }
+
+    try:
+        summary = render_released_narrative_text(released_narrative).strip()
+        metadata = released_narrative_metadata(released_narrative)
+    except Exception as exc:
+        logger.warning(
+            "[SUMMARY_V2] Released investigation narrative rejected | error=%s",
+            type(exc).__name__,
+        )
+        return {
+            "summary": "",
+            "context": None,
+            "model": None,
+            "requested_model": model_name,
+            "summary_type": "investigation",
+            "available": False,
+            "error": {
+                "code": "INVESTIGATION_NARRATIVE_ATTESTATION_INVALID",
+                "message": "The released narrative failed trusted attestation replay.",
+            },
+        }
+
+    expected_revision = str((source_metadata or {}).get("source_revision_id") or "")
+    actual_revision = str(metadata.get("source_revision_id") or "")
+    if expected_revision and actual_revision != expected_revision:
+        return {
+            "summary": "",
+            "context": None,
+            "model": None,
+            "requested_model": model_name,
+            "summary_type": "investigation",
+            "available": False,
+            "error": {
+                "code": "INVESTIGATION_SOURCE_REVISION_MISMATCH",
+                "message": (
+                    "Released narrative does not match the requested source revision."
+                ),
+            },
+        }
+    if not summary:
+        return {
+            "summary": "",
+            "context": None,
+            "model": None,
+            "requested_model": model_name,
+            "summary_type": "investigation",
+            "available": False,
+            "error": {
+                "code": "INVESTIGATION_NARRATIVE_EMPTY",
+                "message": "The trusted released narrative is empty.",
+            },
+        }
+
+    return {
+        "summary": summary,
+        "context": None,
+        "model": None,
+        "requested_model": model_name,
+        "summary_type": "investigation",
+        "available": True,
+        "release": metadata,
+        "visualization_data": None,
+        "has_visualization": False,
+        "runtime": {
+            "llm_call_count": 0,
+            "last_generation": None,
+            "summary_generation": "attested_deterministic_projection",
+        },
+    }
 
 
 def summarize_transcript_v2(
@@ -17,7 +115,9 @@ def summarize_transcript_v2(
     include_context: bool = True,
     user_prompt: str = None,
     max_length: int = 200,
-    min_length: int = 50
+    min_length: int = 50,
+    source_metadata: dict | None = None,
+    released_narrative: object | None = None,
 ) -> Dict:
     """
     Summarize transcript using LLM
@@ -34,26 +134,29 @@ def summarize_transcript_v2(
     Returns:
         Dict with summary, context (optional), model info
     """
+    if summary_type == "investigation":
+        return _summarize_released_investigation_narrative(
+            released_narrative=released_narrative,
+            model_name=model_name,
+            source_metadata=source_metadata,
+        )
+
     # Use Cherry Core for forensic analysis
     if summary_type == "forensic" or model_name == "forensic":
-        try:
-            from src.services.cherry_summarizer import summarize_forensic, check_cherry_core_available
-            if check_cherry_core_available():
-                logger.info("[SUMMARY_V2] Using Cherry Core for forensic analysis")
-                result = summarize_forensic(transcript, scenario="general_intelligence")
-                return {
-                    "summary": result.get("summary", ""),
-                    "context": None,
-                    "model": result.get("model"),
-                    "summary_type": "forensic",
-                    "available": True,
-                    "visualization_data": result.get("visualization_data"),
-                    "has_visualization": result.get("has_visualization", False)
-                }
-        except Exception as e:
-            logger.warning(f"[SUMMARY_V2] Cherry Core failed, falling back: {e}")
-            # Fall through to investigation type
-            summary_type = "investigation"
+        return {
+            "summary": "",
+            "context": None,
+            "model": model_name,
+            "summary_type": "forensic",
+            "available": False,
+            "error": {
+                "code": "FORENSIC_LEGACY_PROVIDER_DISABLED",
+                "message": (
+                    "Legacy forensic generation is disabled because it is not bound "
+                    "to the canonical evidence-grounded investigation contract."
+                ),
+            },
+        }
 
     # Use LlamaCppAdapter for vistral/qwen3 (llama.cpp - faster, Vietnamese support)
     if model_name in ["vistral", "qwen3"]:
@@ -140,110 +243,6 @@ Tóm tắt ngắn gọn cuộc hội thoại sau (1-2 câu, tối đa {min_lengt
 {transcript}
 
 Tóm tắt:
-"""
-        elif summary_type == "investigation":
-            prompt = f"""
-PHÂN TÍCH HỘI THOẠI CHO ĐIỀU TRA HÌNH SỰ
-
-Bạn là chuyên gia phân tích hội thoại phục vụ điều tra tội phạm. Hãy phân tích cuộc hội thoại sau một cách CHI TIẾT, TOÀN DIỆN, KHÔNG GIỚI HẠN ĐỘ DÀI.
-
-YÊU CẦU QUAN TRỌNG: Viết phân tích dưới dạng PLAIN TEXT, KHÔNG dùng markdown syntax (không dùng ###, ***, ---, -, *, v.v.). Sử dụng số thứ tự và xuống dòng để tổ chức nội dung.
-
-HỘI THOẠI CẦN PHÂN TÍCH:
-{transcript}
-
-Hãy phân tích theo cấu trúc sau:
-
-1. TÓM TẮT TOÀN DIỆN
-Tóm tắt đầy đủ toàn bộ nội dung hội thoại, không bỏ sót chi tiết nào. Mô tả rõ ràng ngữ cảnh, mục đích cuộc trò chuyện. KHÔNG GIỚI HẠN ĐỘ DÀI.
-
-2. THÔNG TIN NHÂN THÂN (ƯU TIÊN CAO)
-Họ tên đầy đủ: [liệt kê tất cả người tham gia]
-Số điện thoại: [tất cả số xuất hiện, ghi rõ chủ sở hữu]
-Số CCCD/CMND/Hộ chiếu: [nếu có, ghi rõ chủ sở hữu]
-Địa chỉ: [địa chỉ cụ thể với số nhà, đường, phường, quận, thành phố]
-Email: [nếu có, ghi rõ chủ sở hữu]
-Ngày sinh/Tuổi: [nếu có]
-Nghề nghiệp/Nơi làm việc: [nếu có]
-Biển số xe: [nếu có]
-Tài khoản ngân hàng/Ví điện tử: [nếu có, ghi rõ số TK, ngân hàng, chủ TK]
-
-3. THÔNG TIN TÀI CHÍNH
-Số tiền giao dịch: [chính xác đến đồng, ghi rõ mục đích]
-Phương thức thanh toán: [chuyển khoản, tiền mặt, ví điện tử, v.v.]
-Thông tin tài khoản: [số TK, tên ngân hàng, chủ tài khoản]
-Lịch sử giao dịch: [nếu được nhắc đến]
-Khoản nợ/Khoản vay: [nếu có]
-Ưu đãi tài chính: [nếu có]
-
-4. THỜI GIAN VÀ ĐỊA ĐIỂM
-Thời điểm cuộc gọi: [nếu xác định được]
-Các thời gian được nhắc đến: [ngày, giờ, khoảng thời gian cụ thể]
-Địa điểm cụ thể: [tên địa điểm, địa chỉ đầy đủ]
-Lịch trình di chuyển: [nếu có]
-
-5. HÀNH ĐỘNG VÀ GIAO DỊCH
-Hành động đã thực hiện: [liệt kê chi tiết]
-Hành động hẹn thực hiện: [liệt kê chi tiết]
-Thỏa thuận/Cam kết: [nếu có]
-Điều kiện giao dịch: [nếu có]
-Quy trình thanh toán: [mô tả chi tiết]
-Bước tiếp theo: [sau cuộc gọi]
-
-6. MỐI QUAN HỆ
-Quan hệ giữa các bên: [mô tả chi tiết vai trò và mối quan hệ]
-Người thứ ba được nhắc đến: [tên, vai trò]
-Tổ chức liên quan: [công ty, đơn vị]
-Mối liên hệ ẩn: [nếu phát hiện được]
-
-7. DẤU HIỆU BẤT THƯỜNG
-Thái độ bất thường: [mô tả cụ thể nếu có]
-Mâu thuẫn trong lời nói: [chi tiết nếu phát hiện]
-Thông tin không nhất quán: [chi tiết nếu có]
-Từ chối cung cấp thông tin: [ghi nhận nếu có]
-Yêu cầu bí mật: [nếu có]
-Giao dịch bất thường: [số tiền lớn, phương thức lạ]
-Hành vi vội vã: [nếu phát hiện]
-Ngôn ngữ mã hóa: [nếu có]
-
-8. TIẾNG LÓNG VÀ MẬT NGỮ
-Từ ngữ lạ/Không thông dụng: [liệt kê và giải thích nếu có]
-Ẩn ý/Ngụ ý: [phân tích nếu phát hiện]
-Mã số/Biệt danh: [nếu có]
-Ngôn ngữ ngầm: [ví dụ: "đồ", "hàng", "deal" - giải thích nếu có]
-
-9. CÁC BÊN THAM GIA
-Với mỗi người trong cuộc gọi, mô tả:
-Vai trò: [vai trò cụ thể trong cuộc gọi]
-Thái độ/Cảm xúc: [bình tĩnh, lo lắng, hài lòng, tức giận, v.v.]
-Mức độ hợp tác: [cao, trung bình, thấp]
-Thông tin cung cấp/Giấu giếm: [phân tích]
-
-10. RỦI RO VÀ CẢNH BÁO
-Nguy cơ tội phạm: [lừa đảo, rửa tiền, buôn lậu - nếu phát hiện dấu hiệu]
-Hoạt động phi pháp: [mô tả nếu có dấu hiệu]
-Thông tin cần xác minh khẩn cấp: [liệt kê cụ thể]
-Mối đe dọa an ninh: [nếu có]
-
-11. ĐIỂM CẦN LÀM RÕ
-Thông tin còn thiếu: [liệt kê cụ thể]
-Mâu thuẫn cần điều tra: [chi tiết]
-Câu hỏi cần truy vấn: [liệt kê]
-Đối tượng/Địa điểm cần giám sát: [nếu có]
-
-12. GHI CHÚ ĐIỀU TRA
-Đánh giá tổng quan: [nhận định chung về cuộc gọi]
-Mức độ nguy hiểm: [Thấp/Trung bình/Cao/Rất cao]
-Khuyến nghị hành động: [cụ thể các bước tiếp theo]
-Ưu tiên điều tra: [Thấp/Trung bình/Cao/Khẩn cấp]
-
-LƯU Ý QUAN TRỌNG:
-- Viết phân tích dưới dạng plain text, KHÔNG dùng markdown (###, ***, ---, -, *)
-- Thông tin nhân thân (họ tên, số điện thoại, CCCD, địa chỉ) phải được trích xuất đầy đủ
-- Nếu không có thông tin cho mục nào, ghi "Không có thông tin" hoặc "Cần xác minh thêm"
-- KHÔNG GIỚI HẠN ĐỘ DÀI, viết chi tiết càng tốt
-
-PHÂN TÍCH ĐIỀU TRA:
 """
         else:  # detailed
             prompt = f"""
