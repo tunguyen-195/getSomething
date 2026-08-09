@@ -33,6 +33,7 @@ _SELECTOR_EXPORTS = frozenset(
         "EvidenceSelectorArtifact",
         "EvidenceSelectorError",
         "EvidenceSelectorRequest",
+        "EvidenceSelectorResolver",
         "VerifiedEvidenceSelectorArtifact",
         "build_evidence_selector_artifact",
         "selector_artifact_sha256",

@@ -24,6 +24,7 @@ from src.services.investigation.evidence_selector import (
     EvidenceSelectorArtifact,
     EvidenceSelectorError,
     EvidenceSelectorRequest,
+    EvidenceSelectorResolver,
     VerifiedEvidenceSelectorArtifact,
     build_evidence_selector_artifact,
     selector_artifact_sha256,
@@ -783,6 +784,52 @@ def test_selector_build_reuses_source_normalization_and_occurrence_index(monkeyp
     assert calls == {"normalization": 1, "occurrences": 1}
     verify_evidence_selector_artifact(artifact, revision)
     assert calls == {"normalization": 2, "occurrences": 2}
+
+
+def test_prepared_resolver_reuses_revision_work_across_artifacts(monkeypatch):
+    raw = "mã 77 và mã 77"
+    revision = build_source_revision(scope=_scope(), raw_transcript=raw)
+    calls = {"normalization": 0, "occurrences": 0}
+    original_normalize = selector_module.normalize_transcript_with_mapping
+    original_occurrences = selector_module._all_occurrences
+
+    def count_normalization(text):
+        calls["normalization"] += 1
+        return original_normalize(text)
+
+    def count_occurrences(text, quote):
+        calls["occurrences"] += 1
+        return original_occurrences(text, quote)
+
+    monkeypatch.setattr(
+        selector_module,
+        "normalize_transcript_with_mapping",
+        count_normalization,
+    )
+    monkeypatch.setattr(selector_module, "_all_occurrences", count_occurrences)
+    resolver = EvidenceSelectorResolver(revision)
+    artifacts = []
+    for index in (0, 1):
+        artifacts.append(
+            resolver.build_artifact(
+                subject_kind="verification",
+                subject_ref=f"ver-{index}",
+                requests=(
+                    EvidenceSelectorRequest(
+                        evidence_id=f"ev-{index}",
+                        scope=revision.scope,
+                        source_revision_id=revision.source_revision_id,
+                        quote_exact="mã 77",
+                        occurrence_index=index,
+                    ),
+                ),
+            )
+        )
+
+    assert calls == {"normalization": 1, "occurrences": 1}
+    for artifact in artifacts:
+        resolver.verify_artifact(artifact)
+    assert calls == {"normalization": 1, "occurrences": 1}
 
 
 def test_only_replayed_artifact_builds_production_trusted_selector_context():

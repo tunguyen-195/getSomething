@@ -456,16 +456,66 @@ def _selector_from_request(
     return EvidenceSelector(selector_id=_selector_id(payload), **payload)
 
 
-def build_evidence_selector_artifact(
+class EvidenceSelectorResolver:
+    """Reuse revision normalization and occurrence indexes across many selectors."""
+
+    __slots__ = ("_normalization", "_occurrence_cache", "_revision", "_segment_starts")
+
+    def __init__(self, revision: SourceRevision):
+        self._revision = _revalidate_source_revision(revision)
+        self._normalization = normalize_transcript_with_mapping(
+            self._revision.raw_transcript
+        )
+        self._segment_starts = tuple(
+            segment.raw_char_start for segment in self._revision.segments
+        )
+        self._occurrence_cache: dict[str, tuple[int, ...]] = {}
+
+    @property
+    def revision(self) -> SourceRevision:
+        return self._revision
+
+    def occurrence_index(self, quote_exact: str, expected_start: int) -> int:
+        occurrences = self._occurrence_cache.get(quote_exact)
+        if occurrences is None:
+            occurrences = _all_occurrences(self._revision.raw_transcript, quote_exact)
+            self._occurrence_cache[quote_exact] = occurrences
+        try:
+            return occurrences.index(expected_start)
+        except ValueError as exc:
+            raise EvidenceSelectorError(
+                "selector quote offset does not exist in source"
+            ) from exc
+
+    def build_artifact(
+        self,
+        *,
+        subject_kind: Literal["verification", "relationship"],
+        subject_ref: str,
+        requests: Sequence[EvidenceSelectorRequest | Mapping[str, Any]],
+    ) -> EvidenceSelectorArtifact:
+        return _build_evidence_selector_artifact_prepared(
+            resolver=self,
+            subject_kind=subject_kind,
+            subject_ref=subject_ref,
+            requests=requests,
+        )
+
+    def verify_artifact(
+        self,
+        artifact: EvidenceSelectorArtifact | Mapping[str, Any],
+    ) -> VerifiedEvidenceSelectorArtifact:
+        return _verify_evidence_selector_artifact_prepared(self, artifact)
+
+
+def _build_evidence_selector_artifact_prepared(
     *,
-    revision: SourceRevision,
+    resolver: EvidenceSelectorResolver,
     subject_kind: Literal["verification", "relationship"],
     subject_ref: str,
     requests: Sequence[EvidenceSelectorRequest | Mapping[str, Any]],
 ) -> EvidenceSelectorArtifact:
-    """Resolve requests and create one deterministic offline selector artifact."""
-
-    revision = _revalidate_source_revision(revision)
+    revision = resolver.revision
     if not subject_ref.strip():
         raise EvidenceSelectorError("selector artifact subject_ref must be non-blank")
     resolved_requests = [_revalidate_selector_request(request) for request in requests]
@@ -474,18 +524,15 @@ def build_evidence_selector_artifact(
     evidence_ids = [request.evidence_id for request in resolved_requests]
     if len(evidence_ids) != len(set(evidence_ids)):
         raise EvidenceSelectorError("selector request evidence IDs must be unique")
-    normalization = normalize_transcript_with_mapping(revision.raw_transcript)
-    segment_starts = tuple(segment.raw_char_start for segment in revision.segments)
-    occurrence_cache: dict[str, tuple[int, ...]] = {}
     selectors = tuple(
         sorted(
             (
                 _selector_from_request(
                     revision,
                     request,
-                    normalization,
-                    segment_starts,
-                    occurrence_cache,
+                    resolver._normalization,
+                    resolver._segment_starts,
+                    resolver._occurrence_cache,
                 )
                 for request in resolved_requests
             ),
@@ -517,16 +564,27 @@ def build_evidence_selector_artifact(
     )
 
 
-def verify_evidence_selector_artifact(
-    artifact: EvidenceSelectorArtifact | Mapping[str, Any],
+def build_evidence_selector_artifact(
+    *,
     revision: SourceRevision,
-) -> VerifiedEvidenceSelectorArtifact:
-    """Replay every selector against the exact immutable transcript revision."""
+    subject_kind: Literal["verification", "relationship"],
+    subject_ref: str,
+    requests: Sequence[EvidenceSelectorRequest | Mapping[str, Any]],
+) -> EvidenceSelectorArtifact:
+    """Resolve requests and create one deterministic offline selector artifact."""
 
-    try:
-        revision = _revalidate_source_revision(revision)
-    except SourceRevisionError as exc:
-        raise EvidenceSelectorError("invalid immutable source revision") from exc
+    return EvidenceSelectorResolver(revision).build_artifact(
+        subject_kind=subject_kind,
+        subject_ref=subject_ref,
+        requests=requests,
+    )
+
+
+def _verify_evidence_selector_artifact_prepared(
+    resolver: EvidenceSelectorResolver,
+    artifact: EvidenceSelectorArtifact | Mapping[str, Any],
+) -> VerifiedEvidenceSelectorArtifact:
+    revision = resolver.revision
     resolved_artifact = _revalidate_selector_artifact(artifact)
     if resolved_artifact.scope != revision.scope:
         raise EvidenceSelectorError("selector artifact crosses source/case/file scope")
@@ -547,9 +605,6 @@ def verify_evidence_selector_artifact(
         raise EvidenceSelectorError("selector artifact segment count mismatch")
     if resolved_artifact.offset_unit != revision.offset_unit:
         raise EvidenceSelectorError("selector artifact offset unit mismatch")
-    normalization = normalize_transcript_with_mapping(revision.raw_transcript)
-    segment_starts = tuple(segment.raw_char_start for segment in revision.segments)
-    occurrence_cache: dict[str, tuple[int, ...]] = {}
     for selector in resolved_artifact.selectors:
         if selector.raw_char_end > len(revision.raw_transcript):
             raise EvidenceSelectorError("selector raw range exceeds source")
@@ -558,7 +613,7 @@ def verify_evidence_selector_artifact(
             != selector.quote_exact
         ):
             raise EvidenceSelectorError("selector quote does not match raw offsets")
-        normalized_range = normalization.normalized_range_for_raw(
+        normalized_range = resolver._normalization.normalized_range_for_raw(
             selector.raw_char_start,
             selector.raw_char_end,
         )
@@ -568,7 +623,7 @@ def verify_evidence_selector_artifact(
         ):
             raise EvidenceSelectorError("selector normalized offsets mismatch")
         if (
-            normalization.normalized_text[
+            resolver._normalization.normalized_text[
                 selector.normalized_char_start : selector.normalized_char_end
             ]
             != selector.quote_normalized
@@ -587,13 +642,13 @@ def verify_evidence_selector_artifact(
         ]
         if selector.prefix != expected_prefix or selector.suffix != expected_suffix:
             raise EvidenceSelectorError("selector prefix/suffix mismatch")
-        occurrences = occurrence_cache.get(selector.quote_exact)
+        occurrences = resolver._occurrence_cache.get(selector.quote_exact)
         if occurrences is None:
             occurrences = _all_occurrences(
                 revision.raw_transcript,
                 selector.quote_exact,
             )
-            occurrence_cache[selector.quote_exact] = occurrences
+            resolver._occurrence_cache[selector.quote_exact] = occurrences
         if (
             selector.occurrence_index >= len(occurrences)
             or occurrences[selector.occurrence_index] != selector.raw_char_start
@@ -603,7 +658,7 @@ def verify_evidence_selector_artifact(
             revision,
             selector.raw_char_start,
             selector.raw_char_end,
-            segment_starts,
+            resolver._segment_starts,
         )
         if segment.segment_id != selector.segment_id:
             raise EvidenceSelectorError("selector segment mismatch")
@@ -622,6 +677,19 @@ def verify_evidence_selector_artifact(
         resolved_artifact,
         _authority=_VERIFIED_ARTIFACT_AUTHORITY,
     )
+
+
+def verify_evidence_selector_artifact(
+    artifact: EvidenceSelectorArtifact | Mapping[str, Any],
+    revision: SourceRevision,
+) -> VerifiedEvidenceSelectorArtifact:
+    """Replay every selector against the exact immutable transcript revision."""
+
+    try:
+        resolver = EvidenceSelectorResolver(revision)
+    except SourceRevisionError as exc:
+        raise EvidenceSelectorError("invalid immutable source revision") from exc
+    return resolver.verify_artifact(artifact)
 
 
 def selector_artifact_sha256(artifact: EvidenceSelectorArtifact) -> str:
