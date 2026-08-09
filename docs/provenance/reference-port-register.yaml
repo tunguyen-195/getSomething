@@ -1,0 +1,1034 @@
+{
+  "audit_generated_at_utc": "2026-08-09T03:39:45.686350+00:00",
+  "default_copy_policy": "forbidden_until_explicit_authorization",
+  "entries": [
+    {
+      "copy_code_allowed": false,
+      "decision": "ADAPT",
+      "implementation_status": "blocked_pending_license",
+      "license_status": "pending_owner_authorization",
+      "recommendation_id": "CH-ARTIFACT-DISCIPLINE",
+      "reusable_item": "Research artifact/environment/evidence discipline",
+      "source_snapshot_status": "dirty_content_addressed",
+      "sources": [
+        {
+          "bytes": 4396,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "research/phoguard_asr/artifacts.py",
+          "purpose": "Environment and artifact manifest discipline",
+          "repo": "cherry",
+          "sha256": "506867ec857e14ab32ed5c403cf6560e2f2956d116393856353d9d7896ae55af",
+          "source_identity": "sha256:506867ec857e14ab32ed5c403cf6560e2f2956d116393856353d9d7896ae55af",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "de99630fab01478922f2e709d5ebba660e1dd8c3"
+        },
+        {
+          "bytes": 3924,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "research/sage_asr/evidence.py",
+          "purpose": "Evidence-mode separation",
+          "repo": "cherry",
+          "sha256": "fb1e9dfb339708eac1d00145d03f4e9838cdc2fbe0adfc67df3bd4ca35438147",
+          "source_identity": "sha256:fb1e9dfb339708eac1d00145d03f4e9838cdc2fbe0adfc67df3bd4ca35438147",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "f4a243b2a4bc78de92be2eb709786a1205967d40"
+        }
+      ],
+      "target_action": "Recreate the methodology in target-owned code; do not copy dirty/unlicensed implementation.",
+      "use_scope": "target_reimplementation_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "ADAPT",
+      "implementation_status": "blocked_pending_license",
+      "license_status": "pending_owner_authorization",
+      "recommendation_id": "CH-GPU-QUEUE",
+      "reusable_item": "Serialized single-GPU execution",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 12079,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "407ee9c56193c1cc2ad0daaa136f5b6017bfdfd8",
+          "path": "application/services/web_job_manager.py",
+          "purpose": "Serialized GPU execution idea and self-deadlock counterexample",
+          "repo": "cherry",
+          "sha256": "95388a19268fa8817f0c7d26897975689a137ae76d83321f35ef3498ce8b7a0f",
+          "source_identity": "sha256:95388a19268fa8817f0c7d26897975689a137ae76d83321f35ef3498ce8b7a0f",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "407ee9c56193c1cc2ad0daaa136f5b6017bfdfd8"
+        }
+      ],
+      "target_action": "Keep one-GPU scheduling semantics, but replace the deadlocking in-process lock/runner.",
+      "use_scope": "target_reimplementation_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "ADAPT",
+      "implementation_status": "blocked_pending_license",
+      "license_status": "pending_owner_authorization",
+      "recommendation_id": "CH-MANUAL-AUDIT",
+      "reusable_item": "Manual audit, evidence registry and claim ladder",
+      "source_snapshot_status": "dirty_content_addressed",
+      "sources": [
+        {
+          "bytes": 18738,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "5d86edea1c3e9772ea35c4e8c84cf111d7bc8e70",
+          "path": "docs/paper_pack/EVIDENCE_REGISTRY.md",
+          "purpose": "Claim ladder and evidence registry methodology",
+          "repo": "cherry",
+          "sha256": "2e7ca2ab9662a2d6d0e45712852855a55e0a754e2b44f0663117346c98ae2ec0",
+          "source_identity": "sha256:2e7ca2ab9662a2d6d0e45712852855a55e0a754e2b44f0663117346c98ae2ec0",
+          "tracked_state": "modified",
+          "worktree_git_blob": "bf576c28c3cdba897d59fe09e3ab2ad516f69994"
+        },
+        {
+          "bytes": 7331,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "tools/sage_promote_auto_labels.py",
+          "purpose": "Proxy-label provenance",
+          "repo": "cherry",
+          "sha256": "8bb03e1dd1820db800a61183693c26aa865e175bc2e9a0f53c53e609bfde1722",
+          "source_identity": "sha256:8bb03e1dd1820db800a61183693c26aa865e175bc2e9a0f53c53e609bfde1722",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "c61544ef65859b40df6800cabb4f4b0beb4d9080"
+        }
+      ],
+      "target_action": "Recreate methodology for Tier B/C labelling and source-backed claims.",
+      "use_scope": "target_reimplementation_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "ADAPT",
+      "implementation_status": "blocked_pending_license",
+      "license_status": "pending_owner_authorization",
+      "recommendation_id": "CH-PORTS-ADAPTERS",
+      "reusable_item": "Ports/adapters separation",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 230,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "7203a7dcddc338231c663880348f7715f6148ee5",
+          "path": "core/ports/correction_port.py",
+          "purpose": "Port abstraction and correction provenance counterexample",
+          "repo": "cherry",
+          "sha256": "0024becd9c43ebf421a65172b98dbafea038620ab845a493d5e498fdb0298c57",
+          "source_identity": "sha256:0024becd9c43ebf421a65172b98dbafea038620ab845a493d5e498fdb0298c57",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "7203a7dcddc338231c663880348f7715f6148ee5"
+        }
+      ],
+      "target_action": "Recreate bounded target ports and remove direct runtime imports from business services.",
+      "use_scope": "target_reimplementation_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "REJECT",
+      "implementation_status": "prohibited",
+      "license_status": "not_applicable_rejected",
+      "recommendation_id": "CH-REJECT-DIRTY-RELEASE",
+      "reusable_item": "Unlicensed dirty working tree as release source",
+      "source_snapshot_status": "dirty_content_addressed",
+      "sources": [
+        {
+          "bytes": 475,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "fc2b7076581160074cbf3dd388c5b43a8947ffd7",
+          "path": ".gitignore",
+          "purpose": "Ignored model and artifact release boundary",
+          "repo": "cherry",
+          "sha256": "e0a121a6e3ea3290b237de5120c92538cf8ca4c9463881129d02056fac08ea5e",
+          "source_identity": "sha256:e0a121a6e3ea3290b237de5120c92538cf8ca4c9463881129d02056fac08ea5e",
+          "tracked_state": "modified",
+          "worktree_git_blob": "9d6cb80a78330c8f943673444cefa65e49794887"
+        }
+      ],
+      "target_action": "Port only from content-addressed source evidence after owner approval.",
+      "use_scope": "negative_control_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "REJECT",
+      "implementation_status": "prohibited",
+      "license_status": "not_applicable_rejected",
+      "recommendation_id": "CH-REJECT-FIXED-PROMPT",
+      "reusable_item": "Fixed scenario/slang forensic prompt",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 3172,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "f1ff67aca479a448c87f21ee7027bc80631742c4",
+          "path": "application/services/analysis_service.py",
+          "purpose": "One-pass analysis and permissive JSON repair counterexample",
+          "repo": "cherry",
+          "sha256": "f47f4f1ff872384ddb13c0947c1aba46d4786b5c6bd102219a71eebfedc4dafd",
+          "source_identity": "sha256:f47f4f1ff872384ddb13c0947c1aba46d4786b5c6bd102219a71eebfedc4dafd",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "f1ff67aca479a448c87f21ee7027bc80631742c4"
+        },
+        {
+          "bytes": 2925,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "0c0ffa7ce7b2b548e01cec7892aef15f1844651c",
+          "path": "prompts/templates/deep_investigation.j2",
+          "purpose": "Mandatory fixed-field prompt counterexample",
+          "repo": "cherry",
+          "sha256": "206c0f9bf5e69cd80698acd0577634d52fb5a1314e202353956514cb99c82c89",
+          "source_identity": "sha256:206c0f9bf5e69cd80698acd0577634d52fb5a1314e202353956514cb99c82c89",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "0c0ffa7ce7b2b548e01cec7892aef15f1844651c"
+        },
+        {
+          "bytes": 1894,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "fb4bcbaef8d499db733e1659faa709e79fbc0169",
+          "path": "prompts/templates/investigation.j2",
+          "purpose": "Hidden-intent and deception prompt counterexample",
+          "repo": "cherry",
+          "sha256": "bc6679d34c6aa940e8fbc93902a1b2b29efcc394d5d43b5b591527132d1abce3",
+          "source_identity": "sha256:bc6679d34c6aa940e8fbc93902a1b2b29efcc394d5d43b5b591527132d1abce3",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "fb4bcbaef8d499db733e1659faa709e79fbc0169"
+        }
+      ],
+      "target_action": "Treat dictionaries as contextual candidates/adversarial tests, never fact/risk rules.",
+      "use_scope": "negative_control_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "REJECT",
+      "implementation_status": "prohibited",
+      "license_status": "not_applicable_rejected",
+      "recommendation_id": "CH-REJECT-JOB-MANAGER",
+      "reusable_item": "Deadlocking web job manager",
+      "source_snapshot_status": "dirty_content_addressed",
+      "sources": [
+        {
+          "bytes": 12079,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "407ee9c56193c1cc2ad0daaa136f5b6017bfdfd8",
+          "path": "application/services/web_job_manager.py",
+          "purpose": "Serialized GPU execution idea and self-deadlock counterexample",
+          "repo": "cherry",
+          "sha256": "95388a19268fa8817f0c7d26897975689a137ae76d83321f35ef3498ce8b7a0f",
+          "source_identity": "sha256:95388a19268fa8817f0c7d26897975689a137ae76d83321f35ef3498ce8b7a0f",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "407ee9c56193c1cc2ad0daaa136f5b6017bfdfd8"
+        },
+        {
+          "bytes": 7315,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "8ed9fc349509ead3677cf2702714787b33ebd4e2",
+          "path": "tests/test_webapp_api.py",
+          "purpose": "Fake job manager test gap",
+          "repo": "cherry",
+          "sha256": "c76ad30c4f35c8d5c9a06bb617b1764774375e3e64cd12e07b4281712c06b0b5",
+          "source_identity": "sha256:c76ad30c4f35c8d5c9a06bb617b1764774375e3e64cd12e07b4281712c06b0b5",
+          "tracked_state": "modified",
+          "worktree_git_blob": "77ed4173263161bbffe3227f776c8342c57bc680"
+        }
+      ],
+      "target_action": "Do not port; test the real worker instead of `FakeJobManager`.",
+      "use_scope": "negative_control_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "REJECT",
+      "implementation_status": "prohibited",
+      "license_status": "not_applicable_rejected",
+      "recommendation_id": "CH-REJECT-MODEL-INVENTORY",
+      "reusable_item": "Wholesale model directory and path-only inventory",
+      "source_snapshot_status": "dirty_content_addressed",
+      "sources": [
+        {
+          "bytes": 475,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "fc2b7076581160074cbf3dd388c5b43a8947ffd7",
+          "path": ".gitignore",
+          "purpose": "Ignored model and artifact release boundary",
+          "repo": "cherry",
+          "sha256": "e0a121a6e3ea3290b237de5120c92538cf8ca4c9463881129d02056fac08ea5e",
+          "source_identity": "sha256:e0a121a6e3ea3290b237de5120c92538cf8ca4c9463881129d02056fac08ea5e",
+          "tracked_state": "modified",
+          "worktree_git_blob": "9d6cb80a78330c8f943673444cefa65e49794887"
+        },
+        {
+          "bytes": 6117,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "4222b1316ead99d62d41066120cea068c0d6e5c6",
+          "path": "application/services/model_inventory_service.py",
+          "purpose": "Path-existence-only model inventory",
+          "repo": "cherry",
+          "sha256": "ff319a7af421b1840c09dea781a29a69822d7e6a8982ddfe75e77485b45a936d",
+          "source_identity": "sha256:ff319a7af421b1840c09dea781a29a69822d7e6a8982ddfe75e77485b45a936d",
+          "tracked_state": "modified",
+          "worktree_git_blob": "1a7cb074012830085935454fbe6da1f628021ea2"
+        },
+        {
+          "bytes": 7293,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "2a26f7d1e80f3775bb2536bf59061cae38ce74ca",
+          "path": "scripts/setup_models.py",
+          "purpose": "Floating model and Silero downloads",
+          "repo": "cherry",
+          "sha256": "95fab047e04350d63dcb91f8824fa6237974c59bc731aca7dc0d36bed7c7b555",
+          "source_identity": "sha256:95fab047e04350d63dcb91f8824fa6237974c59bc731aca7dc0d36bed7c7b555",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "2a26f7d1e80f3775bb2536bf59061cae38ce74ca"
+        }
+      ],
+      "target_action": "Select exact artifacts by winning runtime profile; manifest and deduplicate.",
+      "use_scope": "negative_control_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "REJECT",
+      "implementation_status": "prohibited",
+      "license_status": "not_applicable_rejected",
+      "recommendation_id": "CH-REJECT-MUTATION",
+      "reusable_item": "Destructive correction/speaker mutation",
+      "source_snapshot_status": "dirty_content_addressed",
+      "sources": [
+        {
+          "bytes": 27111,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "82f886fb233d91a020e403c3eccad3073adca39c",
+          "path": "application/services/stt_web_pipeline.py",
+          "purpose": "Stage artifacts and destructive correction or speaker mutation",
+          "repo": "cherry",
+          "sha256": "babee4f9925b062d602602ad9ebbecc3aacc90ec038aa22b3f19391826c86a0a",
+          "source_identity": "sha256:babee4f9925b062d602602ad9ebbecc3aacc90ec038aa22b3f19391826c86a0a",
+          "tracked_state": "modified",
+          "worktree_git_blob": "afca113f7825ff7dc5588d8db1705c418b5fa525"
+        },
+        {
+          "bytes": 230,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "7203a7dcddc338231c663880348f7715f6148ee5",
+          "path": "core/ports/correction_port.py",
+          "purpose": "Port abstraction and correction provenance counterexample",
+          "repo": "cherry",
+          "sha256": "0024becd9c43ebf421a65172b98dbafea038620ab845a493d5e498fdb0298c57",
+          "source_identity": "sha256:0024becd9c43ebf421a65172b98dbafea038620ab845a493d5e498fdb0298c57",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "7203a7dcddc338231c663880348f7715f6148ee5"
+        },
+        {
+          "bytes": 4724,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "0aec2ced67aa9119b2833817872659cc18a4f92b",
+          "path": "infrastructure/adapters/correction/contextual_refiner.py",
+          "purpose": "Speaker ID mutation counterexample",
+          "repo": "cherry",
+          "sha256": "b66d5db1a7c99e694e74676c4f5b8ea5b695b8e2f95564899595c7db9628c863",
+          "source_identity": "sha256:b66d5db1a7c99e694e74676c4f5b8ea5b695b8e2f95564899595c7db9628c863",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "0aec2ced67aa9119b2833817872659cc18a4f92b"
+        },
+        {
+          "bytes": 4015,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "ce701645189aeb2363adb499802ff1eacd08c8ef",
+          "path": "infrastructure/adapters/correction/protonx_adapter.py",
+          "purpose": "Correction truncation and concatenation counterexample",
+          "repo": "cherry",
+          "sha256": "584abb4a077438f339e3132956c77687b3a559f4fd35cc0ab9d0f5fd740a37d1",
+          "source_identity": "sha256:584abb4a077438f339e3132956c77687b3a559f4fd35cc0ab9d0f5fd740a37d1",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "ce701645189aeb2363adb499802ff1eacd08c8ef"
+        },
+        {
+          "bytes": 11853,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "57842edbd52dbd74acef448095c8c98991e7ed7b",
+          "path": "infrastructure/adapters/vad/silero_adapter.py",
+          "purpose": "VAD time-map capability and transformed timeline risk",
+          "repo": "cherry",
+          "sha256": "97f27bd1fe6b6ec25a815f065309805e48979c6630442c0207704de3d274718c",
+          "source_identity": "sha256:97f27bd1fe6b6ec25a815f065309805e48979c6630442c0207704de3d274718c",
+          "tracked_state": "modified",
+          "worktree_git_blob": "0c1c97dbbbfebb0050a81e45f661fdba27fa027d"
+        }
+      ],
+      "target_action": "Preserve raw data and create mapped correction/role hypothesis revisions.",
+      "use_scope": "negative_control_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "REJECT",
+      "implementation_status": "prohibited",
+      "license_status": "not_applicable_rejected",
+      "recommendation_id": "CH-REJECT-SAGE-THRESHOLD",
+      "reusable_item": "Embedded SAGE calibrator/threshold",
+      "source_snapshot_status": "dirty_content_addressed",
+      "sources": [
+        {
+          "bytes": 13399,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "annotations/sage_stratified_crc_evidence_v1.json",
+          "purpose": "Coverage and false-accept risk evidence",
+          "repo": "cherry",
+          "sha256": "630f63c8df7cedf3a81cb2d6f7ce68c5ecbf195c43e99cb3174a2f29a75931c2",
+          "source_identity": "sha256:630f63c8df7cedf3a81cb2d6f7ce68c5ecbf195c43e99cb3174a2f29a75931c2",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "6b665d7990df4f465a5a92f51fd3fe31fc286dc8"
+        },
+        {
+          "bytes": 5280,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "application/services/sage_asr_service.py",
+          "purpose": "Embedded research calibrator and threshold",
+          "repo": "cherry",
+          "sha256": "ef2599ecd453f6f5959a06a1d720126df090a2a8035733319b08f929dafb063a",
+          "source_identity": "sha256:ef2599ecd453f6f5959a06a1d720126df090a2a8035733319b08f929dafb063a",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "3aaeb97fb80586e3ffb445e9c3157381ee94ce1a"
+        },
+        {
+          "bytes": 7331,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "tools/sage_promote_auto_labels.py",
+          "purpose": "Proxy-label provenance",
+          "repo": "cherry",
+          "sha256": "8bb03e1dd1820db800a61183693c26aa865e175bc2e9a0f53c53e609bfde1722",
+          "source_identity": "sha256:8bb03e1dd1820db800a61183693c26aa865e175bc2e9a0f53c53e609bfde1722",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "c61544ef65859b40df6800cabb4f4b0beb4d9080"
+        }
+      ],
+      "target_action": "Never port numeric policy without target calibration and signed artifact.",
+      "use_scope": "negative_control_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "REJECT",
+      "implementation_status": "prohibited",
+      "license_status": "not_applicable_rejected",
+      "recommendation_id": "CH-REJECT-VLLM",
+      "reusable_item": "Current vLLM adapter",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 3124,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "677fec684ddbca3f74b5c0acde056ef7977d779b",
+          "path": "infrastructure/adapters/llm/vllm_adapter.py",
+          "purpose": "Incomplete and incompatible vLLM adapter",
+          "repo": "cherry",
+          "sha256": "80f867a84cbf65d7536c0a612dd0eaa415f97cde39de0ae442e5b41b5407f8c6",
+          "source_identity": "sha256:80f867a84cbf65d7536c0a612dd0eaa415f97cde39de0ae442e5b41b5407f8c6",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "677fec684ddbca3f74b5c0acde056ef7977d779b"
+        }
+      ],
+      "target_action": "Benchmark a real HF/AWQ/GPTQ Linux sidecar only if concurrency requires it.",
+      "use_scope": "negative_control_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "RESEARCH_CHALLENGER",
+      "implementation_status": "blocked_pending_license",
+      "license_status": "pending_owner_authorization",
+      "recommendation_id": "CH-RESEARCH-CHALLENGERS",
+      "reusable_item": "Whisper head/intervention, AudioSAE, Stable-TS, PhoWhisper.cpp experiments",
+      "source_snapshot_status": "dirty_content_addressed",
+      "sources": [
+        {
+          "bytes": 13992,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "docs/paper_pack/AUDIOSAE_P8_DESIGN.md",
+          "purpose": "P8 metadata-only scope limitation",
+          "repo": "cherry",
+          "sha256": "668d4e6b29246c54757afe089780f2cbdf49de123c5fe90d72f9c0f64bdc7f7b",
+          "source_identity": "sha256:668d4e6b29246c54757afe089780f2cbdf49de123c5fe90d72f9c0f64bdc7f7b",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "02453ad3f9128ac72b239a984a7107092a938fb8"
+        },
+        {
+          "bytes": 18738,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "5d86edea1c3e9772ea35c4e8c84cf111d7bc8e70",
+          "path": "docs/paper_pack/EVIDENCE_REGISTRY.md",
+          "purpose": "Claim ladder and evidence registry methodology",
+          "repo": "cherry",
+          "sha256": "2e7ca2ab9662a2d6d0e45712852855a55e0a754e2b44f0663117346c98ae2ec0",
+          "source_identity": "sha256:2e7ca2ab9662a2d6d0e45712852855a55e0a754e2b44f0663117346c98ae2ec0",
+          "tracked_state": "modified",
+          "worktree_git_blob": "bf576c28c3cdba897d59fe09e3ab2ad516f69994"
+        },
+        {
+          "bytes": 4636,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "docs/paper_pack/P11_PARETO_EVIDENCE_GATE_PROTOCOL_2026-05-16.md",
+          "purpose": "P11 exploratory and non-generalization scope",
+          "repo": "cherry",
+          "sha256": "ee4eeb454c5098148c0be8470ff69c116a1b213b486b083056fa86bd0db0f261",
+          "source_identity": "sha256:ee4eeb454c5098148c0be8470ff69c116a1b213b486b083056fa86bd0db0f261",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "e326b5581f851c718968f14869e5fa685be721b9"
+        },
+        {
+          "bytes": 6999,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "docs/paper_pack/PHOGUARD_ASR_CUDA_INTERNAL_AB_RESULTS_2026-05-03.md",
+          "purpose": "PhoGuard WER, coverage and runtime ablation evidence",
+          "repo": "cherry",
+          "sha256": "71271d22b075a5a172e06e058180888f6618e8d2f8d1cfe6b8cf21243060bde9",
+          "source_identity": "sha256:71271d22b075a5a172e06e058180888f6618e8d2f8d1cfe6b8cf21243060bde9",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "d354fb1235c50a2ec182ab69d999699bb5c8ba98"
+        },
+        {
+          "bytes": 1049,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "output/phoguard_asr/p6_cd_pilot_20260505_r1/pilot_summary.json",
+          "purpose": "P6 negative-result evidence",
+          "repo": "cherry",
+          "sha256": "f0cddb7b65640519988e6afb764db28643c5b639936eec46620a3daa4c33c910",
+          "source_identity": "sha256:f0cddb7b65640519988e6afb764db28643c5b639936eec46620a3daa4c33c910",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "fec8d7b06b9650ad46f4605573f9f5a49e5a98e2"
+        },
+        {
+          "bytes": 1888,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "output/phoguard_asr/p7_head_scan_stage_a_20260506_r1/scan_summary.json",
+          "purpose": "P7 no-head-signal evidence",
+          "repo": "cherry",
+          "sha256": "b0ecb1615e0d70d56ea06c66e311c025803f0d8610fa2cc4196551483dabcc00",
+          "source_identity": "sha256:b0ecb1615e0d70d56ea06c66e311c025803f0d8610fa2cc4196551483dabcc00",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "ab95e711487c9a315824e852140e578165004a3e"
+        }
+      ],
+      "target_action": "Retain protocols as benchmark arms only; require independent reproducibility and quality ablation.",
+      "use_scope": "benchmark_challenger_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "ADAPT",
+      "implementation_status": "blocked_pending_license",
+      "license_status": "pending_owner_authorization",
+      "recommendation_id": "CH-SELECTIVE-ASR",
+      "reusable_item": "Selective ASR risk, abstention and conformal control",
+      "source_snapshot_status": "dirty_content_addressed",
+      "sources": [
+        {
+          "bytes": 13399,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "annotations/sage_stratified_crc_evidence_v1.json",
+          "purpose": "Coverage and false-accept risk evidence",
+          "repo": "cherry",
+          "sha256": "630f63c8df7cedf3a81cb2d6f7ce68c5ecbf195c43e99cb3174a2f29a75931c2",
+          "source_identity": "sha256:630f63c8df7cedf3a81cb2d6f7ce68c5ecbf195c43e99cb3174a2f29a75931c2",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "6b665d7990df4f465a5a92f51fd3fe31fc286dc8"
+        },
+        {
+          "bytes": 6999,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "docs/paper_pack/PHOGUARD_ASR_CUDA_INTERNAL_AB_RESULTS_2026-05-03.md",
+          "purpose": "PhoGuard WER, coverage and runtime ablation evidence",
+          "repo": "cherry",
+          "sha256": "71271d22b075a5a172e06e058180888f6618e8d2f8d1cfe6b8cf21243060bde9",
+          "source_identity": "sha256:71271d22b075a5a172e06e058180888f6618e8d2f8d1cfe6b8cf21243060bde9",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "d354fb1235c50a2ec182ab69d999699bb5c8ba98"
+        },
+        {
+          "bytes": 5539,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "research/phoguard_asr/gate.py",
+          "purpose": "Transparent risk ranking and abstention",
+          "repo": "cherry",
+          "sha256": "39741e5f6d5bcdcd96eb1c09504f57deb2d4b031393b515ad1fc0561f2aaaaa8",
+          "source_identity": "sha256:39741e5f6d5bcdcd96eb1c09504f57deb2d4b031393b515ad1fc0561f2aaaaa8",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "8088bdf2fe6f79835b5ccc1ce4942ec3928a9b0d"
+        },
+        {
+          "bytes": 6931,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "research/sage_asr/calibrator.py",
+          "purpose": "Source-balanced calibration technique",
+          "repo": "cherry",
+          "sha256": "ccf3899cfcc041651c2431a75eec3bd2c31b824b5f890d18ea4a317334561f23",
+          "source_identity": "sha256:ccf3899cfcc041651c2431a75eec3bd2c31b824b5f890d18ea4a317334561f23",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "ed65596d4f02df180978359d8da314d8eb3eb42d"
+        },
+        {
+          "bytes": 3000,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "research/sage_asr/conformal.py",
+          "purpose": "Conformal false-accept risk control",
+          "repo": "cherry",
+          "sha256": "9a710844f5a47aec7af984ebaf1478a4467a0cdd151b24df902f2799c2056b2e",
+          "source_identity": "sha256:9a710844f5a47aec7af984ebaf1478a4467a0cdd151b24df902f2799c2056b2e",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "80136cfcdf4c8760cb5b6dc6404e49b6f162ea58"
+        },
+        {
+          "bytes": 3924,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": null,
+          "path": "research/sage_asr/evidence.py",
+          "purpose": "Evidence-mode separation",
+          "repo": "cherry",
+          "sha256": "fb1e9dfb339708eac1d00145d03f4e9838cdc2fbe0adfc67df3bd4ca35438147",
+          "source_identity": "sha256:fb1e9dfb339708eac1d00145d03f4e9838cdc2fbe0adfc67df3bd4ca35438147",
+          "tracked_state": "untracked",
+          "worktree_git_blob": "f4a243b2a4bc78de92be2eb709786a1205967d40"
+        }
+      ],
+      "target_action": "Implement provider-neutral uncertainty service; train target calibrator and report coverage.",
+      "use_scope": "target_reimplementation_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "ADAPT",
+      "implementation_status": "blocked_pending_license",
+      "license_status": "pending_owner_authorization",
+      "recommendation_id": "CH-STAGE-ARTIFACTS",
+      "reusable_item": "Raw/stage artifact separation",
+      "source_snapshot_status": "dirty_content_addressed",
+      "sources": [
+        {
+          "bytes": 27111,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "82f886fb233d91a020e403c3eccad3073adca39c",
+          "path": "application/services/stt_web_pipeline.py",
+          "purpose": "Stage artifacts and destructive correction or speaker mutation",
+          "repo": "cherry",
+          "sha256": "babee4f9925b062d602602ad9ebbecc3aacc90ec038aa22b3f19391826c86a0a",
+          "source_identity": "sha256:babee4f9925b062d602602ad9ebbecc3aacc90ec038aa22b3f19391826c86a0a",
+          "tracked_state": "modified",
+          "worktree_git_blob": "afca113f7825ff7dc5588d8db1705c418b5fa525"
+        },
+        {
+          "bytes": 11853,
+          "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+          "head_git_blob": "57842edbd52dbd74acef448095c8c98991e7ed7b",
+          "path": "infrastructure/adapters/vad/silero_adapter.py",
+          "purpose": "VAD time-map capability and transformed timeline risk",
+          "repo": "cherry",
+          "sha256": "97f27bd1fe6b6ec25a815f065309805e48979c6630442c0207704de3d274718c",
+          "source_identity": "sha256:97f27bd1fe6b6ec25a815f065309805e48979c6630442c0207704de3d274718c",
+          "tracked_state": "modified",
+          "worktree_git_blob": "0c1c97dbbbfebb0050a81e45f661fdba27fa027d"
+        }
+      ],
+      "target_action": "Make each stage immutable and content-addressed with original-audio coordinate mappings.",
+      "use_scope": "target_reimplementation_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "ADAPT",
+      "implementation_status": "blocked_pending_license",
+      "license_status": "pending_owner_authorization",
+      "recommendation_id": "PR-EVIDENCE-REF-CONTRACT",
+      "reusable_item": "Evidence refs with source hash/span/time/speaker",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 47220,
+          "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+          "head_git_blob": "cd272c5712d75683dac5b0f748f0f1f7b645eda0",
+          "path": "src/services/analysis_intelligence/schemas.py",
+          "purpose": "Evidence references with source hash, span, time and speaker",
+          "repo": "lite",
+          "sha256": "29e341d04477beb65a5f3d36f26734e604c14254eccf36d237033dee4f39579a",
+          "source_identity": "sha256:29e341d04477beb65a5f3d36f26734e604c14254eccf36d237033dee4f39579a",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "cd272c5712d75683dac5b0f748f0f1f7b645eda0"
+        }
+      ],
+      "target_action": "Reimplement with audio hash, source revision, modality, polarity and semantic roles after ownership/license approval.",
+      "use_scope": "target_reimplementation_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "ADAPT",
+      "implementation_status": "blocked_pending_license",
+      "license_status": "pending_owner_authorization",
+      "recommendation_id": "PR-GPU-LEASE",
+      "reusable_item": "Single-GPU DB lease",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 8412,
+          "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+          "head_git_blob": "5377217875586ae530d4d82e95a3ff9abf617a19",
+          "path": "src/services/lite_runtime.py",
+          "purpose": "Single-GPU lease pattern",
+          "repo": "lite",
+          "sha256": "8204263426008c042f4e6ce3773ab2bae4f926914795a9e0e00759964fe1108c",
+          "source_identity": "sha256:8204263426008c042f4e6ce3773ab2bae4f926914795a9e0e00759964fe1108c",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "5377217875586ae530d4d82e95a3ff9abf617a19"
+        }
+      ],
+      "target_action": "Use a persistent worker/process, watchdog, cancellation and progress; no daemon job thread.",
+      "use_scope": "target_reimplementation_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "ADAPT",
+      "implementation_status": "blocked_pending_license",
+      "license_status": "pending_owner_authorization",
+      "recommendation_id": "PR-HUMAN-REVIEW",
+      "reusable_item": "Review states and correction API",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 31085,
+          "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+          "head_git_blob": "588c5131c6daeb56cf5502503b42e83b54bf1798",
+          "path": "src/api/endpoints/audio_v2.py",
+          "purpose": "Review state and metadata/detail endpoint patterns",
+          "repo": "lite",
+          "sha256": "77944da9f8b8ad5b8b69c05930f02c157190b49e00025c0720331cdc3ee652e9",
+          "source_identity": "sha256:77944da9f8b8ad5b8b69c05930f02c157190b49e00025c0720331cdc3ee652e9",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "588c5131c6daeb56cf5502503b42e83b54bf1798"
+        }
+      ],
+      "target_action": "Replace mutable patch with immutable signed human attestation.",
+      "use_scope": "target_reimplementation_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "ADAPT",
+      "implementation_status": "blocked_pending_license",
+      "license_status": "pending_owner_authorization",
+      "recommendation_id": "PR-METADATA-DETAIL-API",
+      "reusable_item": "Metadata list/detail split and no-store helpers",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 42313,
+          "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+          "head_git_blob": "7fb8a409e8c85c3e6fd30f47701dda89c88f6312",
+          "path": "src/api/endpoints/audio.py",
+          "purpose": "List payload split and destructive archive counterexample",
+          "repo": "lite",
+          "sha256": "06fb6881ef3b7faf4f8e1e4d54709ec0eb078018ec320fe0e8dbdf980b496ffc",
+          "source_identity": "sha256:06fb6881ef3b7faf4f8e1e4d54709ec0eb078018ec320fe0e8dbdf980b496ffc",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "7fb8a409e8c85c3e6fd30f47701dda89c88f6312"
+        },
+        {
+          "bytes": 31085,
+          "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+          "head_git_blob": "588c5131c6daeb56cf5502503b42e83b54bf1798",
+          "path": "src/api/endpoints/audio_v2.py",
+          "purpose": "Review state and metadata/detail endpoint patterns",
+          "repo": "lite",
+          "sha256": "77944da9f8b8ad5b8b69c05930f02c157190b49e00025c0720331cdc3ee652e9",
+          "source_identity": "sha256:77944da9f8b8ad5b8b69c05930f02c157190b49e00025c0720331cdc3ee652e9",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "588c5131c6daeb56cf5502503b42e83b54bf1798"
+        }
+      ],
+      "target_action": "Enable for every profile with ETag and pagination.",
+      "use_scope": "target_reimplementation_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "ADAPT",
+      "implementation_status": "blocked_pending_license",
+      "license_status": "pending_owner_authorization",
+      "recommendation_id": "PR-MODEL-ARTIFACT-FACTS",
+      "reusable_item": "Pinned faster-whisper and pyannote artifact facts",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 10341,
+          "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+          "head_git_blob": "9ca6e479d4b7228e51bd3eb9a880367790c5ac4e",
+          "path": "docs/model_artifacts.required.json",
+          "purpose": "Pinned faster-whisper and pyannote artifact facts",
+          "repo": "lite",
+          "sha256": "65ffc62395625167afe54ebd7f115be6868877c368dc1a73f33ca154f08c7072",
+          "source_identity": "sha256:65ffc62395625167afe54ebd7f115be6868877c368dc1a73f33ca154f08c7072",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "9ca6e479d4b7228e51bd3eb9a880367790c5ac4e"
+        }
+      ],
+      "target_action": "Reverify and convert to strict target manifests; add runtime/tokenizer/license/dependency closure.",
+      "use_scope": "target_reimplementation_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "REJECT",
+      "implementation_status": "prohibited",
+      "license_status": "not_applicable_rejected",
+      "recommendation_id": "PR-REJECT-AUTH-FALLBACK",
+      "reusable_item": "Task authorization fallback",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 12372,
+          "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+          "head_git_blob": "ae18e1a3a36e4e36d9e35397e67009f5e0ac88c8",
+          "path": "src/core/auth.py",
+          "purpose": "Task authorization fallback counterexample",
+          "repo": "lite",
+          "sha256": "ab268949dbeaa207d3df5352c31b3c6000301768f4e4bc28624201a23c050145",
+          "source_identity": "sha256:ab268949dbeaa207d3df5352c31b3c6000301768f4e4bc28624201a23c050145",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "ae18e1a3a36e4e36d9e35397e67009f5e0ac88c8"
+        }
+      ],
+      "target_action": "Preserve direct case authorization and add DB consistency constraints.",
+      "use_scope": "negative_control_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "REJECT",
+      "implementation_status": "prohibited",
+      "license_status": "not_applicable_rejected",
+      "recommendation_id": "PR-REJECT-CREATE-ALL",
+      "reusable_item": "`create_all` production init",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 6996,
+          "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+          "head_git_blob": "a03e3088f7f3887d0a0ba74995a74dbbec199c09",
+          "path": "src/database/init_db.py",
+          "purpose": "Production create_all counterexample",
+          "repo": "lite",
+          "sha256": "f5221d345507e480c80ba9f8f05780d4eba9a769a000f3e58f5a800d35ec89f2",
+          "source_identity": "sha256:f5221d345507e480c80ba9f8f05780d4eba9a769a000f3e58f5a800d35ec89f2",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "a03e3088f7f3887d0a0ba74995a74dbbec199c09"
+        }
+      ],
+      "target_action": "Alembic upgrade/head check only.",
+      "use_scope": "negative_control_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "REJECT",
+      "implementation_status": "prohibited",
+      "license_status": "not_applicable_rejected",
+      "recommendation_id": "PR-REJECT-FIXED-PROMPT",
+      "reusable_item": "Fixed police summary and monolithic crime/deception prompt",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 20490,
+          "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+          "head_git_blob": "b9693a40baf5d80745a394c3d6bfecb10bf045bc",
+          "path": "src/services/summarization/models/llm_manager.py",
+          "purpose": "Monolithic crime and deception prompt counterexample",
+          "repo": "lite",
+          "sha256": "362ecf1c5d0fd75f26876eed6b2c5938d2007cb1f4cffa5cc9d02adb94f56184",
+          "source_identity": "sha256:362ecf1c5d0fd75f26876eed6b2c5938d2007cb1f4cffa5cc9d02adb94f56184",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "b9693a40baf5d80745a394c3d6bfecb10bf045bc"
+        },
+        {
+          "bytes": 15645,
+          "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+          "head_git_blob": "b2a548b508e278b75133df5469b3151d8e4f871b",
+          "path": "src/services/summarization/summary_service_v2.py",
+          "purpose": "Fixed police summary counterexample",
+          "repo": "lite",
+          "sha256": "9268fbb2f013273350619386e65815c754378bbe8788da3f918a87840fd71292",
+          "source_identity": "sha256:9268fbb2f013273350619386e65815c754378bbe8788da3f918a87840fd71292",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "b2a548b508e278b75133df5469b3151d8e4f871b"
+        }
+      ],
+      "target_action": "Replace with the new prompt/technique specification.",
+      "use_scope": "negative_control_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "REJECT",
+      "implementation_status": "prohibited",
+      "license_status": "not_applicable_rejected",
+      "recommendation_id": "PR-REJECT-JSON-MONOLITH",
+      "reusable_item": "JSON-monolith analysis graph",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 8938,
+          "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+          "head_git_blob": "6b1e958e6ca1eb796cc86f9a5a1767ddc1d7b465",
+          "path": "src/services/analysis_intelligence/storage.py",
+          "purpose": "Expected revision locking and JSON monolith counterexample",
+          "repo": "lite",
+          "sha256": "2e758e681b30e9d7ef2e17bd9e981137b0852319adaa3d3461ffafa91e804fd4",
+          "source_identity": "sha256:2e758e681b30e9d7ef2e17bd9e981137b0852319adaa3d3461ffafa91e804fd4",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "6b1e958e6ca1eb796cc86f9a5a1767ddc1d7b465"
+        }
+      ],
+      "target_action": "Normalize runs/items/evidence/review events; Task stores pointers/status.",
+      "use_scope": "negative_control_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "REJECT",
+      "implementation_status": "prohibited",
+      "license_status": "not_applicable_rejected",
+      "recommendation_id": "PR-REJECT-NETWORK-DEFAULT",
+      "reusable_item": "Internet-dependent default/provider drift",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 9058,
+          "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+          "head_git_blob": "fcf3240335ee98a04e5436354063f96de9fe46b8",
+          "path": "docker-compose.yml",
+          "purpose": "Internet-dependent provider and setup defaults",
+          "repo": "lite",
+          "sha256": "9fabd7f018c6e7d4a383a527ac8d15fdc9d6ee92d430f0a1706e86e03595a117",
+          "source_identity": "sha256:9fabd7f018c6e7d4a383a527ac8d15fdc9d6ee92d430f0a1706e86e03595a117",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "fcf3240335ee98a04e5436354063f96de9fe46b8"
+        },
+        {
+          "bytes": 10163,
+          "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+          "head_git_blob": "c1657c299aa67ab39763f358c949452e0d9345ce",
+          "path": "src/core/config.py",
+          "purpose": "External provider fallback configuration",
+          "repo": "lite",
+          "sha256": "914ae631e5c3141018ebca8a96037b1bc3c34c6763cf1bc88367ca4513a5d492",
+          "source_identity": "sha256:914ae631e5c3141018ebca8a96037b1bc3c34c6763cf1bc88367ca4513a5d492",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "c1657c299aa67ab39763f358c949452e0d9345ce"
+        }
+      ],
+      "target_action": "Offline strict allowlist, network denial and fail-closed startup.",
+      "use_scope": "negative_control_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "REJECT",
+      "implementation_status": "prohibited",
+      "license_status": "not_applicable_rejected",
+      "recommendation_id": "PR-REJECT-PHYSICAL-ARCHIVE",
+      "reusable_item": "Physical delete labelled archive",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 42313,
+          "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+          "head_git_blob": "7fb8a409e8c85c3e6fd30f47701dda89c88f6312",
+          "path": "src/api/endpoints/audio.py",
+          "purpose": "List payload split and destructive archive counterexample",
+          "repo": "lite",
+          "sha256": "06fb6881ef3b7faf4f8e1e4d54709ec0eb078018ec320fe0e8dbdf980b496ffc",
+          "source_identity": "sha256:06fb6881ef3b7faf4f8e1e4d54709ec0eb078018ec320fe0e8dbdf980b496ffc",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "7fb8a409e8c85c3e6fd30f47701dda89c88f6312"
+        }
+      ],
+      "target_action": "Legal hold + soft archive; controlled secure purge only by policy.",
+      "use_scope": "negative_control_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "ADAPT",
+      "implementation_status": "blocked_pending_license",
+      "license_status": "pending_owner_authorization",
+      "recommendation_id": "PR-ROW-LOCK-REVISION",
+      "reusable_item": "Row lock and expected revision",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 8938,
+          "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+          "head_git_blob": "6b1e958e6ca1eb796cc86f9a5a1767ddc1d7b465",
+          "path": "src/services/analysis_intelligence/storage.py",
+          "purpose": "Expected revision locking and JSON monolith counterexample",
+          "repo": "lite",
+          "sha256": "2e758e681b30e9d7ef2e17bd9e981137b0852319adaa3d3461ffafa91e804fd4",
+          "source_identity": "sha256:2e758e681b30e9d7ef2e17bd9e981137b0852319adaa3d3461ffafa91e804fd4",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "6b1e958e6ca1eb796cc86f9a5a1767ddc1d7b465"
+        }
+      ],
+      "target_action": "Reimplement the concurrency pattern in normalized run/review tables.",
+      "use_scope": "target_reimplementation_only"
+    },
+    {
+      "copy_code_allowed": false,
+      "decision": "ADAPT",
+      "implementation_status": "blocked_pending_license",
+      "license_status": "pending_owner_authorization",
+      "recommendation_id": "PR-RUNTIME-PROFILE",
+      "reusable_item": "Runtime profile UI",
+      "source_snapshot_status": "clean_content_addressed",
+      "sources": [
+        {
+          "bytes": 2167,
+          "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+          "head_git_blob": "5a5df34f0f536d14848f7193f60925506d859019",
+          "path": "src/api/endpoints/system.py",
+          "purpose": "Runtime profile endpoint pattern",
+          "repo": "lite",
+          "sha256": "265bee6566be614b1b38fc12d7d0cf533f7578c3bd58b72bfd96905aa44e33bf",
+          "source_identity": "sha256:265bee6566be614b1b38fc12d7d0cf533f7578c3bd58b72bfd96905aa44e33bf",
+          "tracked_state": "tracked_clean",
+          "worktree_git_blob": "5a5df34f0f536d14848f7193f60925506d859019"
+        }
+      ],
+      "target_action": "Back with cached manifest/preflight state; replace five-second heavy polling.",
+      "use_scope": "target_reimplementation_only"
+    }
+  ],
+  "policy_version": "reference-reuse-policy-v1",
+  "register_sha256": "05a8bee323aca9fedc524f8905fab1f7c3fc4b5da9c8af81dd3a8b2bba0702f2",
+  "repositories": {
+    "cherry": {
+      "audit_root": "E:\\research\\Cherry2\\cherry_core",
+      "branch": "main",
+      "dirty": true,
+      "head_commit": "1dbb880c0ca034752558a63676e6737001b78f39",
+      "label": "cherry"
+    },
+    "lite": {
+      "audit_root": "D:\\Workspace\\SpeechToInfomation-pr",
+      "branch": "feature/architecture-refactor-pr",
+      "dirty": false,
+      "head_commit": "9a2e5387f786ebbf13133a99216827ef4ca13e03",
+      "label": "lite"
+    },
+    "main": {
+      "audit_root": "D:\\Workspace\\SpeechToInfomation",
+      "branch": "feature/architecture-refactor",
+      "dirty": true,
+      "head_commit": "5f7f2ac92598a30ba796b7a4ae793251ac7d5eea",
+      "label": "main"
+    }
+  },
+  "review_sha256": "7669b9b41e7962e97e1d6e4b3d2513ecd74a6feaeab84d4e73c1b4c2a5bc22ed",
+  "schema_version": "reference-port-register-v1",
+  "source_evidence_schema_version": "reference-repo-audit-v2",
+  "source_evidence_spec_sha256": "6defdd4a5fa0ee94adab4c3a9ca5ace83abbd18a32eeb43e8f4f3287c8d30972"
+}

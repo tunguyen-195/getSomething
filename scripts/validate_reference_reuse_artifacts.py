@@ -5,9 +5,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.reference_port_register import PortRegisterError, validate_register
 
 
 ARTIFACTS = {
@@ -19,6 +26,7 @@ ARTIFACTS = {
     "review": "docs/reviews/reference-repository-reuse-audit-2026-08-09.md",
     "plan": "docs/plans/2026-08-09-reference-reuse-offline-cand-plan.md",
     "plan_audit": "docs/reviews/reference-repository-reuse-plan-audit-2026-08-09.md",
+    "port_register": "docs/provenance/reference-port-register.yaml",
 }
 
 EXPECTED_RECOMMENDATION_IDS = {
@@ -311,6 +319,24 @@ def validate(root: Path) -> dict[str, Any]:
             ],
             ["TBD"],
         )
+
+    try:
+        register_failures = validate_register(root)
+    except PortRegisterError:
+        register_failures = ["register:unreadable"]
+    checks.append(
+        {
+            "id": "port_register:locked_and_fail_closed",
+            "passed": not register_failures,
+        }
+    )
+    checks.extend(
+        {
+            "id": f"port_register:failure:{failure}",
+            "passed": False,
+        }
+        for failure in register_failures
+    )
 
     failed = [check["id"] for check in checks if not check["passed"]]
     return {
