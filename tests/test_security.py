@@ -29,7 +29,43 @@ from src.database.models.models import (
     Language,
 )
 from src.main import app
-from src.services.task_service import extract_visualization_payload, update_task
+from src.services.task_service import (
+    begin_summary_attempt,
+    build_summary_attempt_binding,
+    extract_visualization_payload,
+    succeed_summary_attempt,
+    update_task,
+)
+
+
+def _persist_test_summary(task_id: str, transcript: str, summary: str) -> None:
+    assert update_task(task_id, {"transcript": transcript})
+    request_fingerprint, source_revision_id = build_summary_attempt_binding(
+        transcript,
+        model_name="test-model",
+        summary_type="detailed",
+        include_context=True,
+        min_length=0,
+        max_length=200,
+    )
+    attempt_id = f"test-summary-{uuid.uuid4()}"
+    assert begin_summary_attempt(
+        task_id,
+        attempt_id,
+        request_fingerprint=request_fingerprint,
+        source_revision_id=source_revision_id,
+    ).accepted
+    assert succeed_summary_attempt(
+        task_id,
+        attempt_id,
+        {
+            "summary": summary,
+            "context_analysis": None,
+            "summary_model": "test-model",
+            "summary_type": "detailed",
+            "summary_runtime": {},
+        },
+    ).accepted
 
 
 @pytest.fixture()
@@ -548,7 +584,7 @@ def test_audio_list_derives_summarized_status_from_task(auth_enabled):
     case_id = _create_case_for_user(user_id)
     task_id = _create_task_for_user(user_id, case_id)
     audio_id = _create_audio_for_task(user_id, case_id, task_id, status="transcribed")
-    assert update_task(task_id, {"status": "summarized", "summary": "done"})
+    _persist_test_summary(task_id, "hello", "done")
     db = SessionLocal()
     try:
         audio = db.query(AudioFile).filter(AudioFile.id == audio_id).first()
@@ -668,7 +704,8 @@ def test_task_result_updates_merge_without_dropping_existing_fields():
     assert update_task(
         task_id, {"transcript": "hello", "segments": [{"start": 0, "end": 1}]}
     )
-    assert update_task(task_id, {"summary": "short summary"})
+    assert update_task(task_id, {"summary": "forged summary"}) is False
+    _persist_test_summary(task_id, "hello", "short summary")
     assert update_task(
         task_id,
         {"visualization_data": {"nodes": []}, "has_visualization": True},

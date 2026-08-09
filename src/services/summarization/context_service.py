@@ -50,8 +50,11 @@ def analyze_conversation_context(
         logger.info("[CONTEXT_SERVICE] Context analysis complete")
         return result
         
-    except Exception as e:
-        logger.error(f"[CONTEXT_SERVICE] Error: {e}", exc_info=True)
+    except Exception as exc:
+        logger.error(
+            "[CONTEXT_SERVICE] Analysis failed | error_type=%s",
+            type(exc).__name__,
+        )
         return None
 
 

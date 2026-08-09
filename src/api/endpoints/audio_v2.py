@@ -1,4 +1,6 @@
 ﻿"""Audio API v2 - Modular"""
+import uuid
+
 from fastapi import APIRouter, UploadFile, File, HTTPException, Body, Depends, Form, Query
 from typing import Any, Dict
 from src.core.logging import logger
@@ -10,10 +12,19 @@ from src.core.config import settings
 from src.database.models.models import AudioFile, User
 from src.core.time import LEGACY_DATABASE_TIMEZONE, utc_isoformat
 from src.services.task_service import (
+    SummaryResultRejected,
+    SummaryTransitionResult,
+    begin_summary_attempt,
+    build_summary_attempt_binding,
+    build_summary_result_patch,
     effective_task_status,
     extract_active_visualization_payload,
     extract_visualization_payload,
+    fail_summary_attempt,
     released_investigation_run_identity,
+    safe_summary_message,
+    succeed_summary_attempt,
+    validate_summary_service_result,
 )
 from src.services.summarization.contracts import (
     DEFAULT_SUMMARY_MAX_WORDS,
@@ -51,6 +62,70 @@ def _summary_response_result(result: dict[str, Any]) -> dict[str, Any]:
         for key, value in result.items()
         if key in _SUMMARY_RESPONSE_FIELDS
     }
+
+
+def _summary_http_error(code: str, *, task_id: str, status_code: int = 502) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail={
+            "code": code,
+            "message": safe_summary_message(code),
+            "task_id": task_id,
+        },
+    )
+
+
+def _begin_summary_transition(
+    task_id: str,
+    attempt_id: str,
+    *,
+    request_fingerprint: str,
+    source_revision_id: str,
+    stage: str,
+) -> SummaryTransitionResult:
+    return begin_summary_attempt(
+        task_id,
+        attempt_id,
+        request_fingerprint=request_fingerprint,
+        source_revision_id=source_revision_id,
+        stage=stage,
+    )
+
+
+def _persist_summary_success(
+    task_id: str,
+    attempt_id: str,
+    result_patch: dict[str, Any],
+) -> SummaryTransitionResult:
+    return succeed_summary_attempt(task_id, attempt_id, result_patch)
+
+
+def _persist_summary_failure(
+    task_id: str,
+    attempt_id: str,
+    rejection: SummaryResultRejected,
+) -> SummaryTransitionResult:
+    return fail_summary_attempt(
+        task_id,
+        attempt_id,
+        code=rejection.code,
+        stage=rejection.stage,
+        retryable=rejection.retryable,
+        needs_review=rejection.needs_review,
+    )
+
+
+def _summary_failure_response(
+    outcome: SummaryTransitionResult,
+    rejection: SummaryResultRejected,
+    *,
+    accepted_status: int,
+) -> tuple[str, int]:
+    if outcome.accepted:
+        return rejection.code, accepted_status
+    if outcome.outcome == "conflict":
+        return outcome.code, 409
+    return "SUMMARY_PERSISTENCE_FAILED", 500
 
 @router.post("/upload")
 async def upload_audio_v2(
@@ -138,7 +213,7 @@ async def summarize_v2(
         min_length = options.min_length
         max_length = options.max_length
 
-        from src.services.task_service import get_task, update_task
+        from src.services.task_service import get_task
         task = get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
@@ -157,40 +232,191 @@ async def summarize_v2(
 
         logger.info(f"[API_V2] Summarize | task_id={task_id} | transcript_length={len(transcript)} | model={model_name}")
 
+        request_fingerprint, source_revision_id = build_summary_attempt_binding(
+            transcript,
+            model_name=model_name,
+            summary_type=summary_type,
+            include_context=include_context,
+            min_length=min_length,
+            max_length=max_length,
+            user_prompt=None,
+        )
+        attempt_id = str(uuid.uuid4())
         if async_mode:
             from src.worker.tasks.summarize_task import summarize_transcript_task
-            celery_task = summarize_transcript_task.delay(
-                task_id=task_id,
-                model_name=model_name,
-                summary_type=summary_type,
-                include_context=include_context,
-                user_prompt=None,
-                min_length=min_length,
-                max_length=max_length,
+            begun = _begin_summary_transition(
+                task_id,
+                attempt_id,
+                request_fingerprint=request_fingerprint,
+                source_revision_id=source_revision_id,
+                stage="enqueue",
             )
-            update_task(task_id, {"status": "summarizing"})
-            return {"task_id": task_id, "status": "summarizing", "celery_task_id": celery_task.id}
-        else:
-            from src.services.summarization.summary_service_v2 import summarize_transcript_v2
-            result = summarize_transcript_v2(
-                transcript,
-                model_name,
-                summary_type,
-                include_context,
-                min_length=min_length,
-                max_length=max_length,
-            )
-            update_task(task_id, {"status": "summarized", "summary": result["summary"]})
+            if not begun.accepted:
+                code = begun.code if begun.outcome == "conflict" else "SUMMARY_PERSISTENCE_FAILED"
+                raise _summary_http_error(
+                    code,
+                    task_id=task_id,
+                    status_code=409 if begun.outcome == "conflict" else 500,
+                )
+            try:
+                celery_task = summarize_transcript_task.apply_async(
+                    kwargs={
+                        "task_id": task_id,
+                        "model_name": model_name,
+                        "summary_type": summary_type,
+                        "include_context": include_context,
+                        "user_prompt": None,
+                        "min_length": min_length,
+                        "max_length": max_length,
+                    },
+                    task_id=attempt_id,
+                )
+            except Exception as exc:
+                logger.error(
+                    "[API_V2] Summary enqueue failed | task_id=%s | error_type=%s",
+                    task_id,
+                    type(exc).__name__,
+                )
+                rejection = SummaryResultRejected(
+                    "SUMMARY_ENQUEUE_FAILED",
+                    stage="enqueue",
+                    retryable=True,
+                    needs_review=False,
+                )
+                persisted = _persist_summary_failure(
+                    task_id,
+                    attempt_id,
+                    rejection,
+                )
+                code, status_code = _summary_failure_response(
+                    persisted,
+                    rejection,
+                    accepted_status=503,
+                )
+                raise _summary_http_error(
+                    code,
+                    task_id=task_id,
+                    status_code=status_code,
+                ) from None
             return {
                 "task_id": task_id,
+                "attempt_id": attempt_id,
+                "status": "summarizing",
+                "celery_task_id": celery_task.id,
+            }
+        else:
+            from src.services.summarization.summary_service_v2 import summarize_transcript_v2
+            begun = _begin_summary_transition(
+                task_id,
+                attempt_id,
+                request_fingerprint=request_fingerprint,
+                source_revision_id=source_revision_id,
+                stage="execution",
+            )
+            if not begun.accepted:
+                code = begun.code if begun.outcome == "conflict" else "SUMMARY_PERSISTENCE_FAILED"
+                raise _summary_http_error(
+                    code,
+                    task_id=task_id,
+                    status_code=409 if begun.outcome == "conflict" else 500,
+                )
+            try:
+                raw_result = summarize_transcript_v2(
+                    transcript,
+                    model_name,
+                    summary_type,
+                    include_context,
+                    min_length=min_length,
+                    max_length=max_length,
+                    source_metadata={
+                        "summary_source_revision_id": source_revision_id,
+                        "request_fingerprint": request_fingerprint,
+                    },
+                )
+                validated = validate_summary_service_result(
+                    raw_result,
+                    expected_summary_type=summary_type,
+                    expected_source_revision_id=source_revision_id,
+                    expected_request_fingerprint=request_fingerprint,
+                )
+            except SummaryResultRejected as rejection:
+                persisted = _persist_summary_failure(
+                    task_id,
+                    attempt_id,
+                    rejection,
+                )
+                code, status_code = _summary_failure_response(
+                    persisted,
+                    rejection,
+                    accepted_status=502,
+                )
+                raise _summary_http_error(
+                    code,
+                    task_id=task_id,
+                    status_code=status_code,
+                ) from None
+            except Exception as exc:
+                logger.error(
+                    "[API_V2] Summary provider failed | task_id=%s | error_type=%s",
+                    task_id,
+                    type(exc).__name__,
+                )
+                rejection = SummaryResultRejected(
+                    "SUMMARY_GENERATION_FAILED",
+                    stage="execution",
+                    retryable=True,
+                    needs_review=False,
+                )
+                persisted = _persist_summary_failure(
+                    task_id,
+                    attempt_id,
+                    rejection,
+                )
+                code, status_code = _summary_failure_response(
+                    persisted,
+                    rejection,
+                    accepted_status=502,
+                )
+                raise _summary_http_error(
+                    code,
+                    task_id=task_id,
+                    status_code=status_code,
+                ) from None
+            result_patch = build_summary_result_patch(
+                validated,
+                summary_type=summary_type,
+            )
+            persisted = _persist_summary_success(
+                task_id,
+                attempt_id,
+                result_patch,
+            )
+            if not persisted.accepted:
+                code = persisted.code if persisted.outcome == "conflict" else "SUMMARY_PERSISTENCE_FAILED"
+                raise _summary_http_error(
+                    code,
+                    task_id=task_id,
+                    status_code=409 if persisted.outcome == "conflict" else 500,
+                )
+            return {
+                "task_id": task_id,
+                "attempt_id": attempt_id,
                 "status": "summarized",
-                "result": _summary_response_result(result),
+                "result": _summary_response_result(validated.safe_result),
             }
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"[API_V2] Summarize error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        logger.error(
+            "[API_V2] Summarize request failed | task_id=%s | error_type=%s",
+            task_id,
+            type(exc).__name__,
+        )
+        raise _summary_http_error(
+            "SUMMARY_GENERATION_FAILED",
+            task_id=task_id,
+            status_code=500,
+        ) from None
 
 @router.get("/tasks/{task_id}/status")
 async def get_status_v2(

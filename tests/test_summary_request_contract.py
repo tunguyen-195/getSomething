@@ -307,7 +307,21 @@ def test_multi_service_rejects_unknown_type_before_gpu_or_model(monkeypatch) -> 
 def test_workers_reject_unknown_type_before_task_read_or_update(monkeypatch) -> None:
     touched: list[str] = []
     monkeypatch.setattr(summarize_task, "get_task", lambda *_args: touched.append("read"))
-    monkeypatch.setattr(summarize_task, "update_task", lambda *_args: touched.append("update"))
+    monkeypatch.setattr(
+        summarize_task,
+        "begin_summary_attempt",
+        lambda *_args, **_kwargs: touched.append("begin"),
+    )
+    monkeypatch.setattr(
+        summarize_task,
+        "succeed_summary_attempt",
+        lambda *_args, **_kwargs: touched.append("success"),
+    )
+    monkeypatch.setattr(
+        summarize_task,
+        "fail_summary_attempt",
+        lambda *_args, **_kwargs: touched.append("failure"),
+    )
     monkeypatch.setattr(
         summarize_task,
         "_llama_server_handoff",
@@ -332,16 +346,27 @@ def test_workers_reject_unknown_type_before_task_read_or_update(monkeypatch) -> 
 def test_worker_propagates_identical_bounds_to_service(monkeypatch) -> None:
     captured: dict[str, object] = {}
     updates: list[dict[str, object]] = []
+    attempt_ids: list[str] = []
     monkeypatch.setattr(
         summarize_task,
         "get_task",
         lambda _task_id: {"result": {"transcription": "Noi dung"}},
     )
-    monkeypatch.setattr(
-        summarize_task,
-        "update_task",
-        lambda _task_id, patch: updates.append(patch) or True,
-    )
+    def begin(_task_id, attempt_id, **_kwargs):
+        attempt_ids.append(attempt_id)
+        return task_service.SummaryTransitionResult(
+            "applied", "running", "SUMMARY_ATTEMPT_STARTED"
+        )
+
+    def succeed(_task_id, attempt_id, patch, **_kwargs):
+        assert attempt_id == attempt_ids[-1]
+        updates.append({"status": "summarized", "result": patch})
+        return task_service.SummaryTransitionResult(
+            "applied", "succeeded", "SUMMARY_SUCCEEDED"
+        )
+
+    monkeypatch.setattr(summarize_task, "begin_summary_attempt", begin)
+    monkeypatch.setattr(summarize_task, "succeed_summary_attempt", succeed)
     monkeypatch.setattr(
         summarize_task,
         "_llama_server_handoff",
@@ -356,6 +381,7 @@ def test_worker_propagates_identical_bounds_to_service(monkeypatch) -> None:
             "summary": "Tom tat du.",
             "context": None,
             "model": "test-model",
+            "summary_type": "brief",
             "runtime": {
                 "length_contract": evaluate_summary_length(
                     "Tom tat du.",
@@ -379,6 +405,7 @@ def test_worker_propagates_identical_bounds_to_service(monkeypatch) -> None:
     assert captured["min_length"] == 7
     assert captured["max_length"] == 11
     assert updates[-1]["status"] == "summarized"
+    assert len(attempt_ids) == 1
 
 
 def test_celery_returns_safe_service_result_without_projection_fields(
@@ -411,7 +438,6 @@ def test_celery_returns_safe_service_result_without_projection_fields(
         "summary_type": "detailed",
         "release": {"run_id": "released-run"},
         "runtime": {"length_contract": {"maximum_met": True}},
-        "error": None,
         "visualization_data": {"nodes": ["forged"]},
         "has_visualization": True,
         "released_investigation_run": {"run_id": "forged"},
@@ -428,7 +454,20 @@ def test_celery_returns_safe_service_result_without_projection_fields(
         "get_task",
         lambda _task_id: {"result": {"transcription": "Noi dung"}},
     )
-    monkeypatch.setattr(summarize_task, "update_task", lambda *_args: True)
+    monkeypatch.setattr(
+        summarize_task,
+        "begin_summary_attempt",
+        lambda *_args, **_kwargs: task_service.SummaryTransitionResult(
+            "applied", "running", "SUMMARY_ATTEMPT_STARTED"
+        ),
+    )
+    monkeypatch.setattr(
+        summarize_task,
+        "succeed_summary_attempt",
+        lambda *_args, **_kwargs: task_service.SummaryTransitionResult(
+            "applied", "succeeded", "SUMMARY_SUCCEEDED"
+        ),
+    )
     monkeypatch.setattr(
         summary_service_v2,
         "summarize_transcript_v2",
@@ -565,6 +604,7 @@ def test_v2_sync_summary_response_never_exposes_visualization_projection(
     monkeypatch,
 ) -> None:
     updates: list[dict[str, object]] = []
+    attempt_ids: list[str] = []
     monkeypatch.setattr(
         task_service,
         "get_task",
@@ -575,11 +615,21 @@ def test_v2_sync_summary_response_never_exposes_visualization_projection(
             }
         },
     )
-    monkeypatch.setattr(
-        task_service,
-        "update_task",
-        lambda _task_id, patch: updates.append(patch) or True,
-    )
+    def begin(_task_id, attempt_id, **_kwargs):
+        attempt_ids.append(attempt_id)
+        return task_service.SummaryTransitionResult(
+            "applied", "running", "SUMMARY_ATTEMPT_STARTED"
+        )
+
+    def succeed(_task_id, attempt_id, patch, **_kwargs):
+        assert attempt_id == attempt_ids[-1]
+        updates.append({"status": "summarized", "summary": patch["summary"]})
+        return task_service.SummaryTransitionResult(
+            "applied", "succeeded", "SUMMARY_SUCCEEDED"
+        )
+
+    monkeypatch.setattr(audio_v2, "begin_summary_attempt", begin)
+    monkeypatch.setattr(audio_v2, "succeed_summary_attempt", succeed)
     monkeypatch.setattr(audio_v2, "assert_task_access", lambda *_args: None)
     monkeypatch.setattr(audio_v2, "check_rate_limit", lambda *_args: None)
     monkeypatch.setattr(
@@ -618,6 +668,7 @@ def test_v2_sync_summary_response_never_exposes_visualization_projection(
     assert "has_visualization" not in response["result"]
     assert "released_investigation_run" not in response["result"]
     assert updates == [{"status": "summarized", "summary": "Tom tat hop le."}]
+    assert response["attempt_id"] == attempt_ids[-1]
 
 
 def test_frontend_summary_type_options_use_the_shared_typescript_allowlist() -> None:

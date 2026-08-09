@@ -4,6 +4,7 @@ import json
 from contextlib import nullcontext
 from types import SimpleNamespace
 
+from src.services import task_service
 from src.services.summarization import summary_service_v2
 from src.services.summarization.contracts import SummaryRequest
 from src.services.task_service import _deep_merge
@@ -128,6 +129,7 @@ def test_summary_worker_preserves_visualization_and_clears_stale_context(
         separators=(",", ":"),
     ).encode("utf-8")
     updates: list[dict] = []
+    attempt_ids: list[str] = []
     if hasattr(summarize_task, "settings"):
         monkeypatch.setattr(
             summarize_task.settings,
@@ -136,16 +138,27 @@ def test_summary_worker_preserves_visualization_and_clears_stale_context(
         )
     monkeypatch.setattr(summarize_task, "get_task", lambda _task_id: task)
 
-    def apply_update(_task_id: str, payload: dict) -> bool:
+    def begin(_task_id: str, attempt_id: str, **_kwargs):
+        attempt_ids.append(attempt_id)
+        return task_service.SummaryTransitionResult(
+            "applied", "running", "SUMMARY_ATTEMPT_STARTED"
+        )
+
+    def succeed(_task_id: str, attempt_id: str, result_patch: dict, **_kwargs):
+        assert attempt_id == attempt_ids[-1]
+        payload = {"status": "summarized", "result": result_patch}
         updates.append(copy.deepcopy(payload))
         result_patch = payload.get("result")
         if isinstance(result_patch, dict):
             merged = _deep_merge(stored_result, result_patch)
             stored_result.clear()
             stored_result.update(merged)
-        return True
+        return task_service.SummaryTransitionResult(
+            "applied", "succeeded", "SUMMARY_SUCCEEDED"
+        )
 
-    monkeypatch.setattr(summarize_task, "update_task", apply_update)
+    monkeypatch.setattr(summarize_task, "begin_summary_attempt", begin)
+    monkeypatch.setattr(summarize_task, "succeed_summary_attempt", succeed)
     monkeypatch.setattr(
         summary_service_v2,
         "summarize_transcript_v2",
@@ -154,6 +167,7 @@ def test_summary_worker_preserves_visualization_and_clears_stale_context(
             "summary": "Tom tat moi.",
             "context": None,
             "model": "test-model",
+            "summary_type": "detailed",
             "runtime": {"visualization_projection": "not_requested"},
         },
     )
@@ -185,6 +199,7 @@ def test_summary_worker_preserves_visualization_and_clears_stale_context(
     assert visualization_after == visualization_before
     assert stored_result["has_visualization"] is True
     assert stored_result["context_analysis"] is None
+    assert len(attempt_ids) == 1
 
 
 def test_v1_summarize_endpoint_persists_only_summary_context_patch(
@@ -208,17 +223,29 @@ def test_v1_summarize_endpoint_persists_only_summary_context_patch(
         {key: stored_result[key] for key in _PROJECTION_FIELDS}
     )
     updates: list[dict] = []
+    attempt_ids: list[str] = []
 
     monkeypatch.setattr(audio_v1, "get_task", lambda _task_id: task)
     monkeypatch.setattr(audio_v1, "assert_task_access", lambda *_args: None)
     monkeypatch.setattr(audio_v1, "check_rate_limit", lambda *_args: None)
 
-    def apply_update(_task_id: str, payload: dict) -> bool:
+    def begin(_task_id: str, attempt_id: str, **_kwargs):
+        attempt_ids.append(attempt_id)
+        return task_service.SummaryTransitionResult(
+            "applied", "running", "SUMMARY_ATTEMPT_STARTED"
+        )
+
+    def succeed(_task_id: str, attempt_id: str, result_patch: dict, **_kwargs):
+        assert attempt_id == attempt_ids[-1]
+        payload = {"status": "summarized", "result": result_patch}
         updates.append(copy.deepcopy(payload))
         _apply_result_patch(stored_result, payload)
-        return True
+        return task_service.SummaryTransitionResult(
+            "applied", "succeeded", "SUMMARY_SUCCEEDED"
+        )
 
-    monkeypatch.setattr(audio_v1, "update_task", apply_update)
+    monkeypatch.setattr(audio_v1, "begin_summary_attempt", begin)
+    monkeypatch.setattr(audio_v1, "succeed_summary_attempt", succeed)
     monkeypatch.setattr(
         summary_service_v2,
         "summarize_transcript_v2",
@@ -227,6 +254,7 @@ def test_v1_summarize_endpoint_persists_only_summary_context_patch(
             "summary": "Tom tat moi.",
             "context": {"analysis_status": "success"},
             "model": "test-model",
+            "summary_type": "detailed",
             "runtime": {"length_contract": {"maximum_met": True}},
             "visualization_data": {"forged": True},
             "has_visualization": True,
@@ -263,6 +291,7 @@ def test_v1_summarize_endpoint_persists_only_summary_context_patch(
     assert _PROJECTION_FIELDS.isdisjoint(response)
     assert _PROJECTION_FIELDS.isdisjoint(response["result"])
     assert {key: stored_result[key] for key in _PROJECTION_FIELDS} == projection_before
+    assert response["attempt_id"] == attempt_ids[-1]
 
 
 def test_v1_resummarize_endpoint_does_not_replay_projection_fields(
@@ -283,28 +312,41 @@ def test_v1_resummarize_endpoint_does_not_replay_projection_fields(
     )
     updates: list[dict] = []
     summary_calls: list[dict] = []
+    attempt_ids: list[str] = []
 
     monkeypatch.setattr(audio_v1, "get_task", lambda _task_id: task)
     monkeypatch.setattr(audio_v1, "assert_task_access", lambda *_args: None)
     monkeypatch.setattr(audio_v1, "check_rate_limit", lambda *_args: None)
-    monkeypatch.setattr(
-        audio_v1.subprocess,
-        "run",
-        lambda *_args, **_kwargs: SimpleNamespace(stdout="test-model latest\n"),
-    )
-
-    def summarize(*_args, **kwargs) -> str:
+    def summarize(*_args, **kwargs) -> dict:
         summary_calls.append(kwargs)
-        return "Tom tat lai."
+        return {
+            "available": True,
+            "summary": "Tom tat lai.",
+            "context": {"analysis_status": "success"},
+            "model": "test-model",
+            "summary_type": "brief",
+            "runtime": {},
+        }
 
-    monkeypatch.setattr(audio_v1, "summarize_transcript", summarize)
+    monkeypatch.setattr(summary_service_v2, "summarize_transcript_v2", summarize)
 
-    def apply_update(_task_id: str, payload: dict) -> bool:
+    def begin(_task_id: str, attempt_id: str, **_kwargs):
+        attempt_ids.append(attempt_id)
+        return task_service.SummaryTransitionResult(
+            "applied", "running", "SUMMARY_ATTEMPT_STARTED"
+        )
+
+    def succeed(_task_id: str, attempt_id: str, result_patch: dict, **_kwargs):
+        assert attempt_id == attempt_ids[-1]
+        payload = {"status": "summarized", "result": result_patch}
         updates.append(copy.deepcopy(payload))
         _apply_result_patch(stored_result, payload)
-        return True
+        return task_service.SummaryTransitionResult(
+            "applied", "succeeded", "SUMMARY_SUCCEEDED"
+        )
 
-    monkeypatch.setattr(audio_v1, "update_task", apply_update)
+    monkeypatch.setattr(audio_v1, "begin_summary_attempt", begin)
+    monkeypatch.setattr(audio_v1, "succeed_summary_attempt", succeed)
 
     response = audio_v1.resummarize_task(
         "task-v1-resummary",
@@ -329,6 +371,7 @@ def test_v1_resummarize_endpoint_does_not_replay_projection_fields(
     assert _PROJECTION_FIELDS.isdisjoint(response)
     assert _PROJECTION_FIELDS.isdisjoint(response["result"])
     assert {key: stored_result[key] for key in _PROJECTION_FIELDS} == projection_before
+    assert response["attempt_id"] == attempt_ids[-1]
 
 
 def test_summary_analyze_persists_only_context_patch(

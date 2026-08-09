@@ -3,8 +3,24 @@ Summarize Task - Celery background task for summarization
 Handles: Transcribe → Summarize (OPTIONAL, only if requested)
 """
 import logging
+import uuid
+from contextlib import nullcontext
+from typing import NoReturn
+
 from src.worker.worker import celery_app
-from src.services.task_service import get_task, update_task
+from src.services.task_service import (
+    SummaryResultRejected,
+    SummaryTransitionResult,
+    begin_summary_attempt,
+    build_summary_attempt_binding,
+    build_summary_result_patch,
+    fail_summary_attempt,
+    get_task,
+    safe_summary_message,
+    succeed_summary_attempt,
+    validate_persisted_terminal_summary,
+    validate_summary_service_result,
+)
 from src.services.summarization.contracts import (
     DEFAULT_MULTI_SUMMARY_MAX_WORDS,
     DEFAULT_MULTI_SUMMARY_MIN_WORDS,
@@ -17,57 +33,91 @@ from src.services.summarization.contracts import (
 
 logger = logging.getLogger(__name__)
 
-_SUMMARY_SERVICE_RESULT_FIELDS = frozenset(
-    {
-        "available",
-        "summary",
-        "context",
-        "model",
-        "requested_model",
-        "summary_type",
-        "release",
-        "runtime",
-        "error",
-        "num_transcripts",
-        "case_id",
-    }
-)
+
+class SafeSummaryTaskError(RuntimeError):
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(safe_summary_message(code))
 
 
-def _summary_persistence_patch(result: dict, summary_type: SummaryType) -> dict:
-    """Project service output onto the canonical stored summary fields."""
+def _llama_server_handoff():
+    """Test seam for G1; the real GPU lease implementation is intentionally separate."""
 
+    return nullcontext()
+
+
+def _accepted(outcome: SummaryTransitionResult) -> bool:
+    return outcome.accepted
+
+
+def _begin_attempt(
+    task_id: str,
+    attempt_id: str,
+    *,
+    request_fingerprint: str,
+    source_revision_id: str,
+) -> SummaryTransitionResult:
+    return begin_summary_attempt(
+        task_id,
+        attempt_id,
+        request_fingerprint=request_fingerprint,
+        source_revision_id=source_revision_id,
+    )
+
+
+def _persist_success(
+    task_id: str,
+    attempt_id: str,
+    result_patch: dict,
+) -> SummaryTransitionResult:
+    return succeed_summary_attempt(task_id, attempt_id, result_patch)
+
+
+def _persist_failure(
+    task_id: str,
+    attempt_id: str,
+    rejection: SummaryResultRejected,
+) -> SummaryTransitionResult:
+    return fail_summary_attempt(
+        task_id,
+        attempt_id,
+        code=rejection.code,
+        stage=rejection.stage,
+        retryable=rejection.retryable,
+        needs_review=rejection.needs_review,
+    )
+
+
+def _raise_safe_task_error(code: str) -> NoReturn:
+    raise SafeSummaryTaskError(code)
+
+
+def _failure_transition_code(
+    outcome: SummaryTransitionResult,
+    requested_code: str,
+) -> str:
+    if outcome.accepted:
+        return requested_code
+    if outcome.outcome == "conflict":
+        return outcome.code
+    return "SUMMARY_PERSISTENCE_FAILED"
+
+
+def _stored_terminal_success(task_id: str, expected_attempt_id: str) -> dict:
+    task = get_task(task_id)
+    task_result = task.get("result") if isinstance(task, dict) else None
+    try:
+        validated = validate_persisted_terminal_summary(
+            task_result,
+            expected_attempt_id=expected_attempt_id,
+        )
+    except SummaryResultRejected as rejection:
+        _raise_safe_task_error(rejection.code)
     return {
-        "summary": result["summary"],
-        "context_analysis": (
-            result.get("context") if isinstance(result.get("context"), dict) else None
-        ),
-        "summary_model": result.get("model"),
-        "summary_type": summary_type,
-        "summary_runtime": (
-            result.get("runtime") if isinstance(result.get("runtime"), dict) else {}
-        ),
+        "status": "success",
+        "task_id": task_id,
+        "result": validated.safe_result,
     }
-
-
-def _safe_summary_service_result(result: dict) -> dict:
-    """Preserve service/API parity without replaying visualization projections."""
-
-    return {
-        key: value
-        for key, value in result.items()
-        if key in _SUMMARY_SERVICE_RESULT_FIELDS
-    }
-
-
-def _summary_failure_message(result: object, default: str) -> str:
-    if not isinstance(result, dict):
-        return default
-    error = result.get("error")
-    if isinstance(error, dict) and error.get("message"):
-        return str(error["message"])
-    summary = result.get("summary")
-    return str(summary) if summary else default
 
 
 @celery_app.task(bind=True, name='tasks.summarize_transcript')
@@ -107,89 +157,128 @@ def summarize_transcript_task(
         f"[CELERY_SUMMARIZE] Task started | task_id={task_id} | "
         f"celery_id={self.request.id} | model={model_name}"
     )
+    attempt_id = str(self.request.id or uuid.uuid4())
+    task = get_task(task_id)
+    transcript = None
+    if task and isinstance(task.get("result"), dict):
+        transcript = task["result"].get("transcription")
+    binding_transcript = transcript if isinstance(transcript, str) else ""
+    request_fingerprint, source_revision_id = build_summary_attempt_binding(
+        binding_transcript,
+        model_name=model_name,
+        summary_type=summary_type,
+        include_context=include_context,
+        min_length=min_length,
+        max_length=max_length,
+        user_prompt=user_prompt,
+    )
+    begun = _begin_attempt(
+        task_id,
+        attempt_id,
+        request_fingerprint=request_fingerprint,
+        source_revision_id=source_revision_id,
+    )
+    if not _accepted(begun):
+        code = begun.code if begun.outcome == "conflict" else "SUMMARY_PERSISTENCE_FAILED"
+        _raise_safe_task_error(code)
+
+    if begun.outcome == "duplicate" and begun.state in {
+        "succeeded",
+        "failed",
+        "needs_review",
+    }:
+        if begun.state == "succeeded":
+            return _stored_terminal_success(task_id, attempt_id)
+        _raise_safe_task_error(begun.code)
+
+    if not isinstance(transcript, str) or not transcript.strip():
+        rejection = SummaryResultRejected(
+            "SUMMARY_RESULT_INVALID",
+            stage="validation",
+            retryable=False,
+            needs_review=False,
+        )
+        persisted = _persist_failure(task_id, attempt_id, rejection)
+        code = _failure_transition_code(persisted, rejection.code)
+        _raise_safe_task_error(code)
+
+    from src.services.summarization.summary_service_v2 import summarize_transcript_v2
 
     try:
-        # Get task to extract transcript
-        task = get_task(task_id)
-        if not task:
-            raise ValueError(f"Task {task_id} not found")
+        with _llama_server_handoff():
+            try:
+                raw_result = summarize_transcript_v2(
+                    transcript=transcript,
+                    model_name=model_name,
+                    summary_type=summary_type,
+                    include_context=include_context,
+                    user_prompt=user_prompt,
+                    min_length=min_length,
+                    max_length=max_length,
+                    source_metadata={
+                        "summary_source_revision_id": source_revision_id,
+                        "request_fingerprint": request_fingerprint,
+                    },
+                )
+            except Exception as exc:
+                logger.error(
+                    "[CELERY_SUMMARIZE] Provider call failed | task_id=%s | error_type=%s",
+                    task_id,
+                    type(exc).__name__,
+                )
+                raise SummaryResultRejected(
+                    "SUMMARY_GENERATION_FAILED",
+                    stage="execution",
+                    retryable=True,
+                    needs_review=False,
+                ) from None
+    except SummaryResultRejected as rejection:
+        persisted = _persist_failure(task_id, attempt_id, rejection)
+        code = _failure_transition_code(persisted, rejection.code)
+        _raise_safe_task_error(code)
+    except Exception as exc:
+        logger.error(
+            "[CELERY_SUMMARIZE] Model handoff failed | task_id=%s | error_type=%s",
+            task_id,
+            type(exc).__name__,
+        )
+        rejection = SummaryResultRejected(
+            "SUMMARY_UNSAFE_HANDOFF",
+            stage="handoff",
+            retryable=True,
+            needs_review=False,
+        )
+        persisted = _persist_failure(task_id, attempt_id, rejection)
+        code = _failure_transition_code(persisted, rejection.code)
+        _raise_safe_task_error(code)
 
-        # Get transcript from task result (standardized to "transcription")
-        transcript = None
-        if task.get("result") and isinstance(task["result"], dict):
-            # Transcript is stored in result["transcription"] (TaskResult schema)
-            transcript = task["result"].get("transcription")
+    try:
+        validated = validate_summary_service_result(
+            raw_result,
+            expected_summary_type=summary_type,
+            expected_source_revision_id=source_revision_id,
+            expected_request_fingerprint=request_fingerprint,
+        )
+    except SummaryResultRejected as rejection:
+        persisted = _persist_failure(task_id, attempt_id, rejection)
+        code = _failure_transition_code(persisted, rejection.code)
+        _raise_safe_task_error(code)
 
-        if not transcript or not transcript.strip():
-            logger.warning(f"[CELERY_SUMMARIZE] No transcription found for task {task_id}. Task result keys: {list(task.get('result', {}).keys()) if task.get('result') else 'No result'}")
-            raise ValueError(f"Task {task_id} has no transcription. Run transcription first.")
+    summary_result_patch = build_summary_result_patch(
+        validated,
+        summary_type=summary_type,
+    )
+    persisted = _persist_success(task_id, attempt_id, summary_result_patch)
+    if not _accepted(persisted):
+        code = persisted.code if persisted.outcome == "conflict" else "SUMMARY_PERSISTENCE_FAILED"
+        _raise_safe_task_error(code)
 
-        # Import here to avoid circular dependencies
-        from src.services.summarization.summary_service_v2 import summarize_transcript_v2
-
-        # Update status
-        update_task(task_id, {"status": "summarizing"})
-
-        # Execute summarization with timeout protection
-        logger.info(f"[CELERY_SUMMARIZE] Starting summarization | transcript_length={len(transcript)}")
-
-        try:
-            result = summarize_transcript_v2(
-                transcript=transcript,
-                model_name=model_name,
-                summary_type=summary_type,
-                include_context=include_context,
-                user_prompt=user_prompt,
-                min_length=min_length,
-                max_length=max_length,
-            )
-        except Exception as summary_error:
-            logger.error(f"[CELERY_SUMMARIZE] Summarization failed: {summary_error}", exc_info=True)
-            raise ValueError(f"Summarization failed: {str(summary_error)}")
-
-        if not result.get("available"):
-            error_msg = _summary_failure_message(
-                result,
-                "LLM not available for summarization",
-            )
-            logger.error(f"[CELERY_SUMMARIZE] {error_msg}")
-            raise ValueError(error_msg)
-
-        # Summary owns only this partial result patch. The task service merges it
-        # atomically so independently published visualization bytes stay untouched.
-        summary_result_patch = _summary_persistence_patch(result, summary_type)
-        safe_result = _safe_summary_service_result(result)
-
-        # Update task with summary
-        update_task(task_id, {
-            "status": "summarized",
-            "result": summary_result_patch,
-            "summary": result["summary"],  # Also save as direct field for backward compatibility
-            "model_name": result.get("model")
-        })
-
-        logger.info(f"[CELERY_SUMMARIZE] Task complete | task_id={task_id}")
-
-        return {
-            "status": "success",
-            "task_id": task_id,
-            "result": safe_result,
-        }
-
-    except Exception as e:
-        logger.error(f"[CELERY_SUMMARIZE] Task failed | task_id={task_id} | error={e}", exc_info=True)
-
-        # Update task status
-        try:
-            update_task(task_id, {"status": "failed", "error": str(e)})
-        except:
-            pass
-
-        return {
-            "status": "error",
-            "task_id": task_id,
-            "error": str(e)
-        }
+    logger.info("[CELERY_SUMMARIZE] Task complete | task_id=%s", task_id)
+    return {
+        "status": "success",
+        "task_id": task_id,
+        "result": validated.safe_result,
+    }
 
 
 @celery_app.task(bind=True, name='tasks.summarize_multi')
@@ -199,6 +288,7 @@ def summarize_multi_task(
     model_name: str = None,
     summary_type: SummaryType = DEFAULT_SUMMARY_TYPE,
     case_id: str = None,
+    context_analysis: dict | None = None,
     min_length: int = DEFAULT_MULTI_SUMMARY_MIN_WORDS,
     max_length: int = DEFAULT_MULTI_SUMMARY_MAX_WORDS,
 ):
@@ -228,56 +318,46 @@ def summarize_multi_task(
         f"celery_id={self.request.id} | case={case_id}"
     )
 
+    transcripts = []
+    for tid in task_ids:
+        task = get_task(tid)
+        if task and isinstance(task.get("result"), dict):
+            transcript = task["result"].get("transcription")
+            if isinstance(transcript, str) and transcript.strip():
+                transcripts.append(transcript)
+
+    if not transcripts:
+        _raise_safe_task_error("SUMMARY_RESULT_INVALID")
+
+    from src.services.summarization.summary_service_v2 import summarize_multi_transcripts_v2
+
     try:
-        # Collect transcripts from all tasks
-        transcripts = []
-
-        for tid in task_ids:
-            task = get_task(tid)
-            if task and task.get("result"):
-                transcript = task["result"].get("transcription")
-                if transcript:
-                    transcripts.append(transcript)
-
-        if not transcripts:
-            raise ValueError("No transcripts found in provided tasks")
-
-        # Import here
-        from src.services.summarization.summary_service_v2 import summarize_multi_transcripts_v2
-
-        # Execute multi-summarization
-        result = summarize_multi_transcripts_v2(
+        raw_result = summarize_multi_transcripts_v2(
             transcripts=transcripts,
             model_name=model_name,
             summary_type=summary_type,
             case_id=case_id,
+            context_analysis=context_analysis,
             min_length=min_length,
             max_length=max_length,
         )
+        validated = validate_summary_service_result(
+            raw_result,
+            multi=True,
+            expected_summary_type=summary_type,
+        )
+    except SummaryResultRejected as rejection:
+        _raise_safe_task_error(rejection.code)
+    except Exception as exc:
+        logger.error(
+            "[CELERY_MULTI_SUMMARY] Provider call failed | error_type=%s",
+            type(exc).__name__,
+        )
+        _raise_safe_task_error("SUMMARY_GENERATION_FAILED")
 
-        if not result.get("available"):
-            error_msg = _summary_failure_message(
-                result,
-                "LLM not available for multi-summary",
-            )
-            logger.error(f"[CELERY_MULTI_SUMMARY] {error_msg}")
-            raise ValueError(error_msg)
-
-        safe_result = _safe_summary_service_result(result)
-
-        logger.info(f"[CELERY_MULTI_SUMMARY] Task complete | case={case_id}")
-
-        return {
-            "status": "success",
-            "case_id": case_id,
-            "result": safe_result,
-        }
-
-    except Exception as e:
-        logger.error(f"[CELERY_MULTI_SUMMARY] Task failed | error={e}", exc_info=True)
-
-        return {
-            "status": "error",
-            "case_id": case_id,
-            "error": str(e)
-        }
+    logger.info("[CELERY_MULTI_SUMMARY] Task complete | case=%s", case_id)
+    return {
+        "status": "success",
+        "case_id": case_id,
+        "result": validated.safe_result,
+    }

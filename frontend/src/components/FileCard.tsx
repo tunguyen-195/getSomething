@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   Card,
   CardContent,
+  Alert,
   Typography,
   Box,
   Button,
@@ -32,7 +33,7 @@ interface FileCardProps {
     filename: string;
     duration?: number;
     size?: number;
-    status: 'uploaded' | 'transcribing' | 'transcribed' | 'summarizing' | 'summarized' | 'visualizing' | 'visualized' | 'failed';
+    status: 'uploaded' | 'transcribing' | 'transcribed' | 'summarizing' | 'summarized' | 'visualizing' | 'visualized' | 'needs_review' | 'failed';
     num_speakers?: number;
     has_diarization?: boolean;
     created_at?: string;
@@ -90,6 +91,7 @@ const FileCard: React.FC<FileCardProps> = ({
       case 'summarized': return '#9c27b0'; // Purple
       case 'visualizing': return '#673ab7'; // Deep Purple
       case 'visualized': return '#3f51b5'; // Indigo
+      case 'needs_review': return '#ed6c02'; // Evidence/release gate warning
       case 'failed': return '#d32f2f'; // Red
       default: return '#757575';
     }
@@ -104,6 +106,7 @@ const FileCard: React.FC<FileCardProps> = ({
       case 'summarized': return 'Summarized';
       case 'visualizing': return 'Visualizing...';
       case 'visualized': return 'Visualized';
+      case 'needs_review': return 'Needs human review';
       case 'failed': return 'Failed';
       default: return status;
     }
@@ -243,6 +246,12 @@ const FileCard: React.FC<FileCardProps> = ({
           <Typography variant="subtitle2" fontWeight={700} color="#d32f2f" mb={1.5}>
             ACTIONS
           </Typography>
+
+          {file.status === 'needs_review' && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              Summary output was withheld because its evidence or release verification did not pass. Review the transcript before retrying.
+            </Alert>
+          )}
 
           {/* Transcribe Action */}
           <Box mb={2}>

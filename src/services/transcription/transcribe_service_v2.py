@@ -235,8 +235,6 @@ def transcribe_audio_v2(
         result_dict = response.copy()
         result_dict.update({
              "transcription": full_transcript,
-             "summary": "",
-             "context_analysis": {},
              "confidence": 1.0,
              "filename": audio_path.name
         })

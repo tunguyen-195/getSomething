@@ -1,8 +1,10 @@
 import copy
+import hashlib
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, NoReturn, Optional
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -19,6 +21,10 @@ from src.database.models.models import (
     User,
 )
 from src.services.investigation.contracts import sha256_canonical_json
+from src.services.investigation.narrative_attestation import (
+    released_narrative_metadata,
+    render_released_narrative_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +37,7 @@ CANONICAL_STATUSES = {
     "visualizing",
     "visualized",
     "failed",
+    "needs_review",
 }
 
 LEGACY_STATUS_ALIASES = {
@@ -75,7 +82,577 @@ RESULT_FIELDS = {
     "fallback_reason",
     "audio_sha256",
     "audio_integrity_status",
+    "summary_state",
 }
+
+SUMMARY_STATE_SCHEMA = "summary-attempt-state-v1"
+SUMMARY_STATE_FIELDS = frozenset(
+    {
+        "schema_version",
+        "attempt_id",
+        "request_fingerprint",
+        "source_revision_id",
+        "status",
+        "code",
+        "stage",
+        "retryable",
+    }
+)
+SUMMARY_OWNED_RESULT_FIELDS = frozenset(
+    {
+        "summary",
+        "context_analysis",
+        "model_name",
+        "summary_model",
+        "summary_type",
+        "summary_runtime",
+        "summary_release",
+    }
+)
+SUMMARY_TRANSITION_ONLY_FIELDS = frozenset(
+    {
+        "summary",
+        "summary_model",
+        "summary_type",
+        "summary_runtime",
+        "summary_release",
+    }
+)
+SUMMARY_SERVICE_RESULT_FIELDS = frozenset(
+    {
+        "available",
+        "summary",
+        "context",
+        "model",
+        "requested_model",
+        "summary_type",
+        "release",
+        "runtime",
+        "error",
+        "num_transcripts",
+        "case_id",
+    }
+)
+SUMMARY_SAFE_CODES = frozenset(
+    {
+        "FORENSIC_LEGACY_PROVIDER_DISABLED",
+        "INVESTIGATION_NARRATIVE_ATTESTATION_INVALID",
+        "INVESTIGATION_NARRATIVE_ATTESTATION_REQUIRED",
+        "INVESTIGATION_NARRATIVE_EMPTY",
+        "INVESTIGATION_SOURCE_REVISION_MISMATCH",
+        "LLM_UNAVAILABLE",
+        "MULTI_EVIDENCE_RELEASE_REQUIRED",
+        "SUMMARY_ATTEMPT_CONFLICT",
+        "SUMMARY_ATTEMPT_STARTED",
+        "SUMMARY_ENQUEUE_FAILED",
+        "SUMMARY_EMPTY",
+        "SUMMARY_GENERATION_FAILED",
+        "SUMMARY_MAX_LENGTH_EXCEEDED",
+        "SUMMARY_PERSISTENCE_FAILED",
+        "SUMMARY_RESULT_INVALID",
+        "SUMMARY_SUCCEEDED",
+        "SUMMARY_UNAVAILABLE",
+        "SUMMARY_UNSAFE_HANDOFF",
+    }
+)
+SUMMARY_SAFE_STAGES = frozenset(
+    {"enqueue", "execution", "handoff", "persistence", "release", "validation"}
+)
+SUMMARY_RELEASE_FAILURE_CODES = frozenset(
+    {
+        "FORENSIC_LEGACY_PROVIDER_DISABLED",
+        "INVESTIGATION_NARRATIVE_ATTESTATION_INVALID",
+        "INVESTIGATION_NARRATIVE_ATTESTATION_REQUIRED",
+        "INVESTIGATION_NARRATIVE_EMPTY",
+        "INVESTIGATION_SOURCE_REVISION_MISMATCH",
+        "MULTI_EVIDENCE_RELEASE_REQUIRED",
+    }
+)
+SUMMARY_RETRYABLE_CODES = frozenset(
+    {
+        "LLM_UNAVAILABLE",
+        "SUMMARY_ENQUEUE_FAILED",
+        "SUMMARY_GENERATION_FAILED",
+        "SUMMARY_PERSISTENCE_FAILED",
+        "SUMMARY_UNAVAILABLE",
+        "SUMMARY_UNSAFE_HANDOFF",
+    }
+)
+SUMMARY_SAFE_MESSAGES = {
+    "FORENSIC_LEGACY_PROVIDER_DISABLED": "The requested forensic summary path is not released.",
+    "INVESTIGATION_NARRATIVE_ATTESTATION_INVALID": "The released investigation narrative could not be verified.",
+    "INVESTIGATION_NARRATIVE_ATTESTATION_REQUIRED": "A verified released investigation narrative is required.",
+    "INVESTIGATION_NARRATIVE_EMPTY": "The released investigation narrative is empty.",
+    "INVESTIGATION_SOURCE_REVISION_MISMATCH": "The released narrative does not match the active source revision.",
+    "LLM_UNAVAILABLE": "The summarization service is unavailable.",
+    "MULTI_EVIDENCE_RELEASE_REQUIRED": "A released evidence narrative is required for this multi-file summary.",
+    "SUMMARY_ATTEMPT_CONFLICT": "The summary attempt is stale or conflicts with a terminal result.",
+    "SUMMARY_ENQUEUE_FAILED": "The summary job could not be queued.",
+    "SUMMARY_EMPTY": "The summarization service returned no usable summary.",
+    "SUMMARY_GENERATION_FAILED": "Summary generation failed.",
+    "SUMMARY_MAX_LENGTH_EXCEEDED": "The generated summary exceeded the configured maximum length.",
+    "SUMMARY_PERSISTENCE_FAILED": "The summary state could not be persisted.",
+    "SUMMARY_RESULT_INVALID": "The summarization service returned an invalid result.",
+    "SUMMARY_UNAVAILABLE": "The summarization service did not produce an available result.",
+    "SUMMARY_UNSAFE_HANDOFF": "The model handoff did not complete safely.",
+}
+
+
+@dataclass(frozen=True)
+class ValidatedSummaryResult:
+    summary: str
+    context: dict[str, Any] | None
+    model: str | None
+    summary_type: str | None
+    runtime: dict[str, Any]
+    safe_result: dict[str, Any]
+
+
+class SummaryResultRejected(ValueError):
+    def __init__(
+        self,
+        code: str,
+        *,
+        stage: str,
+        retryable: bool,
+        needs_review: bool,
+    ) -> None:
+        self.code = canonical_summary_code(code)
+        self.stage = canonical_summary_stage(stage)
+        self.retryable = retryable is True
+        self.needs_review = needs_review is True
+        super().__init__(safe_summary_message(self.code))
+
+
+@dataclass(frozen=True)
+class SummaryTransitionResult:
+    outcome: Literal["applied", "duplicate", "conflict", "missing", "error"]
+    state: str
+    code: str
+
+    @property
+    def accepted(self) -> bool:
+        return self.outcome in {"applied", "duplicate"}
+
+
+def canonical_summary_code(code: object, default: str = "SUMMARY_UNAVAILABLE") -> str:
+    candidate = str(code or "").strip().upper()
+    return candidate if candidate in SUMMARY_SAFE_CODES else default
+
+
+def canonical_summary_stage(stage: object, default: str = "execution") -> str:
+    candidate = str(stage or "").strip().lower()
+    return candidate if candidate in SUMMARY_SAFE_STAGES else default
+
+
+def safe_summary_message(code: object) -> str:
+    canonical = canonical_summary_code(code)
+    return SUMMARY_SAFE_MESSAGES.get(
+        canonical,
+        SUMMARY_SAFE_MESSAGES["SUMMARY_UNAVAILABLE"],
+    )
+
+
+def _summary_failure_properties(code: str) -> tuple[str, bool, bool]:
+    canonical = canonical_summary_code(code)
+    needs_review = canonical in SUMMARY_RELEASE_FAILURE_CODES
+    stage = (
+        "release"
+        if canonical in SUMMARY_RELEASE_FAILURE_CODES
+        else "handoff" if canonical == "SUMMARY_UNSAFE_HANDOFF" else "execution"
+    )
+    return stage, canonical in SUMMARY_RETRYABLE_CODES, needs_review
+
+
+def _safe_summary_service_result(result: dict[str, Any]) -> dict[str, Any]:
+    safe: dict[str, Any] = {}
+    for key in SUMMARY_SERVICE_RESULT_FIELDS:
+        if key not in result:
+            continue
+        value = result[key]
+        if key == "error" and isinstance(value, dict):
+            safe[key] = {"code": canonical_summary_code(value.get("code"))}
+        elif key in {"context", "runtime", "release"}:
+            safe[key] = copy.deepcopy(value) if isinstance(value, dict) else None
+        elif key in {"model", "requested_model", "summary_type", "case_id"}:
+            safe[key] = value if isinstance(value, str) else None
+        elif key == "num_transcripts":
+            if type(value) is int and value >= 0:
+                safe[key] = value
+        elif key == "available":
+            safe[key] = value is True
+        else:
+            safe[key] = copy.deepcopy(value)
+    return safe
+
+
+def _invalid_summary_service_result() -> SummaryResultRejected:
+    return SummaryResultRejected(
+        "SUMMARY_RESULT_INVALID",
+        stage="validation",
+        retryable=False,
+        needs_review=False,
+    )
+
+
+def _validate_summary_service_result_shape(
+    result: dict[str, Any],
+    *,
+    multi: bool,
+) -> None:
+    if type(result.get("available")) is not bool:
+        raise _invalid_summary_service_result()
+    if "summary" in result and not isinstance(result["summary"], str):
+        raise _invalid_summary_service_result()
+
+    context = result.get("context")
+    if "context" in result and context is not None and not isinstance(context, dict):
+        raise _invalid_summary_service_result()
+    for key in ("runtime", "release"):
+        if key in result and not isinstance(result[key], dict):
+            raise _invalid_summary_service_result()
+
+    if "error" in result:
+        error = result["error"]
+        if not isinstance(error, dict):
+            raise _invalid_summary_service_result()
+        for key in ("code", "message"):
+            if key in error and not isinstance(error[key], str):
+                raise _invalid_summary_service_result()
+        if result["available"] is True:
+            raise _invalid_summary_service_result()
+
+    for key in ("model", "requested_model", "summary_type", "case_id"):
+        value = result.get(key)
+        if key in result and value is not None and not isinstance(value, str):
+            raise _invalid_summary_service_result()
+
+    num_transcripts = result.get("num_transcripts")
+    if "num_transcripts" in result and (
+        type(num_transcripts) is not int or num_transcripts < 0
+    ):
+        raise _invalid_summary_service_result()
+    if multi and "num_transcripts" not in result:
+        raise _invalid_summary_service_result()
+
+
+def _reject_investigation_result(code: str) -> NoReturn:
+    raise SummaryResultRejected(
+        code,
+        stage="release",
+        retryable=False,
+        needs_review=True,
+    )
+
+
+def _validate_investigation_release_metadata(
+    release: dict[str, Any],
+    *,
+    summary: str,
+    expected_source_revision_id: str | None,
+    expected_request_fingerprint: str | None,
+) -> None:
+    required_strings = (
+        "run_id",
+        "source_revision_id",
+        "content_sha256",
+        "attestation_schema_version",
+        "producer_id",
+    )
+    if any(
+        not isinstance(release.get(key), str) or not release[key].strip()
+        for key in required_strings
+    ):
+        _reject_investigation_result("INVESTIGATION_NARRATIVE_ATTESTATION_INVALID")
+    content_sha256 = release["content_sha256"].casefold()
+    if len(content_sha256) != 64 or any(
+        character not in "0123456789abcdef" for character in content_sha256
+    ):
+        _reject_investigation_result("INVESTIGATION_NARRATIVE_ATTESTATION_INVALID")
+    if hashlib.sha256(summary.encode("utf-8")).hexdigest() != content_sha256:
+        _reject_investigation_result("INVESTIGATION_NARRATIVE_ATTESTATION_INVALID")
+    sentence_ids = release.get("sentence_ids")
+    if (
+        not isinstance(sentence_ids, list)
+        or not sentence_ids
+        or any(not isinstance(value, str) or not value.strip() for value in sentence_ids)
+    ):
+        _reject_investigation_result("INVESTIGATION_NARRATIVE_ATTESTATION_INVALID")
+    sentences = release.get("sentences")
+    if not isinstance(sentences, list) or len(sentences) != len(sentence_ids):
+        _reject_investigation_result("INVESTIGATION_NARRATIVE_ATTESTATION_INVALID")
+    released_sentence_ids: list[str] = []
+    for sentence in sentences:
+        if not isinstance(sentence, dict):
+            _reject_investigation_result("INVESTIGATION_NARRATIVE_ATTESTATION_INVALID")
+        sentence_id = sentence.get("sentence_id")
+        evidence_refs = sentence.get("evidence_refs")
+        claim_refs = sentence.get("claim_refs")
+        if (
+            not isinstance(sentence_id, str)
+            or not sentence_id.strip()
+            or not isinstance(claim_refs, list)
+            or any(not isinstance(value, str) or not value for value in claim_refs)
+            or not isinstance(evidence_refs, list)
+            or not evidence_refs
+            or any(not isinstance(value, str) or not value for value in evidence_refs)
+        ):
+            _reject_investigation_result("INVESTIGATION_NARRATIVE_ATTESTATION_INVALID")
+        released_sentence_ids.append(sentence_id)
+    if released_sentence_ids != sentence_ids or len(set(sentence_ids)) != len(sentence_ids):
+        _reject_investigation_result("INVESTIGATION_NARRATIVE_ATTESTATION_INVALID")
+
+    if (
+        not isinstance(expected_source_revision_id, str)
+        or not expected_source_revision_id.strip()
+        or not isinstance(expected_request_fingerprint, str)
+        or not expected_request_fingerprint.strip()
+    ):
+        _reject_investigation_result("INVESTIGATION_NARRATIVE_ATTESTATION_INVALID")
+    bound_source_revision_id = release.get(
+        "summary_source_revision_id",
+        release.get("source_revision_id"),
+    )
+    if bound_source_revision_id != expected_source_revision_id:
+        _reject_investigation_result("INVESTIGATION_SOURCE_REVISION_MISMATCH")
+    if release.get("request_fingerprint") != expected_request_fingerprint:
+        _reject_investigation_result("INVESTIGATION_NARRATIVE_ATTESTATION_INVALID")
+
+
+def _validate_investigation_release(
+    result: dict[str, Any],
+    *,
+    summary: str,
+    expected_source_revision_id: str | None,
+    expected_request_fingerprint: str | None,
+) -> None:
+    release = result.get("release")
+    if not isinstance(release, dict):
+        _reject_investigation_result("INVESTIGATION_NARRATIVE_ATTESTATION_REQUIRED")
+
+    _validate_investigation_release_metadata(
+        release,
+        summary=summary,
+        expected_source_revision_id=expected_source_revision_id,
+        expected_request_fingerprint=expected_request_fingerprint,
+    )
+
+    authority = result.get("_released_narrative_authority")
+    try:
+        trusted_summary = render_released_narrative_text(authority).strip()
+        trusted_metadata = released_narrative_metadata(authority)
+    except Exception:
+        _reject_investigation_result("INVESTIGATION_NARRATIVE_ATTESTATION_INVALID")
+
+    expected_release = copy.deepcopy(trusted_metadata)
+    expected_release["summary_source_revision_id"] = expected_source_revision_id
+    expected_release["request_fingerprint"] = expected_request_fingerprint
+    if trusted_summary != summary or release != expected_release:
+        _reject_investigation_result("INVESTIGATION_NARRATIVE_ATTESTATION_INVALID")
+
+
+def validate_summary_service_result(
+    result: object,
+    *,
+    multi: bool = False,
+    expected_summary_type: str | None = None,
+    expected_source_revision_id: str | None = None,
+    expected_request_fingerprint: str | None = None,
+) -> ValidatedSummaryResult:
+    if not isinstance(result, dict):
+        raise _invalid_summary_service_result()
+    _validate_summary_service_result_shape(result, multi=multi)
+    if result.get("available") is not True:
+        error = result.get("error")
+        raw_code = error.get("code") if isinstance(error, dict) else None
+        code = canonical_summary_code(raw_code)
+        stage, retryable, needs_review = _summary_failure_properties(code)
+        raise SummaryResultRejected(
+            code,
+            stage=stage,
+            retryable=retryable,
+            needs_review=needs_review,
+        )
+    summary = result.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        raise SummaryResultRejected(
+            "SUMMARY_EMPTY",
+            stage="validation",
+            retryable=False,
+            needs_review=False,
+        )
+    result_summary_type = result.get("summary_type")
+    if expected_summary_type is not None and result_summary_type != expected_summary_type:
+        if expected_summary_type == "investigation":
+            _reject_investigation_result(
+                "INVESTIGATION_NARRATIVE_ATTESTATION_INVALID"
+            )
+        raise _invalid_summary_service_result()
+    effective_summary_type = expected_summary_type or result_summary_type
+    if effective_summary_type == "investigation":
+        _validate_investigation_release(
+            result,
+            summary=summary.strip(),
+            expected_source_revision_id=expected_source_revision_id,
+            expected_request_fingerprint=expected_request_fingerprint,
+        )
+    context = result.get("context")
+    model = result.get("model")
+    summary_type = result.get("summary_type")
+    runtime = result.get("runtime")
+    normalized_summary = summary.strip()
+    safe_result = _safe_summary_service_result(result)
+    safe_result["summary"] = normalized_summary
+    return ValidatedSummaryResult(
+        summary=normalized_summary,
+        context=copy.deepcopy(context) if isinstance(context, dict) else None,
+        model=str(model) if isinstance(model, str) else None,
+        summary_type=str(summary_type) if isinstance(summary_type, str) else None,
+        runtime=copy.deepcopy(runtime) if isinstance(runtime, dict) else {},
+        safe_result=safe_result,
+    )
+
+
+def validate_persisted_terminal_summary(
+    task_result: object,
+    *,
+    expected_attempt_id: str,
+) -> ValidatedSummaryResult:
+    """Read a success previously written only by the CAS transition helper."""
+
+    if not isinstance(task_result, dict):
+        raise _invalid_summary_service_result()
+    state = task_result.get("summary_state")
+    if (
+        not isinstance(state, dict)
+        or set(state) != SUMMARY_STATE_FIELDS
+        or state.get("schema_version") != SUMMARY_STATE_SCHEMA
+        or state.get("attempt_id") != expected_attempt_id
+        or state.get("status") != "succeeded"
+        or state.get("code") != "SUMMARY_SUCCEEDED"
+    ):
+        raise SummaryResultRejected(
+            "SUMMARY_ATTEMPT_CONFLICT",
+            stage="validation",
+            retryable=False,
+            needs_review=False,
+        )
+    transcript = task_result.get("transcription")
+    if (
+        not isinstance(transcript, str)
+        or _summary_source_revision_id(transcript) != state.get("source_revision_id")
+    ):
+        raise SummaryResultRejected(
+            "SUMMARY_ATTEMPT_CONFLICT",
+            stage="validation",
+            retryable=False,
+            needs_review=False,
+        )
+
+    raw_result = {
+        "available": True,
+        "summary": task_result.get("summary"),
+        "context": task_result.get("context_analysis"),
+        "model": task_result.get("summary_model"),
+        "summary_type": task_result.get("summary_type"),
+        "runtime": task_result.get("summary_runtime") or {},
+        **(
+            {"release": task_result["summary_release"]}
+            if isinstance(task_result.get("summary_release"), dict)
+            else {}
+        ),
+    }
+    summary_type = raw_result.get("summary_type")
+    if summary_type != "investigation":
+        return validate_summary_service_result(
+            raw_result,
+            expected_summary_type=summary_type,
+        )
+
+    _validate_summary_service_result_shape(raw_result, multi=False)
+    summary = raw_result.get("summary")
+    release = raw_result.get("release")
+    if not isinstance(summary, str) or not summary.strip() or not isinstance(release, dict):
+        raise _invalid_summary_service_result()
+    normalized_summary = summary.strip()
+    _validate_investigation_release_metadata(
+        release,
+        summary=normalized_summary,
+        expected_source_revision_id=state.get("source_revision_id"),
+        expected_request_fingerprint=state.get("request_fingerprint"),
+    )
+    safe_result = _safe_summary_service_result(raw_result)
+    safe_result["summary"] = normalized_summary
+    context = raw_result.get("context")
+    model = raw_result.get("model")
+    runtime = raw_result.get("runtime")
+    return ValidatedSummaryResult(
+        summary=normalized_summary,
+        context=copy.deepcopy(context) if isinstance(context, dict) else None,
+        model=model if isinstance(model, str) else None,
+        summary_type="investigation",
+        runtime=copy.deepcopy(runtime) if isinstance(runtime, dict) else {},
+        safe_result=safe_result,
+    )
+
+
+def build_summary_result_patch(
+    result: ValidatedSummaryResult,
+    *,
+    summary_type: str,
+) -> dict[str, Any]:
+    patch = {
+        "summary": result.summary,
+        "context_analysis": copy.deepcopy(result.context),
+        "summary_model": result.model,
+        "summary_type": summary_type,
+        "summary_runtime": copy.deepcopy(result.runtime),
+    }
+    release = result.safe_result.get("release")
+    if isinstance(release, dict):
+        patch["summary_release"] = copy.deepcopy(release)
+    return patch
+
+
+def _summary_source_revision_id(transcript: str) -> str:
+    source_digest = hashlib.sha256(transcript.encode("utf-8")).hexdigest()
+    return f"summary-source-sha256:{source_digest}"
+
+
+def build_summary_attempt_binding(
+    transcript: str,
+    *,
+    model_name: str | None,
+    summary_type: str,
+    include_context: bool,
+    min_length: int,
+    max_length: int,
+    user_prompt: str | None = None,
+) -> tuple[str, str]:
+    source_revision_id = _summary_source_revision_id(transcript)
+    canonical_model_name = (
+        model_name.strip()
+        if isinstance(model_name, str) and model_name.strip()
+        else "auto"
+    )
+    prompt_digest = (
+        hashlib.sha256(user_prompt.encode("utf-8")).hexdigest()
+        if isinstance(user_prompt, str) and user_prompt
+        else None
+    )
+    request_fingerprint = sha256_canonical_json(
+        {
+            "schema_version": "summary-request-fingerprint-v1",
+            "source_revision_id": source_revision_id,
+            "model_name": canonical_model_name,
+            "summary_type": summary_type,
+            "include_context": include_context is True,
+            "min_length": min_length,
+            "max_length": max_length,
+            "user_prompt_sha256": prompt_digest,
+        }
+    )
+    return request_fingerprint, source_revision_id
 
 
 def _as_dict(value: Any) -> Dict[str, Any]:
@@ -378,10 +955,413 @@ def get_task(task_id: str, db: Session | None = None) -> Optional[Dict[str, Any]
             db.close()
 
 
+def _summary_state_payload(
+    *,
+    attempt_id: str,
+    request_fingerprint: str,
+    source_revision_id: str,
+    status: Literal["running", "succeeded", "failed", "needs_review"],
+    code: str,
+    stage: str,
+    retryable: bool,
+) -> dict[str, Any]:
+    return {
+        "schema_version": SUMMARY_STATE_SCHEMA,
+        "attempt_id": attempt_id,
+        "request_fingerprint": request_fingerprint,
+        "source_revision_id": source_revision_id,
+        "status": status,
+        "code": canonical_summary_code(code),
+        "stage": canonical_summary_stage(stage),
+        "retryable": retryable is True,
+    }
+
+
+def _summary_terminal_is_exact_duplicate(
+    task: DBTask,
+    result: dict[str, Any],
+    desired_state: dict[str, Any],
+    result_patch: dict[str, Any] | None,
+) -> bool:
+    if result.get("summary_state") != desired_state:
+        return False
+    state = desired_state["status"]
+    expected_status = "summarized" if state == "succeeded" else state
+    if task.status != expected_status:
+        return False
+    if state == "succeeded":
+        direct_summary_matches = (
+            not hasattr(task, "summary")
+            or task.summary == (result_patch or {}).get("summary")
+        )
+        direct_model_matches = (
+            not hasattr(task, "model_name")
+            or task.model_name == (result_patch or {}).get("summary_model")
+        )
+        return (
+            task.error is None
+            and direct_summary_matches
+            and direct_model_matches
+            and bool(result_patch)
+            and all(result.get(key) == value for key, value in result_patch.items())
+        )
+    direct_summary_cleared = not hasattr(task, "summary") or task.summary is None
+    direct_model_cleared = not hasattr(task, "model_name") or task.model_name is None
+    return (
+        task.error == safe_summary_message(desired_state["code"])
+        and direct_summary_cleared
+        and direct_model_cleared
+        and all(key not in result for key in SUMMARY_OWNED_RESULT_FIELDS)
+    )
+
+
+def transition_summary_attempt(
+    task_id: str,
+    attempt_id: str,
+    *,
+    state: Literal["running", "succeeded", "failed", "needs_review"],
+    code: str,
+    stage: str,
+    retryable: bool,
+    request_fingerprint: str | None = None,
+    source_revision_id: str | None = None,
+    result_patch: dict[str, Any] | None = None,
+    db: Session | None = None,
+) -> SummaryTransitionResult:
+    """Apply one attempt-scoped transition while holding the task row lock."""
+
+    if state not in {"running", "succeeded", "failed", "needs_review"}:
+        raise ValueError("Unsupported summary attempt state")
+    if not isinstance(attempt_id, str) or not attempt_id.strip():
+        raise ValueError("Summary attempt_id must be a non-empty string")
+    attempt_id = attempt_id.strip()
+    canonical_code = canonical_summary_code(code)
+    if state == "running" and canonical_code != "SUMMARY_ATTEMPT_STARTED":
+        raise ValueError("Running summary transition requires SUMMARY_ATTEMPT_STARTED")
+    if state == "succeeded" and canonical_code != "SUMMARY_SUCCEEDED":
+        raise ValueError("Successful summary transition requires SUMMARY_SUCCEEDED")
+    if state == "needs_review" and canonical_code not in SUMMARY_RELEASE_FAILURE_CODES:
+        raise ValueError("needs_review requires a release or attestation failure code")
+    if state == "failed" and canonical_code in SUMMARY_RELEASE_FAILURE_CODES:
+        raise ValueError("Release or attestation failures require needs_review")
+    if state == "running":
+        if not isinstance(request_fingerprint, str) or not request_fingerprint.strip():
+            raise ValueError("Running summary transition requires request_fingerprint")
+        if not isinstance(source_revision_id, str) or not source_revision_id.strip():
+            raise ValueError("Running summary transition requires source_revision_id")
+    if state == "succeeded":
+        if not isinstance(result_patch, dict):
+            raise ValueError("Successful summary transition requires a result patch")
+        unexpected = set(result_patch) - SUMMARY_OWNED_RESULT_FIELDS
+        if unexpected:
+            raise ValueError("Successful summary transition contains unsupported fields")
+        summary = result_patch.get("summary")
+        if not isinstance(summary, str) or not summary.strip():
+            raise ValueError("Successful summary transition requires a non-empty summary")
+    elif result_patch is not None:
+        raise ValueError("Only successful summary transitions accept a result patch")
+
+    own_session = db is None
+    db = db or SessionLocal()
+    try:
+        query = db.query(DBTask).filter(DBTask.id == task_id)
+        bind = getattr(db, "bind", None)
+        if bind is not None and bind.dialect.name != "sqlite":
+            query = query.with_for_update()
+        task = query.first()
+        if not task:
+            return SummaryTransitionResult("missing", state, "SUMMARY_PERSISTENCE_FAILED")
+
+        result = _as_dict(task.result)
+        current = result.get("summary_state")
+        current = current if isinstance(current, dict) else None
+        if current is not None and (
+            set(current) != SUMMARY_STATE_FIELDS
+            or current.get("schema_version") != SUMMARY_STATE_SCHEMA
+        ):
+            return SummaryTransitionResult("conflict", state, "SUMMARY_ATTEMPT_CONFLICT")
+        current_attempt = current.get("attempt_id") if current else None
+        current_state = current.get("status") if current else None
+
+        if state == "running":
+            binding_request_fingerprint = str(request_fingerprint).strip()
+            binding_source_revision_id = str(source_revision_id).strip()
+            live_transcript = result.get("transcription")
+            if (
+                not isinstance(live_transcript, str)
+                or _summary_source_revision_id(live_transcript)
+                != binding_source_revision_id
+            ):
+                return SummaryTransitionResult(
+                    "conflict", state, "SUMMARY_ATTEMPT_CONFLICT"
+                )
+        else:
+            if current is None:
+                return SummaryTransitionResult("conflict", state, "SUMMARY_ATTEMPT_CONFLICT")
+            binding_request_fingerprint = str(
+                current.get("request_fingerprint") or ""
+            ).strip()
+            binding_source_revision_id = str(
+                current.get("source_revision_id") or ""
+            ).strip()
+            if not binding_request_fingerprint or not binding_source_revision_id:
+                return SummaryTransitionResult("conflict", state, "SUMMARY_ATTEMPT_CONFLICT")
+            live_transcript = result.get("transcription")
+            if (
+                not isinstance(live_transcript, str)
+                or _summary_source_revision_id(live_transcript)
+                != binding_source_revision_id
+            ):
+                return SummaryTransitionResult(
+                    "conflict", state, "SUMMARY_ATTEMPT_CONFLICT"
+                )
+
+        desired_state = _summary_state_payload(
+            attempt_id=attempt_id,
+            request_fingerprint=binding_request_fingerprint,
+            source_revision_id=binding_source_revision_id,
+            status=state,
+            code=canonical_code,
+            stage=stage,
+            retryable=retryable,
+        )
+
+        claim_enqueued_attempt = False
+        if state == "running":
+            if current_attempt == attempt_id:
+                if (
+                    current.get("request_fingerprint") != binding_request_fingerprint
+                    or current.get("source_revision_id") != binding_source_revision_id
+                ):
+                    return SummaryTransitionResult(
+                        "conflict", state, "SUMMARY_ATTEMPT_CONFLICT"
+                    )
+                if current_state == "running":
+                    if current.get("stage") == "enqueue" and desired_state["stage"] == "execution":
+                        claim_enqueued_attempt = True
+                    elif current.get("stage") == desired_state["stage"] == "enqueue":
+                        return SummaryTransitionResult(
+                            "duplicate",
+                            current_state,
+                            canonical_summary_code(current.get("code")),
+                        )
+                    else:
+                        return SummaryTransitionResult(
+                            "conflict", state, "SUMMARY_ATTEMPT_CONFLICT"
+                        )
+                elif current_state in {"succeeded", "failed", "needs_review"}:
+                    return SummaryTransitionResult(
+                        "duplicate",
+                        current_state,
+                        canonical_summary_code(current.get("code")),
+                    )
+                elif current_state != "running":
+                    return SummaryTransitionResult(
+                        "conflict", state, "SUMMARY_ATTEMPT_CONFLICT"
+                    )
+            if current_state == "running" and not claim_enqueued_attempt:
+                if current_attempt == attempt_id or (
+                    current.get("source_revision_id") == binding_source_revision_id
+                ):
+                    return SummaryTransitionResult(
+                        "conflict", state, "SUMMARY_ATTEMPT_CONFLICT"
+                    )
+        else:
+            if current_attempt != attempt_id or current_state not in {
+                "running",
+                "succeeded",
+                "failed",
+                "needs_review",
+            }:
+                return SummaryTransitionResult("conflict", state, "SUMMARY_ATTEMPT_CONFLICT")
+            if current_state != "running":
+                if _summary_terminal_is_exact_duplicate(
+                    task,
+                    result,
+                    desired_state,
+                    result_patch,
+                ):
+                    return SummaryTransitionResult("duplicate", state, desired_state["code"])
+                return SummaryTransitionResult("conflict", state, "SUMMARY_ATTEMPT_CONFLICT")
+
+        if state in {"running", "failed", "needs_review"}:
+            for key in SUMMARY_OWNED_RESULT_FIELDS:
+                result.pop(key, None)
+            if hasattr(task, "summary"):
+                task.summary = None
+            if hasattr(task, "model_name"):
+                task.model_name = None
+        if state == "succeeded":
+            result.update(copy.deepcopy(result_patch or {}))
+            if hasattr(task, "summary"):
+                task.summary = result_patch["summary"]
+            if hasattr(task, "model_name"):
+                task.model_name = result_patch.get("summary_model")
+        result["summary_state"] = desired_state
+        task.result = result
+        task.status = "summarized" if state == "succeeded" else (
+            "summarizing" if state == "running" else state
+        )
+        task.error = (
+            None
+            if state in {"running", "succeeded"}
+            else safe_summary_message(canonical_code)
+        )
+        task.updated_at = datetime.utcnow()
+
+        if own_session:
+            db.commit()
+        else:
+            db.flush()
+        return SummaryTransitionResult("applied", state, desired_state["code"])
+    except Exception as exc:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        logger.error(
+            "Summary transition persistence failed | task_id=%s | error_type=%s",
+            task_id,
+            type(exc).__name__,
+        )
+        return SummaryTransitionResult("error", state, "SUMMARY_PERSISTENCE_FAILED")
+    finally:
+        if own_session:
+            db.close()
+
+
+def begin_summary_attempt(
+    task_id: str,
+    attempt_id: str,
+    *,
+    request_fingerprint: str,
+    source_revision_id: str,
+    stage: str = "execution",
+    db: Session | None = None,
+) -> SummaryTransitionResult:
+    return transition_summary_attempt(
+        task_id,
+        attempt_id,
+        state="running",
+        code="SUMMARY_ATTEMPT_STARTED",
+        stage=stage,
+        retryable=False,
+        request_fingerprint=request_fingerprint,
+        source_revision_id=source_revision_id,
+        db=db,
+    )
+
+
+def succeed_summary_attempt(
+    task_id: str,
+    attempt_id: str,
+    result_patch: dict[str, Any],
+    *,
+    db: Session | None = None,
+) -> SummaryTransitionResult:
+    return transition_summary_attempt(
+        task_id,
+        attempt_id,
+        state="succeeded",
+        code="SUMMARY_SUCCEEDED",
+        stage="execution",
+        retryable=False,
+        result_patch=result_patch,
+        db=db,
+    )
+
+
+def fail_summary_attempt(
+    task_id: str,
+    attempt_id: str,
+    *,
+    code: str,
+    stage: str = "execution",
+    retryable: bool = False,
+    needs_review: bool = False,
+    db: Session | None = None,
+) -> SummaryTransitionResult:
+    canonical_code = canonical_summary_code(code)
+    if canonical_code in SUMMARY_RELEASE_FAILURE_CODES:
+        needs_review = True
+    terminal_state: Literal["failed", "needs_review"] = (
+        "needs_review" if needs_review else "failed"
+    )
+    return transition_summary_attempt(
+        task_id,
+        attempt_id,
+        state=terminal_state,
+        code=canonical_code,
+        stage=stage,
+        retryable=retryable,
+        db=db,
+    )
+
+
+def _summary_placeholder_update(key: str, value: Any) -> bool:
+    if key == "summary":
+        return value is None or (isinstance(value, str) and not value.strip())
+    if key == "context_analysis":
+        return value is None or value == {}
+    return False
+
+
+def _sanitize_generic_task_update(data: Dict[str, Any]) -> Dict[str, Any] | None:
+    sanitized: Dict[str, Any] = {}
+    for key, value in data.items():
+        normalized_key = RESULT_FIELD_ALIASES.get(key, key)
+        if normalized_key == "status" and value in {
+            "summarizing",
+            "summarized",
+            "needs_review",
+        }:
+            logger.error("Summary statuses require summary transition helpers")
+            return None
+        if normalized_key == "summary_state":
+            logger.error(
+                "summary_state can only be changed by summary transition helpers"
+            )
+            return None
+        if normalized_key == "result":
+            if not isinstance(value, dict):
+                logger.error("Task result update must be a dict")
+                return None
+            result_value = copy.deepcopy(value)
+            if "summary_state" in result_value:
+                logger.error(
+                    "summary_state can only be changed by summary transition helpers"
+                )
+                return None
+            for owned_key in SUMMARY_TRANSITION_ONLY_FIELDS:
+                if owned_key not in result_value:
+                    continue
+                if _summary_placeholder_update(owned_key, result_value[owned_key]):
+                    result_value.pop(owned_key)
+                    continue
+                logger.error(
+                    "Summary-owned result fields require summary transition helpers"
+                )
+                return None
+            sanitized[key] = result_value
+            continue
+        if normalized_key in SUMMARY_TRANSITION_ONLY_FIELDS or normalized_key == "model_name":
+            if _summary_placeholder_update(normalized_key, value):
+                continue
+            logger.error(
+                "Summary-owned result fields require summary transition helpers"
+            )
+            return None
+        sanitized[key] = value
+    return sanitized
+
+
 def update_task(task_id: str, data: Dict[str, Any], db: Session | None = None) -> bool:
     own_session = db is None
     db = db or SessionLocal()
     try:
+        sanitized_data = _sanitize_generic_task_update(data)
+        if sanitized_data is None:
+            return False
         query = db.query(DBTask).filter(DBTask.id == task_id)
         if db.bind and db.bind.dialect.name != "sqlite":
             query = query.with_for_update()
@@ -392,12 +1372,10 @@ def update_task(task_id: str, data: Dict[str, Any], db: Session | None = None) -
 
         result_patch: Dict[str, Any] = {}
         status_update: str | None = None
-        for key, value in data.items():
+        attribute_updates: Dict[str, Any] = {}
+        for key, value in sanitized_data.items():
             normalized_key = RESULT_FIELD_ALIASES.get(key, key)
             if normalized_key == "result":
-                if not isinstance(value, dict):
-                    logger.error("Task result update must be a dict")
-                    return False
                 result_patch = _deep_merge(
                     result_patch,
                     value,
@@ -407,7 +1385,7 @@ def update_task(task_id: str, data: Dict[str, Any], db: Session | None = None) -
                 if normalized_key == "status":
                     status_update = value
                 else:
-                    setattr(task, normalized_key, value)
+                    attribute_updates[normalized_key] = value
             elif normalized_key in RESULT_FIELDS:
                 if normalized_key == "visualization_data":
                     result_patch[normalized_key] = copy.deepcopy(value)
@@ -418,12 +1396,54 @@ def update_task(task_id: str, data: Dict[str, Any], db: Session | None = None) -
             else:
                 result_patch[normalized_key] = value
 
-        if result_patch:
-            task.result = _deep_merge(_as_dict(task.result), result_patch)
+        current_result = _as_dict(task.result)
+        source_changed = False
+        incoming_transcript = result_patch.get("transcription")
+        if isinstance(incoming_transcript, str):
+            current_transcript = current_result.get("transcription")
+            current_state = current_result.get("summary_state")
+            source_changed = (
+                isinstance(current_transcript, str)
+                and current_transcript != incoming_transcript
+            ) or (
+                isinstance(current_state, dict)
+                and current_state.get("source_revision_id")
+                != _summary_source_revision_id(incoming_transcript)
+            )
+            if source_changed:
+                for key in SUMMARY_OWNED_RESULT_FIELDS:
+                    current_result.pop(key, None)
+                current_result.pop("summary_state", None)
+                current_result.pop("visualization_data", None)
+                current_result.pop("has_visualization", None)
+                if hasattr(task, "summary"):
+                    task.summary = None
+                if hasattr(task, "model_name"):
+                    task.model_name = None
+
+        merged_result = (
+            _deep_merge(current_result, result_patch)
+            if result_patch
+            else current_result
+        )
+        normalized_status = None
         if status_update:
-            task.status = canonical_status(status_update, _as_dict(task.result))
-            if task.status != "failed" and "error" not in data:
+            normalized_status = canonical_status(status_update, merged_result)
+            if normalized_status in {"summarizing", "summarized", "needs_review"}:
+                logger.error("Summary statuses require summary transition helpers")
+                return False
+        if result_patch:
+            task.result = merged_result
+        for key, value in attribute_updates.items():
+            setattr(task, key, value)
+        if status_update:
+            task.status = normalized_status
+            if task.status != "failed" and "error" not in sanitized_data:
                 task.error = None
+            _sync_audio_status(db, task, task.status)
+        elif source_changed:
+            task.status = "transcribed"
+            task.error = None
             _sync_audio_status(db, task, task.status)
         task.updated_at = datetime.utcnow()
         if own_session:

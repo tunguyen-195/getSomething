@@ -444,8 +444,8 @@ function App() {
           return f;
         }));
 
-        // Stop polling if task is complete or failed
-        if (currentStatus === 'transcribed' || currentStatus === 'summarized' || currentStatus === 'visualized' || currentStatus === 'failed') {
+        // needs_review is terminal: the release gate withheld the summary.
+        if (currentStatus === 'transcribed' || currentStatus === 'summarized' || currentStatus === 'visualized' || currentStatus === 'needs_review' || currentStatus === 'failed') {
           clearInterval(pollInterval);
           pollingIntervalsRef.current.delete(taskId);
 
@@ -457,6 +457,13 @@ function App() {
             void fetchFiles();
           } else if (currentStatus === 'visualized') {
             setSnackbar({ open: true, message: '✅ Visualization completed!', severity: 'success' });
+            void fetchFiles();
+          } else if (currentStatus === 'needs_review') {
+            setSnackbar({
+              open: true,
+              message: `Summary withheld for human review: ${statusData.error || 'Evidence or release verification did not pass.'}`,
+              severity: 'warning',
+            });
             void fetchFiles();
           } else if (currentStatus === 'failed') {
             setSnackbar({ open: true, message: `❌ Task failed: ${statusData.error || 'Unknown error'}`, severity: 'error' });

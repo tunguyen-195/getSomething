@@ -2,6 +2,8 @@
 Summary Service v2 - Refactored with LLM Manager
 OPTIONAL: Only called when user explicitly requests summarization
 """
+import copy
+import json
 import logging
 from typing import Dict, List
 from src.services.investigation.narrative_attestation import (
@@ -71,7 +73,11 @@ def _summarize_released_investigation_narrative(
             },
         }
 
-    expected_revision = str((source_metadata or {}).get("source_revision_id") or "")
+    expected_revision = str(
+        (source_metadata or {}).get("investigation_source_revision_id")
+        or (source_metadata or {}).get("source_revision_id")
+        or ""
+    )
     actual_revision = str(metadata.get("source_revision_id") or "")
     if expected_revision and actual_revision != expected_revision:
         return {
@@ -125,6 +131,16 @@ def _summarize_released_investigation_narrative(
             "runtime": {"length_contract": length_contract},
         }
 
+    release_metadata = dict(metadata)
+    summary_source_revision_id = (source_metadata or {}).get(
+        "summary_source_revision_id"
+    )
+    request_fingerprint = (source_metadata or {}).get("request_fingerprint")
+    if isinstance(summary_source_revision_id, str) and summary_source_revision_id:
+        release_metadata["summary_source_revision_id"] = summary_source_revision_id
+    if isinstance(request_fingerprint, str) and request_fingerprint:
+        release_metadata["request_fingerprint"] = request_fingerprint
+
     return {
         "summary": summary,
         "context": None,
@@ -132,7 +148,10 @@ def _summarize_released_investigation_narrative(
         "requested_model": model_name,
         "summary_type": "investigation",
         "available": True,
-        "release": metadata,
+        "release": release_metadata,
+        # Kept in-process only; the shared validator removes this authority
+        # object before any response or persistence boundary.
+        "_released_narrative_authority": released_narrative,
         "runtime": {
             "llm_call_count": 0,
             "last_generation": None,
@@ -283,8 +302,11 @@ Trả về dạng JSON với các trường: entities, events, relationships, ke
                 }
             else:
                 logger.warning(f"[SUMMARY_V2] LlamaCpp failed to load {model_name}, falling back to Ollama")
-        except Exception as e:
-            logger.warning(f"[SUMMARY_V2] LlamaCpp error: {e}, falling back to Ollama")
+        except Exception as exc:
+            logger.warning(
+                "[SUMMARY_V2] LlamaCpp fallback | error_type=%s",
+                type(exc).__name__,
+            )
 
     # Default: Use Ollama via LLM Manager
     try:
@@ -398,8 +420,11 @@ Tóm tắt:
             },
         }
 
-    except Exception as e:
-        logger.error(f"[SUMMARY_V2] Error: {e}", exc_info=True)
+    except Exception as exc:
+        logger.error(
+            "[SUMMARY_V2] Generation failed | error_type=%s",
+            type(exc).__name__,
+        )
         return {
             "summary": "",
             "context": None,
@@ -418,6 +443,7 @@ def summarize_multi_transcripts_v2(
     model_name: str = None,
     summary_type: SummaryType = DEFAULT_SUMMARY_TYPE,
     case_id: str = None,
+    context_analysis: dict | None = None,
     max_length: int = DEFAULT_MULTI_SUMMARY_MAX_WORDS,
     min_length: int = DEFAULT_MULTI_SUMMARY_MIN_WORDS,
 ) -> Dict:
@@ -429,6 +455,7 @@ def summarize_multi_transcripts_v2(
         model_name: LLM model to use
         summary_type: Type of summary
         case_id: Case ID for context
+        context_analysis: Optional user/case context that must be honored
 
     Returns:
         Dict with summary and metadata
@@ -441,6 +468,25 @@ def summarize_multi_transcripts_v2(
     summary_type = options.summary_type
     min_length = options.min_length
     max_length = options.max_length
+    context_payload = (
+        copy.deepcopy(context_analysis)
+        if isinstance(context_analysis, dict) and context_analysis
+        else None
+    )
+
+    if not transcripts:
+        return {
+            "summary": "",
+            "num_transcripts": 0,
+            "model": model_name,
+            "summary_type": summary_type,
+            "case_id": case_id,
+            "available": False,
+            "error": {
+                "code": "SUMMARY_RESULT_INVALID",
+                "message": "At least one transcript is required.",
+            },
+        }
 
     if summary_type in {"investigation", "forensic"}:
         return {
@@ -488,6 +534,21 @@ def summarize_multi_transcripts_v2(
         # Combine transcripts
         combined = "\n\n---\n\n".join(f"File {i+1}:\n{t}" for i, t in enumerate(transcripts))
 
+        context_block = ""
+        if context_payload is not None:
+            serialized_context = json.dumps(
+                context_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            context_block = f"""
+Ngữ cảnh tham khảo do người dùng hoặc hồ sơ vụ việc cung cấp:
+<case_context>{serialized_context}</case_context>
+Chỉ dùng ngữ cảnh này để định hướng cách đọc. Không coi nó là bằng chứng và
+không tạo thêm sự kiện nếu các transcript không hỗ trợ.
+"""
+
         # Build prompt
         prompt = f"""
 Tóm tắt tổng hợp từ {len(transcripts)} cuộc hội thoại sau:
@@ -495,6 +556,8 @@ Tóm tắt tổng hợp từ {len(transcripts)} cuộc hội thoại sau:
 - Mối liên hệ giữa các cuộc hội thoại (nếu có)
 - Các điểm quan trọng xuyên suốt
 - Kết luận tổng thể
+
+{context_block}
 
 {combined}
 
@@ -554,12 +617,16 @@ Tóm tắt tổng hợp:
             "model": model_name,
             "summary_type": summary_type,
             "case_id": case_id,
+            "context": context_payload,
             "available": True,
             "runtime": {"length_contract": length_contract},
         }
 
-    except Exception as e:
-        logger.error(f"[SUMMARY_V2] Multi-summary error: {e}", exc_info=True)
+    except Exception as exc:
+        logger.error(
+            "[SUMMARY_V2] Multi-summary failed | error_type=%s",
+            type(exc).__name__,
+        )
         return {
             "summary": "",
             "num_transcripts": len(transcripts),

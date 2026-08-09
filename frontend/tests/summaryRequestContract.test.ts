@@ -59,3 +59,15 @@ summaryTest('multi and case summaries send explicit shared type and length defau
     2,
   );
 });
+
+summaryTest('needs-review summary state is terminal and visible to the user', () => {
+  const app = source('App.tsx');
+  const fileCard = source('components/FileCard.tsx');
+
+  summaryAssert.match(app, /currentStatus === 'needs_review'/);
+  summaryAssert.match(app, /Summary withheld for human review/);
+  summaryAssert.match(app, /severity: 'warning'/);
+  summaryAssert.match(fileCard, /\| 'needs_review'/);
+  summaryAssert.match(fileCard, /Needs human review/);
+  summaryAssert.match(fileCard, /evidence or release verification did not pass/);
+});

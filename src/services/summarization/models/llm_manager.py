@@ -55,8 +55,11 @@ class LLMManager:
                 self._available_models = [m['name'] for m in data.get('models', [])]
                 logger.info(f"[LLM_MANAGER] Available models: {self._available_models}")
                 return True
-        except Exception as e:
-            logger.warning(f"[LLM_MANAGER] Ollama not available: {e}")
+        except Exception as exc:
+            logger.warning(
+                "[LLM_MANAGER] Ollama unavailable | error_type=%s",
+                type(exc).__name__,
+            )
         return False
 
     def get_available_models(self) -> List[str]:
@@ -181,23 +184,23 @@ class LLMManager:
                     logger.debug(f"[LLM_MANAGER] Received response | length={len(result)}")
                     return result
             else:
-                error_msg = f"LLM API error: {response.status_code}"
-                try:
-                    error_detail = response.text[:500]
-                    error_msg += f" - {error_detail}"
-                except:
-                    pass
-                logger.error(f"[LLM_MANAGER] {error_msg}")
-                raise Exception(error_msg)
+                logger.error(
+                    "[LLM_MANAGER] API error | status_code=%s",
+                    response.status_code,
+                )
+                raise Exception(f"LLM API error: {response.status_code}")
 
-        except requests.exceptions.Timeout as e:
-            logger.error(f"[LLM_MANAGER] Request timeout: {e}")
+        except requests.exceptions.Timeout:
+            logger.error("[LLM_MANAGER] Request timeout")
             raise Exception(f"LLM request timeout after {read_timeout}s. The prompt may be too long or Ollama is slow.")
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"[LLM_MANAGER] Connection error: {e}")
+        except requests.exceptions.ConnectionError:
+            logger.error("[LLM_MANAGER] Connection error")
             raise Exception("Cannot connect to Ollama. Please ensure Ollama is running on localhost:11434")
-        except Exception as e:
-            logger.error(f"[LLM_MANAGER] Generation failed: {e}", exc_info=True)
+        except Exception as exc:
+            logger.error(
+                "[LLM_MANAGER] Generation failed | error_type=%s",
+                type(exc).__name__,
+            )
             raise
 
     def analyze_context(
@@ -222,10 +225,11 @@ class LLMManager:
                 json_mode=True,
                 json_schema=ContextAnalysisPayload.model_json_schema(),
             )
-        except Exception:
-            logger.exception(
-                "[LLM_MANAGER] Context generation failed | prompt_version=%s",
+        except Exception as exc:
+            logger.error(
+                "[LLM_MANAGER] Context generation failed | prompt_version=%s | error_type=%s",
                 CONTEXT_PROMPT_VERSION,
+                type(exc).__name__,
             )
             return context_analysis_failure(
                 "LLM_GENERATION_FAILED",
