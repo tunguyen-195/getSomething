@@ -1,0 +1,226 @@
+{
+  "schema_version": "rtk-evidence-v1",
+  "artifact_id": "s2-r0-summary-recovery",
+  "observed_at": "2026-08-11T16:44:26.3074293Z",
+  "verdict": "PASS",
+  "verdict_scope": "S2-R0 working-tree summary recovery, privacy-safe replay verification, bounded retry semantics, and live Celery replay",
+  "product_status": "BLOCKED",
+  "quality_claimed": false,
+  "environment": {
+    "workspace": "E:/research/STT",
+    "source_scope": "working_tree_exact_allowlist",
+    "git_head": "a6acc3398378706201c229647ece496d5f9cd594",
+    "branch": "feature/architecture-refactor",
+    "python": "3.11.9",
+    "platform": "Windows",
+    "network_used": "loopback_only",
+    "model_used": true,
+    "database_used": true,
+    "worktree_dirty": true,
+    "original_git_index_preserved": true
+  },
+  "plan": {
+    "path": "docs/plans/2026-08-11-investigative-summary-product-implementation-plan.md",
+    "sha256": "ad166d8d39e5c89592307c2da9126c47593bef14e906ae80bd790cea4f435e60",
+    "phase": "S2-R0"
+  },
+  "commit_allowlist": [
+    "src/services/summarization/bulletin_writer.py",
+    "scripts/assert_summary_replay.py",
+    "scripts/replay_summary_task.ps1",
+    "tests/test_investigative_bulletin_quality.py",
+    "tests/test_assert_summary_replay.py",
+    "docs/runbooks/celery-summary-replay.md",
+    "docs/reviews/artifacts/s2-r0-summary-recovery.json"
+  ],
+  "source_sha256": {
+    "src/services/summarization/bulletin_writer.py": "a96df80949d845ecfc4bd82b907532e9d30cde36f68449d48f886e70b728ab81",
+    "src/services/summarization/summary_service_v2.py": "872148516ace7f1115fecfd7c2976f2f5ba115c7912a7830c8bc17e74574f106",
+    "src/worker/tasks/summarize_task.py": "9b7215212fa94ce56d8a585af081c958162cbdaf260f4358bb8cc58ec5bde986",
+    "src/worker/runtime_contract.py": "104d413e4402e426413f0f07a20faf14468012cbcf0cfaaf3dd1465addcdd4fe",
+    "scripts/assert_summary_replay.py": "15d1a6d732b0fdf81073f6875ca6e99c1fca4d81496aef3a4150524c851a8cb6",
+    "scripts/replay_summary_task.ps1": "bc5285b4f47bb5b984fb3afa23936609cbb255db8857b2468527e67146838d37",
+    "scripts/probe_celery_worker_contract.py": "4c7016676656c8b4171a366c59249266c548003c684c6390363b4d58418b4d9b",
+    "tests/test_investigative_bulletin_quality.py": "85d252a7c65d03c46667dd02cb804c8f3387af97f3867ddaeb4b67b021f2f72b",
+    "tests/test_assert_summary_replay.py": "f56d022913ab7b1e0e7cdc8c377e14231468412e7d49d2fb8ca6f5dd94f68413",
+    "tests/test_summary_fail_closed.py": "7f66e379cd3f8651bee6e61ca12522239ba8b113dd5496b2815aa93a34fc0c8b",
+    "tests/test_summary_reconciliation.py": "9c13143411c82b626e881499ca5e999ef77e25a4f9aaf0432302acc41058a31a",
+    "tests/test_worker_runtime_contract.py": "d7c1462ed79bfa034d822525f08a8da072d5e21a3fbad4fe2e20800eacd3816d",
+    "tests/test_investigation_summary_runtime.py": "175367847bdd36c81cf8c5f62c4362455cfa74c2d123d6b03123d3286a20ea2c",
+    "docs/runbooks/celery-summary-replay.md": "6f14faf73a3073e95d8415fbd0add31e1cd654f83b89a42a5f4413cf64060e7b"
+  },
+  "commands": [
+    {
+      "name": "bulletin_and_replay_verifier",
+      "command": [
+        "E:/research/STT/venv/Scripts/python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_investigative_bulletin_quality.py",
+        "tests/test_assert_summary_replay.py"
+      ],
+      "exit_code": 0,
+      "passed": 147,
+      "failed": 0,
+      "warnings": 13,
+      "duration_seconds": 54.37
+    },
+    {
+      "name": "fail_closed_worker_reconciliation",
+      "command": [
+        "E:/research/STT/venv/Scripts/python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_summary_fail_closed.py",
+        "tests/test_summary_reconciliation.py",
+        "tests/test_worker_runtime_contract.py",
+        "tests/test_investigation_summary_runtime.py"
+      ],
+      "exit_code": 0,
+      "passed": 58,
+      "failed": 0,
+      "warnings": 13,
+      "duration_seconds": 44.23
+    },
+    {
+      "name": "ruff",
+      "command": [
+        "ruff",
+        "check",
+        "scripts/assert_summary_replay.py",
+        "tests/test_assert_summary_replay.py",
+        "src/services/summarization/bulletin_writer.py",
+        "tests/test_investigative_bulletin_quality.py"
+      ],
+      "exit_code": 0,
+      "result": "All checks passed"
+    },
+    {
+      "name": "powershell_parser",
+      "command": [
+        "System.Management.Automation.Language.Parser.ParseFile",
+        "scripts/replay_summary_task.ps1"
+      ],
+      "exit_code": 0,
+      "result": "POWERSHELL_PARSE_PASS"
+    },
+    {
+      "name": "celery_worker_runtime_contract",
+      "command": [
+        "E:/research/STT/venv/Scripts/python.exe",
+        "scripts/probe_celery_worker_contract.py",
+        "--timeout",
+        "30",
+        "--json"
+      ],
+      "exit_code": 0,
+      "status": "PASS",
+      "worker_fingerprint": "7a0cc859aac9e1ef046e8cbab23cc7b1010145d00b0522d2ff61fda39c4232dd",
+      "summary_implementation_fingerprint": "f0b139825d1e80418dac5a6da118f3be2c6e4382823bd3def0819bab9b0faa03",
+      "bulletin_writer_component_fingerprint": "4207a1a8951aab537b3238d277407001fceb37f92676a6cdd0c2bdd21b4812fb"
+    }
+  ],
+  "live_replays": {
+    "cd6f85d0-ac0a-438d-86b1-a1df43d0767d-20260811-232633": {
+      "task_id": "cd6f85d0-ac0a-438d-86b1-a1df43d0767d",
+      "files": {
+        "baseline.json": {
+          "sha256": "f99cc94c2f2141cbbb6fbcb7b3a0d675e1866b47ea806e65dd2a596f57238f0e",
+          "bytes": 717
+        },
+        "enqueue.json": {
+          "sha256": "fe0350af47bc9fb49972edf29a3d8d666baae2b05072af74ed29b97332ad3518",
+          "bytes": 160
+        },
+        "verification.json": {
+          "sha256": "c0da4f0c87803ecbc1e28ca7bda0c27306354410d0c7487c3684ed2f5e89ec34",
+          "bytes": 4911
+        }
+      },
+      "operational_status": "PASS",
+      "generation_path": "bounded_non_delta_rejection",
+      "llm_calls": 2,
+      "token_budget_kinds": ["initial", "repair"],
+      "report_availability": "UNAVAILABLE",
+      "report_quality": "BLOCKED"
+    },
+    "c5923a81-3c7a-4e9c-aa06-29ef2c8dd887-20260811-232848": {
+      "task_id": "c5923a81-3c7a-4e9c-aa06-29ef2c8dd887",
+      "files": {
+        "baseline.json": {
+          "sha256": "533fb13754a017a544e2272b609c2f3fd600309bc90af6087d0fe86a124a798c",
+          "bytes": 717
+        },
+        "enqueue.json": {
+          "sha256": "e045258d7f5895e9f83984e7dceab4470e3bbd7c963f8659c872711dc7605333",
+          "bytes": 160
+        },
+        "verification.json": {
+          "sha256": "65e217f361969944e1be2cbbfeadaf9e93add9f90fe1c98b16901333aca612ef",
+          "bytes": 4911
+        }
+      },
+      "operational_status": "PASS",
+      "generation_path": "bounded_non_delta_rejection",
+      "llm_calls": 2,
+      "token_budget_kinds": ["initial", "repair"],
+      "report_availability": "UNAVAILABLE",
+      "report_quality": "BLOCKED"
+    },
+    "d59205bd-7955-4143-a721-3cb40ca4ba7c-20260811-233107": {
+      "task_id": "d59205bd-7955-4143-a721-3cb40ca4ba7c",
+      "files": {
+        "baseline.json": {
+          "sha256": "ad063fe8d1714fe05fc02556bd8a7d9e32d50ee029e06f7eee00a92efc8e0423",
+          "bytes": 660
+        },
+        "enqueue.json": {
+          "sha256": "d48ea44f5a9fac6e90cfcec058fee5d0b93e5f454908cd568765c8ed64cbc58f",
+          "bytes": 160
+        },
+        "verification.json": {
+          "sha256": "3245fc225b4680ff64921266fc5a98767dcc862ad4a74aaa7d2245f55b4ddbf2",
+          "bytes": 5648
+        }
+      },
+      "operational_status": "PASS",
+      "generation_path": "delta_repair_accepted",
+      "llm_calls": 3,
+      "token_budget_kinds": ["initial", "repair", "delta_repair"],
+      "report_availability": "AVAILABLE",
+      "report_quality": "NOT_EVALUATED",
+      "summary_word_count": 247,
+      "summary_sha256": "d4afc952c9f07dc8e363444477787344abc9609598c81dc02240a19112057f48"
+    }
+  },
+  "checks": {
+    "unknown_runtime_fault_stops_after_repair_without_delta": true,
+    "sentence_scoped_value_errors_are_sanitized": true,
+    "raw_task_error_not_serialized_in_baseline_or_verification": true,
+    "summary_body_not_serialized_in_replay_artifact": true,
+    "non_delta_rejection_requires_exact_initial_and_repair": true,
+    "writer_rejection_requires_three_attempts": true,
+    "eligibility_or_recovery_failure_blocks_quality": true,
+    "wrapper_behavioral_exit_contract_0_2_3": true,
+    "python_verifier_exit_contract_0_2_1": true,
+    "worker_runtime_fingerprint_passed": true,
+    "active_replay_raw_error_files": 0
+  },
+  "privacy_quarantine": {
+    "action": "moved_without_deletion",
+    "path": "output/summary-replay-quarantine/pre-r0-raw-error",
+    "directory_count": 6,
+    "raw_error_artifact_file_count": 12,
+    "included_in_commit": false,
+    "included_in_active_replay_allowlist": false
+  },
+  "residual_uncertainty": [
+    "R0 proves operational recovery and privacy-safe replay evidence only; it does not claim investigative report quality.",
+    "The d592 report remains NOT_EVALUATED until the shared S2-R5 report-quality validator exists.",
+    "The cd6 and c592 tasks remain unavailable because their complete obligations do not fit the current writer plan and word budget.",
+    "S2-R1 participant labels and S2-R2 adaptive NarrativePacketPlan are required before product-quality promotion.",
+    "Diarization, ASR quality, offline release completeness, and the remaining P0-P8 gates are outside this R0 artifact."
+  ]
+}
