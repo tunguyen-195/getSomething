@@ -1,0 +1,80 @@
+{
+  "task": "analysis_navigation_visibility",
+  "date": "2026-08-10",
+  "workspace": "E:\\research\\STT",
+  "head": "a6acc3398378706201c229647ece496d5f9cd594",
+  "branch": "feature/architecture-refactor",
+  "verdict": "PASS_TARGETED",
+  "requirements": {
+    "per_file_analysis_action": "pass",
+    "transcript_negative_gate": "pass",
+    "selected_file_focus": "pass",
+    "desktop_reachability": "pass",
+    "mobile_reachability": "pass",
+    "mobile_drawer_dismissal": "pass"
+  },
+  "implementation": {
+    "responsive_drawer": "frontend/src/App.tsx:77",
+    "scrollable_tabs": "frontend/src/App.tsx:783",
+    "analysis_navigation": "frontend/src/App.tsx:816",
+    "focused_analysis_panel": "frontend/src/App.tsx:981",
+    "per_file_button": "frontend/src/components/FileTable.tsx:289",
+    "selected_file_expansion": "frontend/src/components/AnalysisPanel.tsx:221",
+    "repeatable_test_harness": "frontend/tests/analysisNavigation.test.ts:11"
+  },
+  "validation": [
+    {
+      "command": "node --test tests/analysisNavigation.test.ts",
+      "workdir": "frontend",
+      "result": "2 passed"
+    },
+    {
+      "command": "npm test",
+      "workdir": "frontend",
+      "result": "21 passed, 0 failed"
+    },
+    {
+      "command": "npx tsc --noEmit",
+      "workdir": "frontend",
+      "result": "pass"
+    },
+    {
+      "command": "npm run build",
+      "workdir": "frontend",
+      "result": "pass; 12071 modules transformed"
+    },
+    {
+      "command": "git diff --check -- frontend/src/App.tsx frontend/src/components/FileTable.tsx frontend/src/components/AnalysisPanel.tsx frontend/tests/analysisNavigation.test.ts",
+      "workdir": ".",
+      "result": "pass"
+    }
+  ],
+  "runtime": {
+    "frontend_http": 200,
+    "backend_health_http": 200,
+    "desktop": "Analysis button enabled; tab 4 selected; evidence.wav expanded",
+    "mobile_viewport": "390x844",
+    "mobile_tabs_client_width": 260,
+    "mobile_tabs_scroll_width": 599,
+    "mobile_analysis_visible_bounds": "x=213..325 after scroll",
+    "fixture": "deterministic mocked auth/case/audio responses"
+  },
+  "artifacts": {
+    "debug_session": ".planning/debug/analysis-button-missing.md",
+    "mobile_screenshot": "output/playwright/analysis-mobile-final-pass.png",
+    "mobile_screenshot_sha256": "faa90b36cb5e612f6a60970c1261058c9d302ad991904d88c310a2ba75923f22"
+  },
+  "independent_audit": {
+    "verdict": "pass",
+    "closed_concern": "temporary mobile Drawer now has onClose",
+    "residual_risks": [
+      "navigation tests are source-regex based rather than component tests",
+      "live browser validation used deterministic mocked API data",
+      "production bundle retains a non-blocking chunk-size warning"
+    ]
+  },
+  "commit": {
+    "created": false,
+    "reason": "target files contain broader pre-existing dirty-tree changes; no narrow commit was made"
+  }
+}

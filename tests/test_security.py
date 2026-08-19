@@ -1,4 +1,5 @@
 import uuid
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
@@ -29,43 +30,7 @@ from src.database.models.models import (
     Language,
 )
 from src.main import app
-from src.services.task_service import (
-    begin_summary_attempt,
-    build_summary_attempt_binding,
-    extract_visualization_payload,
-    succeed_summary_attempt,
-    update_task,
-)
-
-
-def _persist_test_summary(task_id: str, transcript: str, summary: str) -> None:
-    assert update_task(task_id, {"transcript": transcript})
-    request_fingerprint, source_revision_id = build_summary_attempt_binding(
-        transcript,
-        model_name="test-model",
-        summary_type="detailed",
-        include_context=True,
-        min_length=0,
-        max_length=200,
-    )
-    attempt_id = f"test-summary-{uuid.uuid4()}"
-    assert begin_summary_attempt(
-        task_id,
-        attempt_id,
-        request_fingerprint=request_fingerprint,
-        source_revision_id=source_revision_id,
-    ).accepted
-    assert succeed_summary_attempt(
-        task_id,
-        attempt_id,
-        {
-            "summary": summary,
-            "context_analysis": None,
-            "summary_model": "test-model",
-            "summary_type": "detailed",
-            "summary_runtime": {},
-        },
-    ).accepted
+from src.services.task_service import extract_visualization_payload, update_task
 
 
 @pytest.fixture()
@@ -584,7 +549,7 @@ def test_audio_list_derives_summarized_status_from_task(auth_enabled):
     case_id = _create_case_for_user(user_id)
     task_id = _create_task_for_user(user_id, case_id)
     audio_id = _create_audio_for_task(user_id, case_id, task_id, status="transcribed")
-    _persist_test_summary(task_id, "hello", "done")
+    assert update_task(task_id, {"status": "summarized", "summary": "done"})
     db = SessionLocal()
     try:
         audio = db.query(AudioFile).filter(AudioFile.id == audio_id).first()
@@ -651,6 +616,17 @@ def test_legacy_visualization_paths_fail_closed_without_released_run(auth_enable
     assert task_detail.json()["visualization_data"] is None
     assert task_detail.json()["has_visualization"] is False
 
+    v2_status = client.get(f"/api/v1/audio/v2/tasks/{task_id}/status")
+    assert v2_status.status_code == 200, v2_status.text
+    assert v2_status.json()["visualization_data"] is None
+    assert v2_status.json()["has_visualization"] is False
+
+    case_files = client.get(f"/api/v1/cases/{case_id}/files")
+    assert case_files.status_code == 200, case_files.text
+    file_row = next(row for row in case_files.json() if row["task_id"] == task_id)
+    assert file_row["result"]["visualization_data"] is None
+    assert file_row["result"]["has_visualization"] is False
+
     legacy = client.post(
         f"/api/v1/audio/visualize/{task_id}",
         json={"visualization_type": "all"},
@@ -696,6 +672,512 @@ def test_summary_analyze_blocks_cross_user_orphan_task(auth_enabled):
     assert response.status_code == 403
 
 
+def _analysis_payload(transcript: str, segments: list[dict] | None = None) -> dict:
+    from src.api.endpoints.summary import (
+        _exact_transcript_sha256,
+        _segments_sha256,
+    )
+    from src.services.summarization.models.context_analysis import (
+        ANALYSIS_SCHEMA_VERSION,
+        CONTEXT_PROMPT_VERSION,
+    )
+
+    return {
+        "schema_version": ANALYSIS_SCHEMA_VERSION,
+        "analysis_status": "success",
+        "analysis_generation": "single_prompt_llm",
+        "prompt_version": CONTEXT_PROMPT_VERSION,
+        "analysis_text": "Noi dung phan tich co the hien thi.",
+        "key_points": [
+            {
+                "text": "Diem chinh.",
+                "evidence_quote": "server-only evidence",
+                "custom_extension": "server-only extension",
+            }
+        ],
+        "metrics": {
+            "transcript_sha256": _exact_transcript_sha256(transcript),
+            "segments_sha256": _segments_sha256(segments or []),
+        },
+    }
+
+
+def _replace_task_result(task_id: str, result: dict) -> None:
+    db = SessionLocal()
+    try:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        task.result = result
+        db.commit()
+    finally:
+        db.close()
+
+
+def _stored_task_result(task_id: str) -> dict:
+    db = SessionLocal()
+    try:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        return dict(task.result or {})
+    finally:
+        db.close()
+
+
+def test_task_context_patch_rejects_client_analysis_and_preserves_db(auth_enabled):
+    user_id, username, password = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_task_for_user(user_id, case_id)
+    original = _stored_task_result(task_id)
+    client = _login_client(username, password)
+
+    forged = client.patch(
+        f"/api/v1/audio/tasks/{task_id}/context",
+        json={"context_analysis": {"analysis_status": "success"}},
+        headers=_csrf_header(client),
+    )
+
+    assert forged.status_code == 422, forged.text
+    assert _stored_task_result(task_id) == original
+
+    allowed = client.patch(
+        f"/api/v1/audio/tasks/{task_id}/context",
+        json={"user_context_prompt": "Tap trung vao moc thoi gian."},
+        headers=_csrf_header(client),
+    )
+    assert allowed.status_code == 200, allowed.text
+    stored = _stored_task_result(task_id)
+    assert stored["user_context_prompt"] == "Tap trung vao moc thoi gian."
+    assert "context_analysis" not in stored
+
+
+def test_summary_analyze_rejects_forged_and_arbitrary_fields_before_processing(
+    monkeypatch,
+    auth_enabled,
+):
+    from src.api.endpoints import summary as summary_endpoint
+
+    _, username, password = _create_user()
+    client = _login_client(username, password)
+    touched: list[str] = []
+    monkeypatch.setattr(
+        summary_endpoint,
+        "get_task",
+        lambda *_args: touched.append("task-read"),
+    )
+    headers = _csrf_header(client)
+
+    forged = client.post(
+        "/api/v1/summaries/analyze",
+        json={
+            "summary": "ignored",
+            "task_id": str(uuid.uuid4()),
+            "context_analysis": {"analysis_status": "success"},
+        },
+        headers=headers,
+    )
+    arbitrary = client.post(
+        "/api/v1/summaries/analyze",
+        json={
+            "summary": "ignored",
+            "task_id": str(uuid.uuid4()),
+            "unexpected": "server-only fields cannot be supplied by clients",
+        },
+        headers=headers,
+    )
+
+    assert forged.status_code == 422, forged.text
+    assert arbitrary.status_code == 422, arbitrary.text
+    assert touched == []
+
+
+def test_summary_and_visualization_routes_reject_extra_fields_before_processing(
+    monkeypatch,
+    auth_enabled,
+):
+    from src.api.endpoints import audio as audio_v1
+    _, username, password = _create_user()
+    client = _login_client(username, password)
+    touched: list[str] = []
+    monkeypatch.setattr(
+        audio_v1,
+        "get_task",
+        lambda *_args: touched.append("v1-task-read"),
+    )
+    monkeypatch.setattr(
+        "src.services.task_service.get_task",
+        lambda *_args, **_kwargs: touched.append("v2-task-read"),
+    )
+    headers = _csrf_header(client)
+    task_id = str(uuid.uuid4())
+
+    responses = [
+        client.post(
+            f"/api/v1/audio/tasks/{task_id}/resummarize",
+            json={"summary_type": "brief", "context_analysis": {"forged": True}},
+            headers=headers,
+        ),
+        client.post(
+            f"/api/v1/audio/v2/summarize/{task_id}",
+            json={"summary_type": "brief", "summary_runtime": {"forged": True}},
+            headers=headers,
+        ),
+        client.post(
+            f"/api/v1/audio/visualize/{task_id}",
+            json={"visualization_type": "all", "released_run": {"forged": True}},
+            headers=headers,
+        ),
+        client.post(
+            f"/api/v1/audio/v2/visualize/{task_id}",
+            json={"visualization_type": "all", "nodes": [{"forged": True}]},
+            headers=headers,
+        ),
+    ]
+
+    assert [response.status_code for response in responses] == [422] * len(responses)
+    assert touched == []
+
+
+def test_analysis_cache_requires_server_attestation(monkeypatch, auth_enabled):
+    from src.api.endpoints import summary as summary_endpoint
+
+    user_id, username, password = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_task_for_user(user_id, case_id)
+    transcript = "Lan hen Minh luc chin gio tai ben xe."
+    segments = [
+        {"start": 0.0, "end": 2.0, "speaker": "SPEAKER_00", "text": transcript}
+    ]
+    legacy = _analysis_payload(transcript, segments)
+    _replace_task_result(
+        task_id,
+        {"transcription": transcript, "segments": segments, "context_analysis": legacy},
+    )
+    generated = _analysis_payload(transcript, segments)
+    generated["analysis_text"] = "Ket qua moi duoc sinh lai."
+    calls = []
+    monkeypatch.setattr(summary_endpoint, "gpu_lease", lambda *_args: nullcontext())
+    monkeypatch.setattr(summary_endpoint.settings, "UNLOAD_MODELS_AFTER_TASK", False)
+    monkeypatch.setattr(
+        summary_endpoint,
+        "analyze_conversation_context",
+        lambda *_args, **_kwargs: calls.append(True) or generated,
+    )
+    client = _login_client(username, password)
+
+    response = client.post(
+        "/api/v1/summaries/analyze",
+        json={"summary": "ignored", "task_id": task_id},
+        headers=_csrf_header(client),
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["cache_hit"] is False
+    assert len(calls) == 1
+    stored = _stored_task_result(task_id)
+    assert stored["context_analysis"] == generated
+    assert stored["context_analysis_attestation"]["task_id"] == task_id
+    assert "context_analysis_attestation" not in response.json()["result"]
+    assert "evidence_quote" not in str(response.json())
+    assert "custom_extension" not in str(response.json())
+
+
+def test_tampered_analysis_cache_misses_but_valid_attestation_hits(
+    monkeypatch, auth_enabled
+):
+    from src.api.endpoints import summary as summary_endpoint
+
+    user_id, username, password = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_task_for_user(user_id, case_id)
+    transcript = "Lan hen Minh luc chin gio tai ben xe."
+    segments = [
+        {"start": 0.0, "end": 2.0, "speaker": "SPEAKER_00", "text": transcript}
+    ]
+    cached = _analysis_payload(transcript, segments)
+    attestation = summary_endpoint._build_context_analysis_attestation(
+        cached,
+        task_id=task_id,
+        transcript=transcript,
+        segments=segments,
+    )
+    _replace_task_result(
+        task_id,
+        {
+            "transcription": transcript,
+            "segments": segments,
+            "context_analysis": cached,
+            "context_analysis_attestation": attestation,
+        },
+    )
+    client = _login_client(username, password)
+
+    def unexpected_llm(*_args, **_kwargs):
+        raise AssertionError("valid attested cache must not call the LLM")
+
+    monkeypatch.setattr(summary_endpoint, "analyze_conversation_context", unexpected_llm)
+    hit = client.post(
+        "/api/v1/summaries/analyze",
+        json={"summary": "ignored", "task_id": task_id},
+        headers=_csrf_header(client),
+    )
+    assert hit.status_code == 200, hit.text
+    assert hit.json()["cache_hit"] is True
+    assert "evidence_quote" not in str(hit.json())
+
+    tampered = dict(cached)
+    tampered["analysis_text"] = "Noi dung bi sua sau khi ky."
+    _replace_task_result(
+        task_id,
+        {
+            "transcription": transcript,
+            "segments": segments,
+            "context_analysis": tampered,
+            "context_analysis_attestation": attestation,
+        },
+    )
+    regenerated = _analysis_payload(transcript, segments)
+    regenerated["analysis_text"] = "Ket qua sinh lai sau tamper."
+    calls = []
+    monkeypatch.setattr(summary_endpoint, "gpu_lease", lambda *_args: nullcontext())
+    monkeypatch.setattr(summary_endpoint.settings, "UNLOAD_MODELS_AFTER_TASK", False)
+    monkeypatch.setattr(
+        summary_endpoint,
+        "analyze_conversation_context",
+        lambda *_args, **_kwargs: calls.append(True) or regenerated,
+    )
+    miss = client.post(
+        "/api/v1/summaries/analyze",
+        json={"summary": "ignored", "task_id": task_id},
+        headers=_csrf_header(client),
+    )
+    assert miss.status_code == 200, miss.text
+    assert miss.json()["cache_hit"] is False
+    assert len(calls) == 1
+
+
+def test_summary_analyze_rejects_ambiguous_persisted_inputs_before_llm(
+    monkeypatch,
+    auth_enabled,
+):
+    from src.api.endpoints import summary as summary_endpoint
+
+    user_id, username, password = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_task_for_user(user_id, case_id)
+    _replace_task_result(
+        task_id,
+        {
+            "transcription": "Noi dung nguon.",
+            "segments": {"0": {"text": "khong phai danh sach"}},
+        },
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(
+        summary_endpoint,
+        "analyze_conversation_context",
+        lambda *_args, **_kwargs: calls.append("llm") or {},
+    )
+    client = _login_client(username, password)
+
+    response = client.post(
+        "/api/v1/summaries/analyze",
+        json={"summary": "ignored", "task_id": task_id},
+        headers=_csrf_header(client),
+    )
+
+    assert response.status_code == 500, response.text
+    assert response.json()["detail"] == "Task analysis inputs are invalid"
+    assert calls == []
+
+
+def test_generic_task_aliases_downgrade_stale_visualized_status(auth_enabled):
+    user_id, username, password = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_task_for_user(user_id, case_id)
+    _replace_task_result(
+        task_id,
+        {
+            "transcription": "Noi dung nguon.",
+            "summary": "Tom tat.",
+            "visualization_data": {"nodes": [{"id": "stale"}]},
+            "has_visualization": True,
+        },
+    )
+    db = SessionLocal()
+    try:
+        task = db.query(Task).filter(Task.id == task_id).first()
+        task.status = "visualized"
+        db.commit()
+    finally:
+        db.close()
+    client = _login_client(username, password)
+
+    for path in (
+        "/api/v1/tasks",
+        f"/api/v1/tasks/{task_id}",
+        f"/api/v1/tasks/results/{task_id}",
+        f"/api/v1/tasks/tasks/results/{task_id}",
+    ):
+        response = client.get(path)
+        assert response.status_code == 200, (path, response.text)
+        payload = response.json()
+        if isinstance(payload, list):
+            task_payload = next(row for row in payload if row["id"] == task_id)
+            assert task_payload["status"] == "summarized"
+            assert task_payload["result"]["visualization_data"] is None
+        else:
+            assert payload["status"] == "summarized"
+            assert payload["result"]["status"] == "summarized"
+            assert payload["result"]["result"]["visualization_data"] is None
+
+
+def test_task_read_endpoints_never_return_analysis_attestation(auth_enabled):
+    from src.api.endpoints import summary as summary_endpoint
+
+    user_id, username, password = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_task_for_user(user_id, case_id)
+    audio_id = _create_audio_for_task(user_id, case_id, task_id)
+    transcript = "Noi dung task duoc bao ve."
+    analysis = _analysis_payload(transcript)
+    _replace_task_result(
+        task_id,
+        {
+            "transcription": transcript,
+            "summary_runtime": {"model_id": "internal", "raw_exception": "secret"},
+            "released_investigation_run": {"run_id": "internal-run"},
+            "audio_sha256": "a" * 64,
+            "arbitrary_extension": {"secret": True},
+            "context_analysis": analysis,
+            "context_analysis_attestation": summary_endpoint._build_context_analysis_attestation(
+                analysis,
+                task_id=task_id,
+                transcript=transcript,
+                segments=[],
+            ),
+        },
+    )
+    client = _login_client(username, password)
+
+    for path in (
+        f"/api/v1/tasks/{task_id}",
+        f"/api/v1/tasks/results/{task_id}",
+        f"/api/v1/audio/tasks/{task_id}",
+        f"/api/v1/audio/v2/tasks/{task_id}/status",
+        f"/api/v1/audio/files/{audio_id}/transcript",
+        f"/api/v1/cases/{case_id}/files",
+    ):
+        response = client.get(path)
+        assert response.status_code == 200, (path, response.text)
+        serialized = str(response.json())
+        assert "context_analysis_attestation" not in serialized
+        assert "signature" not in serialized
+        assert "evidence_quote" not in serialized
+        assert "custom_extension" not in serialized
+        assert "summary_runtime" not in serialized
+        assert "released_investigation_run" not in serialized
+        assert "audio_sha256" not in serialized
+        assert "arbitrary_extension" not in serialized
+        assert "raw_exception" not in serialized
+
+    for path in (
+        "/api/v1/tasks",
+        "/api/v1/audio/tasks",
+    ):
+        response = client.get(path)
+        assert response.status_code == 200, (path, response.text)
+        serialized = str(response.json())
+        assert "context_analysis_attestation" not in serialized
+        assert "summary_runtime" not in serialized
+        assert "released_investigation_run" not in serialized
+        assert "audio_sha256" not in serialized
+        assert "arbitrary_extension" not in serialized
+
+
+def test_lightweight_v2_status_projects_summary_signals(auth_enabled):
+    user_id, username, password = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_task_for_user(user_id, case_id)
+    _create_audio_for_task(user_id, case_id, task_id)
+    _replace_task_result(
+        task_id,
+        {
+            "summary_state": "needs_review",
+            "summary_notice": {
+                "code": "SUMMARY_REVIEW_REQUIRED",
+                "retryable": False,
+                "message": "internal operator guidance",
+                "custom_extension": "secret",
+            },
+            "summary_error": {
+                "code": "SUMMARY_GENERATION_FAILED",
+                "needs_review": True,
+                "raw_exception": "secret traceback",
+            },
+        },
+    )
+    client = _login_client(username, password)
+
+    response = client.get(
+        f"/api/v1/audio/v2/tasks/{task_id}/status",
+        params={"include_result": False},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["summary_notice"] == {
+        "code": "SUMMARY_REVIEW_REQUIRED",
+        "retryable": False,
+    }
+    assert payload["summary_error"] == {
+        "code": "SUMMARY_GENERATION_FAILED",
+        "needs_review": True,
+    }
+    serialized = str(payload)
+    assert "internal operator guidance" not in serialized
+    assert "custom_extension" not in serialized
+    assert "raw_exception" not in serialized
+    assert "secret traceback" not in serialized
+
+
+def test_case_list_remains_compact_when_client_requests_rich_bulk_data(auth_enabled):
+    user_id, username, password = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_task_for_user(user_id, case_id)
+    _create_audio_for_task(user_id, case_id, task_id)
+    _replace_task_result(
+        task_id,
+        {
+            "transcription": "bulk-private transcript",
+            "summary": "bulk-private summary",
+            "context_analysis": {"analysis_text": "bulk-private analysis"},
+        },
+    )
+    client = _login_client(username, password)
+
+    response = client.get("/api/v1/cases/", params={"compact": False})
+
+    assert response.status_code == 200, response.text
+    case = next(row for row in response.json() if row["id"] == case_id)
+    assert "transcripts" in case
+    assert case["transcripts"] == ["bulk-private transcript"]
+    assert case["summaries"] == ["bulk-private summary"]
+    assert case["contexts"] == []
+
+
+def test_public_endpoint_exceptions_are_not_returned_to_clients(monkeypatch, auth_enabled):
+    from src.api.endpoints import tasks as tasks_endpoint
+
+    _, username, password = _create_user()
+    client = _login_client(username, password)
+    secret = "database-password=super-secret"
+    monkeypatch.setattr(tasks_endpoint, "list_tasks", lambda: (_ for _ in ()).throw(RuntimeError(secret)))
+
+    response = client.get("/api/v1/tasks")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Failed to list tasks"
+    assert secret not in response.text
+
+
 def test_task_result_updates_merge_without_dropping_existing_fields():
     user_id, _, _ = _create_user()
     case_id = _create_case_for_user(user_id)
@@ -704,8 +1186,7 @@ def test_task_result_updates_merge_without_dropping_existing_fields():
     assert update_task(
         task_id, {"transcript": "hello", "segments": [{"start": 0, "end": 1}]}
     )
-    assert update_task(task_id, {"summary": "forged summary"}) is False
-    _persist_test_summary(task_id, "hello", "short summary")
+    assert update_task(task_id, {"summary": "short summary"})
     assert update_task(
         task_id,
         {"visualization_data": {"nodes": []}, "has_visualization": True},

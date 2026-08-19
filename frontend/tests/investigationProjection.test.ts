@@ -252,9 +252,14 @@ test('component wiring remains read-only and uses the semantic validators', () =
     card,
     /react-flow-renderer|ReactFlow|<Timeline|Sơ đồ quan hệ|Timeline sự kiện/,
   );
-  assert.match(dialog, /selectReleasedVisualizationArtifactFromTask/);
+  assert.match(dialog, /buildInvestigationVisualization/);
+  assert.doesNotMatch(dialog, /selectReleasedVisualizationArtifactFromTask/);
   assert.match(dialog, /react-flow-renderer|ReactFlow/);
-  assert.doesNotMatch(dialog, /context_analysis|result\?\.summary|InvestigationSummaryCard/);
+  assert.doesNotMatch(dialog, /result\?\.summary|InvestigationSummaryCard/);
+  assert.doesNotMatch(
+    dialog,
+    /start_seconds|end_seconds|\.quote|evidence_id|run_id|source_revision_id|content_hash/,
+  );
   assert.match(fileCard, /validateReleasedVisualizationArtifact/);
   assert.doesNotMatch(fileCard, />\s*(?:Re-)?Generate\s*</i);
   assert.match(taskList, /projectInvestigationSummaryContext/);

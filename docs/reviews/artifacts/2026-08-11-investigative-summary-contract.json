@@ -1,0 +1,167 @@
+{
+  "schema_version": "rtk-evidence-v1",
+  "artifact_id": "2026-08-11-investigative-summary-contract",
+  "observed_at": "2026-08-11T12:17:33.682526+07:00",
+  "verdict": "PASS",
+  "verdict_scope": "working-tree investigative summary prototype: officer prompt, semantic and coverage gates, runtime integration, frontend regression, and build",
+  "exit_code": 0,
+  "environment": {
+    "workspace": "E:\\research\\STT",
+    "source_scope": "working_tree",
+    "git_head": "a6acc3398378706201c229647ece496d5f9cd594",
+    "branch": "feature/architecture-refactor",
+    "python": "3.11.9",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "network_used": false,
+    "model_used": false,
+    "worktree_dirty": true
+  },
+  "harness_path": "scripts/audit_investigative_summary_contract.py",
+  "harness_sha256": "7c8dd60c9a0ff092bb6408e00e54a2520fbe98bc67f167384db837ba1f22604f",
+  "source_sha256": {
+    "src/services/investigation/claim_semantics.py": "3c1b2143fa96f47821e6182daaadcf420d8d17981b482b0b8befe2dc5eaf316f",
+    "src/services/summarization/bulletin_writer.py": "fc1d0ddf35d474aad33644f8aa0dcef0747ae714f1d481556eebff7a672c27a6",
+    "src/services/summarization/context_service.py": "606bdf006ce1f9a5984f164caa64d3b9aad58cc3e4cefa810289a901e25e5e40",
+    "src/services/summarization/investigation_scenarios.py": "5149acbf2beb70197681de286dce84467b083995e9efa462c1ab94600737a07b",
+    "src/services/summarization/models/context_analysis.py": "4f5180536fb40439f2bbe4ef8fef286deda5ac0f848ce55e6161fa91652cd577",
+    "src/services/summarization/models/investigation_knowledge.py": "aab9fdff8c395d7e5f822c20bf6d7a45fdf90a4a75ab1377872fe466221684ff",
+    "src/services/summarization/public_projection.py": "89755e57f0e344b7fe9bc287639baebda93f201bae6d40d03482964ffd7a819a",
+    "src/services/summarization/summary_service_v2.py": "1b5050f16b8f7fda47513ee8dbc99a22a44638a8696dacca117bfb9372580dcf",
+    "src/services/summarization/investigation_preview.py": "4bcbf0c3d5926d68ca0c731f35be90154778a0ab5bb15cfafcc2cf1c4d9b525c",
+    "src/api/endpoints/audio.py": "484a7bc09fadc6aaa3573e621f807c266adfa1491068810fec87c381d6cb2b25",
+    "src/api/endpoints/audio_v2.py": "9f44564890531d471eb0862275bd598ddfbacdd2cda34a891bf4aa0fc4c5806f",
+    "src/services/audio_service.py": "686bb9d3f7620d31b04319aabb0cfd5582a4103db3a72fabde9a593ed0cbb24c",
+    "src/services/cherry_summarizer.py": "247d4cd051130edd7f8db66eb578895e2f578cc6ac61f98ee1268cd308533aca",
+    "src/worker/tasks/summarize_task.py": "69308939061a9bb6071c92571d024c8966a588e53c787dd76c8414104ebfe30e",
+    "src/worker/runtime_contract.py": "7b14003eb9204ff96bd5ab733ad929561bfe1cfda73cf476a619f47b113758a0",
+    "src/worker/summary_reconciliation.py": "63dfc34f713371848dfc0ae0f1130116712238516c7dda2cdc0e1b3892b0179f",
+    "src/worker/tasks/runtime_contract_task.py": "df074a1ee0d1090563d6f37f67958bfac95785e6399ff3db4981144668e2e0d2",
+    "frontend/src/components/InvestigationSummaryCard.tsx": "b31d4390853f5a07c89940636a12a767844e1ced1bb1ea1f923769be33ea28b3",
+    "frontend/src/components/SummarizeDialog.tsx": "d6959e1296b5e960520459f410d502bc66e5318d70e5bc6de7f0d0c78448916d",
+    "frontend/src/components/TaskListItem.tsx": "05a8fe63dccc214a812572e6ac8b3a40d7fb61f31324258a4b9e815f622e00d0",
+    "frontend/src/utils/investigationAnalysis.ts": "06891fc125095b2eb6a7195b89e303e748bafeeb7304b97efb0e86b36e2d1958",
+    "frontend/src/utils/summaryDisplay.ts": "0ebd0f7c64701a8b4de144b131261003d969917add8477ff421c12f8ee01c0a2",
+    "frontend/tests/investigationAnalysis.test.ts": "a3d77a504e615791d3abd7134324698f8ad8c3523cb0a43df0b0392be3fd01c9",
+    "tests/test_context_analysis.py": "dc64670dee3ac63cccaba7c9b5647bb464bb21ef1dbaa0779854c8c643de08a8",
+    "tests/test_investigation_knowledge.py": "64ded796731e48cd842884903e9b788da237851c1d2a55e9cb0a6bda4ddb10fb",
+    "tests/test_investigation_summary_runtime.py": "ef26f882c9dbbdcde83fcf6896c8c9fefbd4958741d224caffd4c5ccfe9b5aaa",
+    "tests/test_investigative_bulletin_quality.py": "a1275ffa9936434138976f9c6713000105c42e2c566f900c0fa5b0ad4aa9b007",
+    "tests/test_public_summary_projection.py": "225b2a886d051912a1b8dd476d19038c903398968980ea8e612d6b52660da23c",
+    "tests/test_summary_fail_closed.py": "add82fa33367cba0c94cd7d3a185a8eb50c207cf8ca42efb4b8bfa6ec315fac8",
+    "tests/test_summary_request_contract.py": "a550058f514d116aa9dcd10472844684821b0d3faf7f96a9e9c7071db50007f5",
+    "tests/test_worker_runtime_contract.py": "9a157552801fe12371ce388f97b9b590351bc7310b4ac77ac654e63b4d1ba779",
+    "tests/test_summary_reconciliation.py": "9c13143411c82b626e881499ca5e999ef77e25a4f9aaf0432302acc41058a31a",
+    "docs/research/2026-08-10-investigative-summary-product-contract.md": "31549d1452cd551ddb8f42de3b483934e5caf8fb61ec0483bce0c7d300d55177",
+    "docs/research/2026-08-11-investigative-summary-product-technology-scout.md": "a9a3b73dd5d2165ef79c5a23be309d8a58c9fe4392fb50a5f0b5857a2c59aff0",
+    "docs/plans/2026-08-10-investigative-summary-redesign-plan.md": "9d2953b59d183c53a70b2c17c23c42a8b49e87b508fd57fb9b80d68ea5a2a238",
+    "docs/plans/2026-08-11-investigative-summary-product-implementation-plan.md": "404bf796aa470ec2ba0127593760d5ac57a0f0829c526eeed2e2b4b72e2663d8",
+    "scripts/audit_investigative_summary_contract.py": "7c8dd60c9a0ff092bb6408e00e54a2520fbe98bc67f167384db837ba1f22604f",
+    "scripts/probe_celery_worker_contract.py": "4c7016676656c8b4171a366c59249266c548003c684c6390363b4d58418b4d9b",
+    "scripts/reconcile_stale_summary_tasks.py": "2a9b7849f5af555db2f9ea5154fccefb31b5cfb6140579877f180e043ca3038b"
+  },
+  "commands": [
+    {
+      "name": "targeted_backend",
+      "command": [
+        "E:\\research\\STT\\venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--deselect",
+        "tests/test_investigation_knowledge.py::test_committed_schema_artifact_matches_current_models",
+        "tests/test_context_analysis.py",
+        "tests/test_investigation_knowledge.py",
+        "tests/test_investigation_summary_runtime.py",
+        "tests/test_investigative_bulletin_quality.py",
+        "tests/test_public_summary_projection.py",
+        "tests/test_summary_fail_closed.py",
+        "tests/test_summary_request_contract.py",
+        "tests/test_worker_runtime_contract.py",
+        "tests/test_summary_reconciliation.py"
+      ],
+      "cwd": "E:\\research\\STT",
+      "exit_code": 0,
+      "duration_seconds": 68.05,
+      "output_tail": "........................................................................ [ 46%]\n........................................................................ [ 93%]\n..........                                                               [100%]\n============================== warnings summary ===============================\nsrc\\core\\config.py:131\n  E:\\research\\STT\\src\\core\\config.py:131: PydanticDeprecatedSince20: Pydantic V1 style `@validator` validators are deprecated. You should migrate to Pydantic V2 style `@field_validator` validators, see the migration guide for more details. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/\n    @validator(\"CORS_ORIGINS\", pre=True)\n\nvenv\\Lib\\site-packages\\pydantic\\_internal\\_config.py:271\nvenv\\Lib\\site-packages\\pydantic\\_internal\\_config.py:271\nvenv\\Lib\\site-packages\\pydantic\\_internal\\_config.py:271\nvenv\\Lib\\site-packages\\pydantic\\_internal\\_config.py:271\nvenv\\Lib\\site-packages\\pydantic\\_internal\\_config.py:271\nvenv\\Lib\\site-packages\\pydantic\\_internal\\_config.py:271\n  E:\\research\\STT\\venv\\Lib\\site-packages\\pydantic\\_internal\\_config.py:271: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/\n    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)\n\nvenv\\Lib\\site-packages\\pydub\\utils.py:14\n  E:\\research\\STT\\venv\\Lib\\site-packages\\pydub\\utils.py:14: DeprecationWarning: 'audioop' is deprecated and slated for removal in Python 3.13\n    import audioop\n\nvenv\\Lib\\site-packages\\pydantic\\_internal\\_fields.py:149\n  E:\\research\\STT\\venv\\Lib\\site-packages\\pydantic\\_internal\\_fields.py:149: UserWarning: Field \"model_name\" has conflict with protected namespace \"model_\".\n  \n  You may be able to resolve this warning by setting `model_config['protected_namespaces'] = ()`.\n    warnings.warn(\n\nsrc\\main.py:68\n  E:\\research\\STT\\src\\main.py:68: DeprecationWarning: \n          on_event is deprecated, use lifespan event handlers instead.\n  \n          Read more about it in the\n          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).\n          \n    @app.on_event(\"startup\")\n\nvenv\\Lib\\site-packages\\fastapi\\applications.py:4547\nvenv\\Lib\\site-packages\\fastapi\\applications.py:4547\n  E:\\research\\STT\\venv\\Lib\\site-packages\\fastapi\\applications.py:4547: DeprecationWarning: \n          on_event is deprecated, use lifespan event handlers instead.\n  \n          Read more about it in the\n          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).\n          \n    return self.router.on_event(event_type)\n\nsrc\\main.py:77\n  E:\\research\\STT\\src\\main.py:77: DeprecationWarning: \n          on_event is deprecated, use lifespan event handlers instead.\n  \n          Read more about it in the\n          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).\n          \n    @app.on_event(\"shutdown\")\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n154 passed, 1 deselected, 13 warnings in 64.92s (0:01:04)"
+    },
+    {
+      "name": "frontend_tests",
+      "command": [
+        "npm.cmd",
+        "test"
+      ],
+      "cwd": "E:\\research\\STT\\frontend",
+      "exit_code": 0,
+      "duration_seconds": 0.524,
+      "output_tail": "ojects a source preview without calling it grounded or released\nok 5 - projects a source preview without calling it grounded or released\n  ---\n  duration_ms: 1.5708\n  type: 'test'\n  ...\n# Subtest: keeps described event time separate from audio offsets\nok 6 - keeps described event time separate from audio offsets\n  ---\n  duration_ms: 0.2024\n  type: 'test'\n  ...\n# Subtest: does not promote an audio offset to described event time\nok 7 - does not promote an audio offset to described event time\n  ---\n  duration_ms: 0.2867\n  type: 'test'\n  ...\n# Subtest: derives only bounded insights with explicit premise and evidence paths\nok 8 - derives only bounded insights with explicit premise and evidence paths\n  ---\n  duration_ms: 0.246\n  type: 'test'\n  ...\n# Subtest: drops items with dangling evidence instead of rendering unsupported claims\nok 9 - drops items with dangling evidence instead of rendering unsupported claims\n  ---\n  duration_ms: 0.2538\n  type: 'test'\n  ...\n# Subtest: does not duplicate key points or exact values across Analysis sections\nok 10 - does not duplicate key points or exact values across Analysis sections\n  ---\n  duration_ms: 0.5331\n  type: 'test'\n  ...\n# Subtest: projects reader-safe analysis without requiring technical evidence fields\nok 11 - projects reader-safe analysis without requiring technical evidence fields\n  ---\n  duration_ms: 0.8724\n  type: 'test'\n  ...\n# Subtest: Analysis UI exposes investigative content without technical evidence trails\nok 12 - Analysis UI exposes investigative content without technical evidence trails\n  ---\n  duration_ms: 0.5266\n  type: 'test'\n  ...\n# Subtest: key-point projection selects only category=key_point and emits statement text once\nok 13 - key-point projection selects only category=key_point and emits statement text once\n  ---\n  duration_ms: 1.5679\n  type: 'test'\n  ...\n# Subtest: reasoning insights remain hidden until production exposes release authority\nok 14 - reasoning insights remain hidden until production exposes release authority\n  ---\n  duration_ms: 0.1436\n  type: 'test'\n  ...\n# Subtest: key-point projection rejects rejected facts and sanitizes legacy context\nok 15 - key-point projection rejects rejected facts and sanitizes legacy context\n  ---\n  duration_ms: 0.2254\n  type: 'test'\n  ...\n# Subtest: released visualization validator accepts only the authority envelope\nok 16 - released visualization validator accepts only the authority envelope\n  ---\n  duration_ms: 1.0131\n  type: 'test'\n  ...\n# Subtest: released visualization validator rejects invalid hashes and dangling graph edges\nok 17 - released visualization validator rejects invalid hashes and dangling graph edges\n  ---\n  duration_ms: 0.5929\n  type: 'test'\n  ...\n# Subtest: released visualization validator rejects reversed evidence and timeline bounds\nok 18 - released visualization validator rejects reversed evidence and timeline bounds\n  ---\n  duration_ms: 0.9817\n  type: 'test'\n  ...\n# Subtest: released visualization validator rejects legacy nested shapes and extra metadata\nok 19 - released visualization validator rejects legacy nested shapes and extra metadata\n  ---\n  duration_ms: 0.282\n  type: 'test'\n  ...\n# Subtest: task selector reads visualization_data without falling back to summary or context\nok 20 - task selector reads visualization_data without falling back to summary or context\n  ---\n  duration_ms: 0.2109\n  type: 'test'\n  ...\n# Subtest: component wiring remains read-only and uses the semantic validators\nok 21 - component wiring remains read-only and uses the semantic validators\n  ---\n  duration_ms: 0.9021\n  type: 'test'\n  ...\n# Subtest: polling presents source-grounded narrative as pending officer review\nok 22 - polling presents source-grounded narrative as pending officer review\n  ---\n  duration_ms: 1.4708\n  type: 'test'\n  ...\n# Subtest: reader-facing summary hides preview metadata\nok 23 - reader-facing summary hides preview metadata\n  ---\n  duration_ms: 0.9209\n  type: 'test'\n  ...\n# Subtest: sanitizes persisted preview v1 metadata without losing content\nok 24 - sanitizes persisted preview v1 metadata without losing content\n  ---\n  duration_ms: 0.9792\n  type: 'test'\n  ...\n# Subtest: uses only persisted summary and never promotes preview text\nok 25 - uses only persisted summary and never promotes preview text\n  ---\n  duration_ms: 0.1628\n  type: 'test'\n  ...\n# Subtest: sanitizes English and mixed legacy metadata variants\nok 26 - sanitizes English and mixed legacy metadata variants\n  ---\n  duration_ms: 0.1981\n  type: 'test'\n  ...\n# Subtest: sanitizes headings and multiple persisted excerpts on one line\nok 27 - sanitizes headings and multiple persisted excerpts on one line\n  ---\n  duration_ms: 0.1769\n  type: 'test'\n  ...\n# Subtest: preserves ordinary quotes and legitimate source-label prose\nok 28 - preserves ordinary quotes and legitimate source-label prose\n  ---\n  duration_ms: 0.0875\n  type: 'test'\n  ...\n# Subtest: frontend summary defaults match the shared S3 contract\nok 29 - frontend summary defaults match the shared S3 contract\n  ---\n  duration_ms: 0.8189\n  type: 'test'\n  ...\n# Subtest: single-summary request remains typed and propagates both bounds\nok 30 - single-summary request remains typed and propagates both bounds\n  ---\n  duration_ms: 0.4969\n  type: 'test'\n  ...\n# Subtest: summary dialog word count uses the selected transcript text\nok 31 - summary dialog word count uses the selected transcript text\n  ---\n  duration_ms: 0.1912\n  type: 'test'\n  ...\n# Subtest: multi and case summaries send explicit shared type and length defaults\nok 32 - multi and case summaries send explicit shared type and length defaults\n  ---\n  duration_ms: 0.2203\n  type: 'test'\n  ...\n# Subtest: visualization projects Analysis content without technical source trails\nok 33 - visualization projects Analysis content without technical source trails\n  ---\n  duration_ms: 1.4774\n  type: 'test'\n  ...\n1..33\n# tests 33\n# suites 0\n# pass 33\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 233.1604"
+    },
+    {
+      "name": "frontend_build",
+      "command": [
+        "npm.cmd",
+        "run",
+        "build"
+      ],
+      "cwd": "E:\\research\\STT\\frontend",
+      "exit_code": 0,
+      "duration_seconds": 10.358,
+      "output_tail": "\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-greek-500-normal-BJMS0heP.woff2         \u001b[39m\u001b[1m\u001b[2m  9.64 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-greek-400-normal-jFM2czAU.woff2         \u001b[39m\u001b[1m\u001b[2m  9.64 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-greek-700-normal-DpKAje7q.woff2         \u001b[39m\u001b[1m\u001b[2m  9.68 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-cyrillic-400-normal-C5q4FMUG.woff       \u001b[39m\u001b[1m\u001b[2m  9.73 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-cyrillic-300-normal-Cb01H779.woff       \u001b[39m\u001b[1m\u001b[2m  9.78 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-cyrillic-500-normal-DhPqGoNQ.woff       \u001b[39m\u001b[1m\u001b[2m  9.90 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-cyrillic-700-normal-BmXeMSnZ.woff       \u001b[39m\u001b[1m\u001b[2m  9.90 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-symbols-400-normal-fF1SLJBj.woff2       \u001b[39m\u001b[1m\u001b[2m 10.58 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-symbols-300-normal-BtHl5mYl.woff2       \u001b[39m\u001b[1m\u001b[2m 10.62 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-symbols-500-normal-BXFTxrNR.woff2       \u001b[39m\u001b[1m\u001b[2m 10.73 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-symbols-700-normal-DKkQdRpM.woff2       \u001b[39m\u001b[1m\u001b[2m 10.80 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-cyrillic-300-normal-BoeCr7ev.woff2      \u001b[39m\u001b[1m\u001b[2m 11.83 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-cyrillic-400-normal-DAIM1_dR.woff2      \u001b[39m\u001b[1m\u001b[2m 11.84 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-cyrillic-700-normal-CzEIZVQR.woff2      \u001b[39m\u001b[1m\u001b[2m 11.97 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-cyrillic-500-normal-hCeO1jFL.woff2      \u001b[39m\u001b[1m\u001b[2m 11.98 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-latin-ext-400-normal-BG57dRWO.woff      \u001b[39m\u001b[1m\u001b[2m 12.47 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-latin-ext-700-normal-DGcaX69F.woff      \u001b[39m\u001b[1m\u001b[2m 12.48 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-latin-ext-500-normal-EUd9mLnZ.woff      \u001b[39m\u001b[1m\u001b[2m 12.52 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-latin-ext-300-normal-9Myisv2Z.woff      \u001b[39m\u001b[1m\u001b[2m 12.58 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-latin-ext-300-normal-BOz0oSmX.woff2     \u001b[39m\u001b[1m\u001b[2m 13.74 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-latin-ext-400-normal-ZYmyxeOy.woff2     \u001b[39m\u001b[1m\u001b[2m 13.74 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-latin-ext-700-normal-BNPgmEQS.woff2     \u001b[39m\u001b[1m\u001b[2m 13.96 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-latin-ext-500-normal-C_ARlJGk.woff2     \u001b[39m\u001b[1m\u001b[2m 13.98 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-cyrillic-ext-300-normal-D2-2MTar.woff   \u001b[39m\u001b[1m\u001b[2m 15.38 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-cyrillic-ext-400-normal-5IDvadIC.woff   \u001b[39m\u001b[1m\u001b[2m 15.40 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-cyrillic-ext-700-normal-y_8Eg3F3.woff   \u001b[39m\u001b[1m\u001b[2m 15.51 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-cyrillic-ext-500-normal-aAFKCR76.woff   \u001b[39m\u001b[1m\u001b[2m 15.52 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-cyrillic-ext-400-normal-DzMWdK87.woff2  \u001b[39m\u001b[1m\u001b[2m 16.85 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-cyrillic-ext-300-normal-CUPJdUZp.woff2  \u001b[39m\u001b[1m\u001b[2m 16.91 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-cyrillic-ext-700-normal-D_fA0fHY.woff2  \u001b[39m\u001b[1m\u001b[2m 17.11 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-cyrillic-ext-500-normal-B7rQpwPu.woff2  \u001b[39m\u001b[1m\u001b[2m 17.16 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-math-400-normal-BRMeFL5Z.woff           \u001b[39m\u001b[1m\u001b[2m 18.28 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-math-500-normal-nGmytUgK.woff           \u001b[39m\u001b[1m\u001b[2m 18.36 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-math-700-normal-yuY-ZMbs.woff           \u001b[39m\u001b[1m\u001b[2m 18.42 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-math-300-normal-9fozW1Ii.woff           \u001b[39m\u001b[1m\u001b[2m 18.44 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-latin-400-normal-BX2H0A0_.woff          \u001b[39m\u001b[1m\u001b[2m 19.57 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-math-400-normal-B3wgz80t.woff2          \u001b[39m\u001b[1m\u001b[2m 19.66 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-latin-500-normal-CoDN7ZW2.woff          \u001b[39m\u001b[1m\u001b[2m 19.67 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-math-300-normal-BMxwzQmU.woff2          \u001b[39m\u001b[1m\u001b[2m 19.68 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-latin-700-normal-D74k8Kh_.woff          \u001b[39m\u001b[1m\u001b[2m 19.72 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-latin-300-normal--FIRE8Jd.woff          \u001b[39m\u001b[1m\u001b[2m 19.79 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-math-500-normal-CFNaIMFC.woff2          \u001b[39m\u001b[1m\u001b[2m 19.98 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-math-700-normal-xbpggnJp.woff2          \u001b[39m\u001b[1m\u001b[2m 19.98 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-latin-400-normal-CNwBRw8h.woff2         \u001b[39m\u001b[1m\u001b[2m 20.61 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-latin-300-normal-CztWkFGs.woff2         \u001b[39m\u001b[1m\u001b[2m 20.71 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-latin-500-normal-CkrA1NAy.woff2         \u001b[39m\u001b[1m\u001b[2m 20.93 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[32massets/roboto-latin-700-normal-DZr4b_KL.woff2         \u001b[39m\u001b[1m\u001b[2m 21.00 kB\u001b[22m\u001b[1m\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[35massets/index-B9hGFApn.css                             \u001b[39m\u001b[1m\u001b[2m 47.21 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m │ gzip:  21.54 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/index-Da4TYQEq.js                              \u001b[39m\u001b[1m\u001b[33m728.20 kB\u001b[39m\u001b[22m\u001b[2m │ gzip: 222.62 kB\u001b[22m\u001b[2m │ map: 3,051.04 kB\u001b[22m\n\u001b[32m✓ built in 6.64s\u001b[39m\n\u001b[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.\u001b[39m\n\u001b[33m\n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.\u001b[39m"
+    },
+    {
+      "name": "git_diff_check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "cwd": "E:\\research\\STT",
+      "exit_code": 0,
+      "duration_seconds": 0.047,
+      "output_tail": "mmaryPanel.tsx', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'frontend/src/components/TaskList.tsx', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'frontend/src/components/TaskListItem.tsx', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'frontend/src/components/VisualizationDialog.tsx', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'frontend/src/main.tsx', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'frontend/tests/investigationProjection.test.ts', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'frontend/tests/summaryRequestContract.test.ts', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/api/endpoints/audio.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/api/endpoints/audio_v2.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/api/endpoints/summary.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/cherry_core/adapters/asr/phowhisper_adapter.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/cherry_core/adapters/asr/whisperv2_adapter.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/cherry_core/adapters/diarization/pyannote_adapter.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/cherry_core/config.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/cherry_core/ports/diarization_port.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/core/config.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/audio_service.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/audio_storage.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/cherry_summarizer.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/investigation/__init__.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/investigation/claim_semantics.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/summarization/context_service.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/summarization/contracts.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/summarization/models/context_analysis.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/summarization/models/investigation_knowledge.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/summarization/models/llm_manager.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/summarization/summary_service_v2.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/task_service.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/transcription/cherry_transcription_service.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/transcription/models/pyannote_manager.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/transcription/models/whisper_manager.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/transcription/transcribe_service_v2.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/services/visualization/contracts.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/worker/tasks.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/worker/tasks/summarize_task.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/worker/tasks/transcribe_task.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'src/worker/worker.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tests/test_context_analysis.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tests/test_investigation_evidence_selectors.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tests/test_investigation_knowledge.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tests/test_investigation_visualization.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tests/test_local_llm_optimization.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tests/test_security.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tests/test_summary_fail_closed.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tests/test_summary_request_contract.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tests/test_summary_visualization_separation.py', LF will be replaced by CRLF the next time Git touches it"
+    }
+  ],
+  "deselected_tests": [
+    "tests/test_investigation_knowledge.py::test_committed_schema_artifact_matches_current_models"
+  ],
+  "checks": {
+    "canonical_workspace": true,
+    "officer_prompt_versioned": true,
+    "whole_source_exact_once_rule": true,
+    "reader_metadata_forbidden": true,
+    "delimiter_data_escaped": true,
+    "seven_scenario_profiles_present": true,
+    "epistemic_markers_checked": true,
+    "shared_semantic_actions_cover_common_verbs": true,
+    "semantic_negative_tests_present": true,
+    "coverage_and_injection_tests_present": true,
+    "cache_and_writer_integration_tests_present": true,
+    "persistence_false_returns_fail_closed": true,
+    "ui_never_promotes_preview_to_summary": true,
+    "interactive_summary_defaults_to_investigation": true,
+    "reader_context_projection_redacts_internal_trails": true,
+    "tiny_investigation_length_rejected_before_model": true,
+    "scenario_detection_handles_asr_and_negation": true
+  },
+  "hygiene": {
+    "trailing_whitespace": [],
+    "missing_final_newline": [],
+    "secret_hits": [],
+    "passed": true
+  },
+  "release_boundary": {
+    "world_facts_released": false,
+    "current_input": "GroundedContextAnalysisPayload",
+    "target_input": "released InvestigationRun via NarrativeLedgerViewV1",
+    "production_release_claimed": false
+  },
+  "residual_uncertainty": [
+    "The current writer is a grounded-context prototype, not final InvestigationRun release authority.",
+    "The committed S1 git-index schema artifact is stale and is explicitly outside this working-tree S2 gate.",
+    "Multi-label scenario planning, digital_technical, and identity_document overlays are planned but not implemented.",
+    "The frozen Vietnamese quality corpus, baseline, human review, and performance promotion gate remain T0/T8 work.",
+    "Diarization runtime/model correctness is outside this summary artifact and remains a separate blocker.",
+    "Live model output quality is not claimed by this no-model regression artifact."
+  ]
+}

@@ -300,3 +300,11 @@ class PhoWhisperAdapter(ITranscriber):
     def load(self):
         """Pre-load model for faster first transcription."""
         self._load_model()
+
+    def unload(self) -> None:
+        if self._model is not None:
+            del self._model
+            self._model = None
+        self._processor = None
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()

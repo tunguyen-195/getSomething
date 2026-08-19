@@ -1,0 +1,163 @@
+{
+  "generated_at": "2026-08-09T05:35:33.596058+00:00",
+  "protocol": "local-summary-runtime-v1",
+  "quality_claim": "SYNTHETIC_RUNTIME_GATE_ONLY_NO_PRODUCTION_QUALITY_CLAIM",
+  "config": {
+    "cases": "tests\\eval\\context_cases.jsonl",
+    "models": [
+      "qwen3.5:9b",
+      "speechintel-qwen3:8b-q4"
+    ],
+    "case_ids": null,
+    "max_cases": 1,
+    "warmup": 1,
+    "repetitions": 1,
+    "load_states": [
+      "warm"
+    ],
+    "summary_type": "investigation",
+    "summary_max_length": 240,
+    "summary_min_length": 60,
+    "min_free_vram_mib": null,
+    "min_remaining_vram_mib": 1024,
+    "safety_headroom_mib": 1536,
+    "resource_poll_seconds": 0.25,
+    "lease_timeout_seconds": 5.0,
+    "preflight_only": false,
+    "measure_ttft": true,
+    "output": "docs\\evals\\runs\\summary-runtime-controlled-smoke-2026-08-09.json"
+  },
+  "runtime": {
+    "python": "3.11.9",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "logical_cpu_count": 16,
+    "git": {
+      "revision": "674ca91d40d3b64d929ade41653fa45f5cc7aef0",
+      "tracked_worktree_dirty": true
+    }
+  },
+  "provenance": {
+    "fixture": {
+      "path": "tests\\eval\\context_cases.jsonl",
+      "size_bytes": 9365,
+      "sha256": "bbf49670ea25c44e534f20e3fc6ea75d48bdd838bfbfbb84efba43a868fcb3c9"
+    },
+    "prompt_versions": {
+      "context": "investigation-context-v2.0",
+      "summary": "investigation-summary-v2.1-bounded"
+    },
+    "schema_versions": {
+      "investigation_knowledge": "investigation-knowledge-v1.0",
+      "context_schema_sha256": "2c04c5bd9042a7837ec65f0a616972fee892ed66c3d959a44091fba60563457d"
+    },
+    "source_sha256": {
+      "llm_manager": "213ed6e7bf2c1eb46b8b657de9c73eb1f609d4e21e4d3ceebabc8c8afc221add",
+      "summary_service": "8a14353851dc4b8d34ec74f1a36794af7e82c02e804236f6534ed0401c69ad9e",
+      "context_evaluator": "d77e9dc77505553f95e38585c20614a9cba50c791f6ae10168a996b066317a55",
+      "benchmark": "abfc0de84df7c6cd482d6649857be9c9836bf17f212613144a04dcccc4f0f00b"
+    }
+  },
+  "dataset": {
+    "case_count": 1,
+    "case_ids": [
+      "benign_schedule"
+    ],
+    "categories": [
+      "benign"
+    ]
+  },
+  "preflight": {
+    "status": "BLOCKED_BY_RESOURCE",
+    "failures": [],
+    "resource_blocks": [
+      "INSUFFICIENT_FREE_VRAM:qwen3.5:9b:required=7825:free=3826",
+      "INSUFFICIENT_FREE_VRAM:speechintel-qwen3:8b-q4:required=6331:free=3826"
+    ],
+    "gpu": {
+      "available": true,
+      "gpus": [
+        {
+          "index": 0,
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "memory_total_mib": 12282,
+          "memory_used_mib": 8172,
+          "memory_free_mib": 3826,
+          "utilization_percent": 18
+        }
+      ]
+    },
+    "ollama": {
+      "available": true,
+      "base_url": "http://localhost:11434",
+      "version": "0.17.1",
+      "models": {
+        "qwen3.5:9b": {
+          "installed": true,
+          "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+          "size_bytes": 6594474711,
+          "details": {
+            "parent_model": "",
+            "format": "gguf",
+            "family": "qwen35",
+            "families": [
+              "qwen35"
+            ],
+            "parameter_size": "9.7B",
+            "quantization_level": "Q4_K_M"
+          },
+          "template_sha256": "b507b9c2f6ca642bffcd06665ea7c91f235fd32daeefdf875a0f938db05fb315",
+          "capabilities": [
+            "completion",
+            "vision",
+            "tools",
+            "thinking"
+          ],
+          "default_parameters_sha256": "c7f3a462076d3f09e9378c7a143c5a83f7a7b9807e838014ee34a71f29e1c254"
+        },
+        "speechintel-qwen3:8b-q4": {
+          "installed": true,
+          "digest": "e4f413b538c9f39c2fb2a4b525e3c7a03466592df5642bab6f4a205febf3d27e",
+          "size_bytes": 5027783906,
+          "details": {
+            "parent_model": "",
+            "format": "gguf",
+            "family": "qwen3",
+            "families": [
+              "qwen3"
+            ],
+            "parameter_size": "8.2B",
+            "quantization_level": "Q4_K_M"
+          },
+          "template_sha256": "b507b9c2f6ca642bffcd06665ea7c91f235fd32daeefdf875a0f938db05fb315",
+          "capabilities": [
+            "completion"
+          ],
+          "default_parameters_sha256": "b8dc36d505f25f30a035cc3ff3fda2e3e418a75b1d4281d17f1b8229606d67fa"
+        }
+      },
+      "errors": []
+    },
+    "models": {
+      "qwen3.5:9b": {
+        "installed": true,
+        "required_free_vram_mib": 7825,
+        "observed_free_vram_mib": 3826,
+        "resource_ready": false,
+        "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+        "size_bytes": 6594474711,
+        "template_sha256": "b507b9c2f6ca642bffcd06665ea7c91f235fd32daeefdf875a0f938db05fb315"
+      },
+      "speechintel-qwen3:8b-q4": {
+        "installed": true,
+        "required_free_vram_mib": 6331,
+        "observed_free_vram_mib": 3826,
+        "resource_ready": false,
+        "digest": "e4f413b538c9f39c2fb2a4b525e3c7a03466592df5642bab6f4a205febf3d27e",
+        "size_bytes": 5027783906,
+        "template_sha256": "b507b9c2f6ca642bffcd06665ea7c91f235fd32daeefdf875a0f938db05fb315"
+      }
+    }
+  },
+  "models": {},
+  "overall_status": "BLOCKED_BY_RESOURCE"
+}

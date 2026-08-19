@@ -9,12 +9,18 @@ from src.services.summarization import bulletin_writer as bulletin_writer_module
 from src.services.summarization import summary_service_v2
 from src.services.investigation.claim_semantics import (
     extract_semantic_action_sequence,
+    extract_semantic_roles,
 )
 from src.services.summarization.bulletin_writer import (
     BULLETIN_WRITER_VERSION,
     BulletinContextWindowError,
+    BulletinPlanObligation,
+    BulletinSemanticSignature,
+    BulletinSentencePlan,
     BulletinSynthesisError,
     BulletinTokenBudget,
+    BulletinWriterDraft,
+    BulletinWriterSentence,
     _source_items,
     apply_bulletin_writer_draft,
     bulletin_completion_token_budget,
@@ -203,6 +209,30 @@ def test_host_plan_never_groups_incompatible_epistemic_obligations(
     }
 
 
+def test_host_plan_does_not_group_distinct_payment_actions() -> None:
+    plan = bulletin_writer_module._build_host_bulletin_plan(
+        [
+            _plan_row(
+                "deposit",
+                "Chị sẽ phải đặt cọc trước 1 đêm để khách sạn giữ phòng.",
+                role="financial",
+                exact_surfaces=["1 đêm"],
+            ),
+            _plan_row(
+                "transfer",
+                "Chị sẽ chuyển khoản cho khách sạn.",
+                role="financial",
+            ),
+        ],
+        max_words=120,
+    )
+
+    assert [tuple(item.source_item_refs) for item in plan] == [
+        ("deposit",),
+        ("transfer",),
+    ]
+
+
 def test_host_plan_keeps_exact_surfaces_attached_to_immutable_refs() -> None:
     plan = bulletin_writer_module._build_host_bulletin_plan(
         [
@@ -293,6 +323,12 @@ def test_planning_signature_is_question_and_purpose_clause_aware() -> None:
     assert purpose.uncertain is False
 
 
+def test_planning_clause_split_treats_ma_as_a_connective() -> None:
+    assert bulletin_writer_module._planning_clause_texts(
+        "Lan gửi hồ sơ mà Minh nhận hồ sơ."
+    ) == ("Lan gửi hồ sơ", "Minh nhận hồ sơ")
+
+
 def test_exact_surface_filter_removes_discourse_junk_but_keeps_values() -> None:
     assert bulletin_writer_module._filter_exact_surfaces(
         [
@@ -327,6 +363,42 @@ def test_delta_runtime_schema_binds_hash_and_exact_target_set() -> None:
         "sentence-0",
         "sentence-1",
     ]
+
+
+def test_delta_runtime_schema_supports_all_routed_sentence_targets() -> None:
+    target_ids = [f"plan-{index:03d}" for index in range(15)]
+
+    schema = bulletin_writer_module.bulletin_delta_repair_runtime_schema(
+        base_draft_sha256="b" * 64,
+        target_draft_ids=target_ids,
+    )
+
+    operations = schema["properties"]["operations"]
+    assert operations["minItems"] == len(target_ids)
+    assert operations["maxItems"] == len(target_ids)
+    assert operations["items"]["properties"]["draft_id"]["enum"] == target_ids
+
+
+def test_delta_response_model_accepts_all_runtime_schema_targets() -> None:
+    target_ids = [f"plan-{index:03d}" for index in range(15)]
+
+    delta = bulletin_writer_module.BulletinWriterDeltaRepair.model_validate(
+        {
+            "schema_version": bulletin_writer_module.BULLETIN_DELTA_REPAIR_VERSION,
+            "scenario_profile": "general",
+            "base_draft_sha256": "c" * 64,
+            "operations": [
+                {
+                    "op": "replace_sentence_text",
+                    "draft_id": draft_id,
+                    "replacement_text": f"Cau bao cao thu {index}.",
+                }
+                for index, draft_id in enumerate(target_ids)
+            ],
+        }
+    )
+
+    assert [operation.draft_id for operation in delta.operations] == target_ids
 
 
 def test_delta_apply_rejects_wrong_hash_and_target_set() -> None:
@@ -731,6 +803,52 @@ def test_transfer_request_tail_remains_without_later_fulfillment() -> None:
     assert "Em gửi số tài khoản cho chị đi" in budgeted[0]["text"]
 
 
+def test_transfer_role_parser_keeps_khoan_as_object_and_person_as_target() -> None:
+    frame = bulletin_writer_module._relation_frame(
+        "Quyên sẽ chuyển khoản người tham gia thứ hai."
+    )
+
+    assert frame == {
+        "actor": "quyên",
+        "action": "chuyển",
+        "object": "khoản",
+        "target": "người tham gia thứ hai",
+    }
+
+
+def test_evidence_alias_normalization_canonicalizes_transfer_before_actor_labels() -> None:
+    sentence = bulletin_writer_module.BulletinWriterSentence(
+        draft_id="transfer",
+        text="Quyên sẽ chuyển khoản người tham gia thứ hai.",
+        sentence_role="financial",
+        source_item_refs=["transfer"],
+    )
+    source_items = {
+        "transfer": {
+            "actor_references": [
+                {
+                    "participant_id": "customer",
+                    "public_actor_label": "Quyên",
+                    "source_forms": ["chị"],
+                    "allowed_reference_forms": ["Quyên"],
+                },
+                {
+                    "participant_id": "staff",
+                    "public_actor_label": "người tham gia thứ hai",
+                    "source_forms": ["em"],
+                    "allowed_reference_forms": ["người tham gia thứ hai"],
+                },
+            ]
+        }
+    }
+
+    assert bulletin_writer_module._normalized_writer_evidence_quotes(
+        sentence,
+        ["Thế để chị chuyển khoản em nha."],
+        source_items,
+    ) == ["Thế Quyên sẽ chuyển khoản người tham gia thứ hai nha."]
+
+
 def test_supporting_projection_duplicate_is_not_added_to_host_plan() -> None:
     required = {
         **_plan_row("required-total", "Tổng số tiền thanh toán là 6 triệu đồng."),
@@ -809,15 +927,21 @@ def test_writer_accepts_report_paraphrase_with_phone_spacing_and_number_aliases(
             "schema_version": BULLETIN_WRITER_VERSION,
             "scenario_profile": "financial_asset",
             "sentences": [
-                {
-                    "draft_id": "identity",
-                    "text": "Chị Nguyễn Thị Quyên cung cấp số điện thoại là 0978711253.",
+                    {
+                        "draft_id": "identity",
+                        "text": (
+                            "Một người tham gia là Nguyễn Thị Quyên và cung cấp số điện "
+                            "thoại 0978711253."
+                        ),
                     "sentence_role": "contact",
                     "source_item_refs": ["summary:deterministic-source-0"],
                 },
                 {
                     "draft_id": "deposit",
-                    "text": "Chị sẽ đặt cọc trước 1 đêm để khách sạn giữ phòng.",
+                    "text": (
+                        "Một người tham gia sẽ đặt cọc trước 1 đêm để "
+                        "khách sạn giữ phòng."
+                    ),
                     "sentence_role": "financial",
                     "source_item_refs": ["summary:deterministic-source-1"],
                 },
@@ -856,8 +980,8 @@ def test_writer_keeps_negation_scoped_to_the_matching_coordinated_clause() -> No
                 {
                     "draft_id": "pricing-policy",
                     "text": (
-                        "Bên em không giảm giá. Bên em có chương trình cho khách "
-                        "sử dụng fitness center."
+                        "Một người tham gia không giảm giá. Một người tham gia có "
+                        "chương trình cho khách sử dụng fitness center."
                     ),
                     "sentence_role": "financial",
                     "source_item_refs": ["summary:deterministic-source-0"],
@@ -889,7 +1013,10 @@ def test_writer_scopes_punctuationless_actor_negation_as_a_new_clause() -> None:
             "sentences": [
                 {
                     "draft_id": "pricing-policy",
-                    "text": "Giá phòng là niêm yết, không được giảm.",
+                    "text": (
+                        "Một người tham gia không giảm giá; giá phòng là giá "
+                        "niêm yết."
+                    ),
                     "sentence_role": "financial",
                     "source_item_refs": ["summary:deterministic-source-0"],
                 }
@@ -898,7 +1025,7 @@ def test_writer_scopes_punctuationless_actor_negation_as_a_new_clause() -> None:
         scenario_profile="financial_asset",
     )
 
-    assert "không được giảm" in updated["summary"]
+    assert "Một người tham gia không giảm giá" in updated["summary"]
 
 
 def test_writer_preserves_initialism_when_omitting_completed_courtesy() -> None:
@@ -922,7 +1049,7 @@ def test_writer_preserves_initialism_when_omitting_completed_courtesy() -> None:
                     "draft_id": "hotel",
                     "text": (
                         "Khách sạn G.W. Marriott Hotel Hà Nội hân hạnh phục vụ "
-                        "chị vào ngày 15 tháng 2."
+                        "một người tham gia vào ngày 15 tháng 2."
                     ),
                     "sentence_role": "location",
                     "source_item_refs": ["summary:deterministic-source-0"],
@@ -951,7 +1078,7 @@ def test_writer_accepts_bounded_citizen_id_asr_correction() -> None:
             "sentences": [
                 {
                     "draft_id": "identity",
-                    "text": "Căn cước 09121212.",
+                    "text": "Căn cước của một người tham gia là 09121212.",
                     "sentence_role": "identifier",
                     "source_item_refs": ["summary:deterministic-source-0"],
                 }
@@ -960,10 +1087,10 @@ def test_writer_accepts_bounded_citizen_id_asr_correction() -> None:
         scenario_profile="financial_asset",
     )
 
-    assert "Căn cước 09121212" in updated["summary"]
+    assert "Căn cước của một người tham gia là 09121212" in updated["summary"]
 
 
-def test_writer_resolves_service_pronoun_from_grounded_participant_context() -> None:
+def test_writer_resolves_service_pronoun_to_third_person_participant() -> None:
     transcript = (
         "Chị là Nguyễn Thị Quyên. Vì vậy mình sẽ được sử dụng bữa sáng "
         "buffet và không mất thêm tiền."
@@ -971,8 +1098,9 @@ def test_writer_resolves_service_pronoun_from_grounded_participant_context() -> 
     context = _context(
         transcript,
         [
-            {"text": "Chị là Nguyễn Thị Quyên."},
+            {"speaker": "SPEAKER_00", "text": "Chị là Nguyễn Thị Quyên."},
             {
+                "speaker": "SPEAKER_00",
                 "text": (
                     "Vì vậy mình sẽ được sử dụng bữa sáng buffet và không "
                     "mất thêm tiền."
@@ -980,6 +1108,24 @@ def test_writer_resolves_service_pronoun_from_grounded_participant_context() -> 
             },
         ],
         "financial_asset",
+        {
+            **SOURCE,
+            "audio_integrity_status": "verified",
+            "has_diarization": True,
+            "degraded": False,
+            "diarization_status": "success",
+            "diarization_method_used": "pyannote",
+            "num_speakers": 1,
+            "speaker_provenance": {
+                "status": "success",
+                "speaker_count": 1,
+                "artifact_verified": True,
+                "model_revision": "a" * 40,
+                "assignment_method": "segment_max_overlap",
+                "method_used": "pyannote",
+                "load_error": None,
+            },
+        },
     )
 
     updated = apply_bulletin_writer_draft(
@@ -990,14 +1136,15 @@ def test_writer_resolves_service_pronoun_from_grounded_participant_context() -> 
             "sentences": [
                 {
                     "draft_id": "identity",
-                    "text": "Chị là Nguyễn Thị Quyên.",
+                    "text": "Người tham gia thứ nhất là Nguyễn Thị Quyên.",
                     "sentence_role": "participant",
                     "source_item_refs": ["summary:deterministic-source-0"],
                 },
                 {
                     "draft_id": "breakfast",
                     "text": (
-                        "Chị sẽ được dùng bữa sáng buffet và không mất thêm tiền."
+                        "Người tham gia thứ nhất sẽ được dùng bữa sáng buffet và không "
+                        "mất thêm tiền."
                     ),
                     "sentence_role": "outcome",
                     "source_item_refs": ["summary:deterministic-source-1"],
@@ -1007,7 +1154,8 @@ def test_writer_resolves_service_pronoun_from_grounded_participant_context() -> 
         scenario_profile="financial_asset",
     )
 
-    assert "Chị sẽ được dùng bữa sáng" in updated["summary"]
+    assert "Người tham gia thứ nhất sẽ được dùng bữa sáng" in updated["summary"]
+    assert "Chị" not in updated["summary"]
 
 
 def test_writer_keeps_future_scoped_after_discourse_transition() -> None:
@@ -1035,8 +1183,8 @@ def test_writer_keeps_future_scoped_after_discourse_transition() -> None:
                 {
                     "draft_id": "service",
                     "text": (
-                        "Thời gian lưu trú đúng thứ tư ạ. Vậy thì chị sẽ được "
-                        "sử dụng fitness center free."
+                        "Thời gian lưu trú đúng thứ tư. Một người tham gia sẽ "
+                        "được sử dụng fitness center free."
                     ),
                     "sentence_role": "outcome",
                     "source_item_refs": ["summary:deterministic-source-0"],
@@ -1047,6 +1195,7 @@ def test_writer_keeps_future_scoped_after_discourse_transition() -> None:
     )
 
     assert "sẽ được sử dụng" in updated["summary"]
+    assert "chị" not in updated["summary"].casefold()
 
 
 def test_live_shaped_budget_keeps_asserted_purpose_contacts_and_payment_actions() -> None:
@@ -1264,11 +1413,37 @@ def test_audit_metadata_cannot_appear_in_public_report_prose() -> None:
 SOURCE = {"task_id": "bulletin-quality", "audio_id": 3, "audio_sha256": "b" * 64}
 
 
-def _context(transcript: str = TRANSCRIPT, segments=None, scenario="general") -> dict:
+def _trusted_source_metadata(speaker_count: int) -> dict:
+    return {
+        **SOURCE,
+        "audio_integrity_status": "verified",
+        "has_diarization": True,
+        "degraded": False,
+        "diarization_status": "success",
+        "diarization_method_used": "pyannote",
+        "num_speakers": speaker_count,
+        "speaker_provenance": {
+            "status": "success",
+            "speaker_count": speaker_count,
+            "artifact_verified": True,
+            "model_revision": "a" * 40,
+            "assignment_method": "segment_max_overlap",
+            "method_used": "pyannote",
+            "load_error": None,
+        },
+    }
+
+
+def _context(
+    transcript: str = TRANSCRIPT,
+    segments=None,
+    scenario="general",
+    source_metadata: dict | None = None,
+) -> dict:
     result = build_transcript_grounded_fallback(
         transcript,
         SEGMENTS if segments is None else segments,
-        SOURCE,
+        SOURCE if source_metadata is None else source_metadata,
         scenario,
     )
     assert result is not None
@@ -1367,6 +1542,32 @@ def test_public_body_rejects_transcript_attribution_but_keeps_event_time() -> No
 @pytest.mark.parametrize(
     "body",
     [
+        "Tôi sẽ gửi hồ sơ.",
+        "Tao đã nhận tiền.",
+        "Mình cần gặp Lan.",
+        "Em sẽ gọi lại.",
+        "Anh đã chuyển khoản.",
+        "Chị muốn đặt phòng.",
+        "Bên em có chương trình giảm giá.",
+    ],
+)
+def test_public_body_rejects_all_conversational_reference_forms(body: str) -> None:
+    with pytest.raises(ValueError, match="conversational voice"):
+        validate_public_report_body(body)
+
+
+def test_public_body_masks_a_grounded_name_that_contains_honorific_text() -> None:
+    body = "Anh Dũng sẽ gửi hồ sơ."
+
+    assert validate_public_report_body(
+        body,
+        allowed_reference_forms=["Anh Dũng"],
+    ) == body
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
         "Tổng quan: Lan hẹn Minh tại bến xe.",
         "Đối tượng: Lan; Diễn biến: Lan hẹn Minh tại bến xe.",
         "| Người | Hành động |\n| Lan | Hẹn Minh |",
@@ -1382,6 +1583,544 @@ def test_public_body_rejects_labels_tables_notices_and_metadata_bypasses(
 ) -> None:
     with pytest.raises(ValueError):
         validate_public_report_body(body)
+
+
+def test_every_writer_actor_reference_resolves_to_the_participant_registry() -> None:
+    payload = GroundedContextAnalysisPayload.model_validate(_context())
+    participants = {
+        item.participant_id: item
+        for item in payload.investigation_knowledge.participant_registry.participants
+    }
+
+    actor_references = [
+        reference
+        for row in _source_items(payload)
+        for reference in row.get("actor_references", [])
+    ]
+    assert actor_references
+    for reference in actor_references:
+        participant = participants[reference["participant_id"]]
+        assert reference["public_actor_label"] == participant.public_actor_label
+        assert set(reference["allowed_reference_forms"]) == set(
+            participant.allowed_reference_forms
+        )
+
+
+def test_actor_registry_maps_service_self_and_addressee_forms_by_speaker_turn() -> None:
+    transcript = (
+        "Chị tên là Quyên em ạ. "
+        "Bên em vẫn còn phòng. "
+        "Chị chỉ cần phòng 3 triệu, em giảm giá cho chị đi. "
+        "Vì vậy mình sẽ được dùng bữa sáng."
+    )
+    context = _context(
+        transcript,
+        [
+            {
+                "speaker": "SPEAKER_01",
+                "text": "Chị tên là Quyên em ạ.",
+            },
+            {
+                "speaker": "SPEAKER_00",
+                "text": "Bên em vẫn còn phòng.",
+            },
+            {
+                "speaker": "SPEAKER_01",
+                "text": (
+                    "Chị chỉ cần phòng 3 triệu, em giảm giá cho chị đi."
+                ),
+            },
+            {
+                "speaker": "SPEAKER_00",
+                "text": "Vì vậy mình sẽ được dùng bữa sáng.",
+            },
+        ],
+        "financial_asset",
+        _trusted_source_metadata(2),
+    )
+    payload = GroundedContextAnalysisPayload.model_validate(context)
+    rows = bulletin_writer_module._source_items(payload)
+
+    def actor_forms(marker: str) -> dict[str, set[str]]:
+        row = next(item for item in rows if marker in str(item["text"]))
+        return {
+            str(reference["public_actor_label"]): {
+                str(form).casefold() for form in reference["source_forms"]
+            }
+            for reference in row["actor_references"]
+        }
+
+    identity = actor_forms("tên là Quyên")
+    availability = actor_forms("Bên em vẫn còn phòng")
+    discount = actor_forms("giảm giá cho chị")
+    breakfast = actor_forms("mình sẽ được dùng bữa sáng")
+
+    assert identity == {"Quyên": {"quyên", "chị"}}
+    assert availability == {"người tham gia thứ hai": {"bên em"}}
+    assert discount["Quyên"] == {"chị"}
+    assert discount["người tham gia thứ hai"] == {"em"}
+    assert breakfast["Quyên"] == {"mình"}
+    assert breakfast["người tham gia thứ hai"] == set()
+
+
+def test_vocative_suffix_does_not_create_a_false_actor_requirement() -> None:
+    context = _context(
+        "Chị tên là Quyên em ạ.",
+        [{"speaker": "SPEAKER_01", "text": "Chị tên là Quyên em ạ."}],
+        "financial_asset",
+        _trusted_source_metadata(1),
+    )
+    payload = GroundedContextAnalysisPayload.model_validate(context)
+    rows = bulletin_writer_module._source_rows(payload, max_words=120)
+    plan = bulletin_writer_module._build_host_bulletin_plan(rows, max_words=120)
+    requirements, _occurrences = bulletin_writer_module._actor_repair_contract(
+        plan[0].actor_references
+    )
+
+    assert requirements == [
+        {
+            "participant_id": plan[0].actor_references[0].participant_id,
+            "public_actor_label": "Quyên",
+            "allowed_reference_forms": ["Quyên"],
+            "attribution_required": False,
+            "requires_explicit_actor_mention": True,
+        }
+    ]
+
+
+def test_repair_contract_exposes_only_registry_actor_forms_for_each_plan() -> None:
+    context = _context(
+        "Chị sẽ gửi hồ sơ.",
+        [{"text": "Chị sẽ gửi hồ sơ."}],
+    )
+    payload = GroundedContextAnalysisPayload.model_validate(context)
+    rows = bulletin_writer_module._source_rows(payload, max_words=120)
+    plan = bulletin_writer_module._build_host_bulletin_plan(rows, max_words=120)
+
+    contract = bulletin_writer_module._repair_contract_from_issues(
+        [f"{plan[0].plan_id}: sentence_apply_actor_reference_rejected"],
+        required_refs=plan[0].source_item_refs,
+        max_words=120,
+        sentence_plan=plan,
+    )
+
+    assert contract["ALLOWED_ACTOR_FORMS_BY_DRAFT"][plan[0].plan_id] == [
+        "một người tham gia"
+    ]
+    assert contract["ACTOR_REQUIREMENTS_BY_DRAFT"][plan[0].plan_id] == [
+        {
+            "participant_id": plan[0].actor_references[0].participant_id,
+            "public_actor_label": "một người tham gia",
+            "allowed_reference_forms": ["một người tham gia"],
+            "attribution_required": False,
+            "requires_explicit_actor_mention": True,
+        }
+    ]
+    assert contract["REQUIRED_ACTOR_OCCURRENCES_BY_DRAFT"][plan[0].plan_id][0][
+        "minimum_distinct_mentions"
+    ] == 1
+
+
+def test_actor_repair_contract_preserves_distinct_generic_participants() -> None:
+    requirements, occurrence_groups = bulletin_writer_module._actor_repair_contract(
+        [
+            {
+                "participant_id": "participant-0",
+                "public_actor_label": "một người tham gia",
+                "source_forms": ["chị"],
+                "allowed_reference_forms": ["một người tham gia"],
+                "attribution_required": False,
+            },
+            {
+                "participant_id": "participant-1",
+                "public_actor_label": "một người tham gia",
+                "source_forms": ["em"],
+                "allowed_reference_forms": ["một người tham gia"],
+                "attribution_required": False,
+            },
+        ]
+    )
+
+    assert [item["participant_id"] for item in requirements] == [
+        "participant-0",
+        "participant-1",
+    ]
+    assert occurrence_groups == [
+        {
+            "allowed_reference_forms": ["một người tham gia"],
+            "minimum_distinct_mentions": 2,
+            "participant_ids": ["participant-0", "participant-1"],
+        }
+    ]
+
+
+def test_prompt_plan_does_not_duplicate_grounded_actor_registry_payload() -> None:
+    context = _context(
+        "Chị sẽ gửi hồ sơ.",
+        [{"speaker": "SPEAKER_00", "text": "Chị sẽ gửi hồ sơ."}],
+    )
+    prompt = build_bulletin_writer_prompt(
+        context,
+        scenario_profile="general",
+        max_words=120,
+    )
+    ledger_match = re.search(
+        r"<grounded_ledger>\n(?P<value>.*?)\n</grounded_ledger>",
+        prompt,
+        flags=re.DOTALL,
+    )
+    plan_match = re.search(
+        r"<host_sentence_plan>\n(?P<value>.*?)\n</host_sentence_plan>",
+        prompt,
+        flags=re.DOTALL,
+    )
+
+    assert ledger_match is not None
+    assert plan_match is not None
+    ledger = json.loads(ledger_match.group("value"))
+    plan = json.loads(plan_match.group("value"))
+    assert ledger[0]["actor_references"][0]["public_actor_label"] == (
+        "một người tham gia"
+    )
+    assert "actor_references" not in plan[0]
+    assert plan[0]["actor_constraints"] == [
+        {
+            "participant_id": ledger[0]["actor_references"][0]["participant_id"],
+            "allowed_reference_forms": ["một người tham gia"],
+            "attribution_required": False,
+        }
+    ]
+    assert "actor_references" not in plan[0]["obligations"][0]
+    assert plan[0]["obligations"][0]["actor_constraints"] == (
+        plan[0]["actor_constraints"]
+    )
+
+
+def test_writer_can_add_neutral_reporting_language_to_direct_utterance() -> None:
+    source = "Tôi sẽ gửi hồ sơ."
+    context = _context(
+        source,
+        [{"speaker": "SPEAKER_00", "text": source}],
+    )
+
+    updated = apply_bulletin_writer_draft(
+        context,
+        {
+            "schema_version": BULLETIN_WRITER_VERSION,
+            "scenario_profile": "general",
+            "sentences": [
+                {
+                    "draft_id": "reported-action",
+                    "text": "Một người tham gia cho biết sẽ gửi hồ sơ.",
+                    "sentence_role": "event",
+                    "source_item_refs": ["summary:deterministic-source-0"],
+                }
+            ],
+        },
+        scenario_profile="general",
+    )
+
+    assert updated["summary"] == (
+        "Một người tham gia cho biết sẽ gửi hồ sơ."
+    )
+
+
+def test_source_attributed_name_cannot_replace_the_actual_conversation_actor() -> None:
+    transcript = "Tôi gặp Nguyễn Văn An."
+    context = _context(
+        transcript,
+        [{"speaker": "SPEAKER_00", "text": transcript}],
+    )
+
+    with pytest.raises(ValueError, match=r"source (?:actor|recipient) binding"):
+        apply_bulletin_writer_draft(
+            context,
+            {
+                "schema_version": BULLETIN_WRITER_VERSION,
+                "scenario_profile": "general",
+                "sentences": [
+                    {
+                        "draft_id": "wrong-attribution",
+                        "text": "Nguyễn Văn An gặp một người tham gia.",
+                        "sentence_role": "event",
+                        "source_item_refs": ["summary:deterministic-source-0"],
+                    }
+                ],
+            },
+            scenario_profile="general",
+        )
+
+
+@pytest.mark.parametrize(
+    ("source_text", "candidate_text"),
+    [
+        (
+            "Chị gửi hồ sơ cho Lan.",
+            "Lan gửi hồ sơ cho một người tham gia.",
+        ),
+        (
+            "Lan gửi hồ sơ cho chị.",
+            "Một người tham gia gửi hồ sơ cho Lan.",
+        ),
+    ],
+)
+def test_actor_reference_critic_rejects_actor_recipient_reversal(
+    source_text: str,
+    candidate_text: str,
+) -> None:
+    source_items = {
+        "source-0": {
+            "text": source_text,
+            "actor_references": [
+                {
+                    "participant_id": "participant-generic",
+                    "public_actor_label": "một người tham gia",
+                    "source_forms": ["chị"],
+                    "allowed_reference_forms": ["một người tham gia"],
+                    "attribution_required": False,
+                },
+                {
+                    "participant_id": "participant-lan",
+                    "public_actor_label": "Lan",
+                    "source_forms": ["Lan"],
+                    "allowed_reference_forms": ["Lan"],
+                    "attribution_required": False,
+                },
+            ],
+        }
+    }
+    sentence = bulletin_writer_module.BulletinWriterSentence(
+        draft_id="reversed-binding",
+        text=candidate_text,
+        sentence_role="event",
+        source_item_refs=["source-0"],
+    )
+
+    with pytest.raises(ValueError, match="source actor binding|source recipient binding"):
+        bulletin_writer_module._validate_sentence_actor_references(
+            sentence,
+            source_items,
+        )
+
+
+def test_actor_reference_critic_rejects_coordinated_predicate_reversal() -> None:
+    source_items = {
+        "source-0": {
+            "text": "Họ gặp Nguyễn Văn An và thủ quỹ Mai ký hồ sơ.",
+            "actor_references": [
+                {
+                    "participant_id": "participant-an",
+                    "public_actor_label": "Nguyễn Văn An",
+                    "source_forms": ["Nguyễn Văn An"],
+                    "allowed_reference_forms": ["Nguyễn Văn An"],
+                    "attribution_required": True,
+                },
+                {
+                    "participant_id": "participant-mai",
+                    "public_actor_label": "thủ quỹ Mai",
+                    "source_forms": ["thủ quỹ Mai"],
+                    "allowed_reference_forms": ["thủ quỹ Mai"],
+                    "attribution_required": True,
+                },
+            ],
+        }
+    }
+    sentence = bulletin_writer_module.BulletinWriterSentence(
+        draft_id="coordinated-reversal",
+        text="Họ gặp thủ quỹ Mai và Nguyễn Văn An ký hồ sơ.",
+        sentence_role="event",
+        source_item_refs=["source-0"],
+    )
+
+    with pytest.raises(ValueError, match="actor binding|recipient binding"):
+        bulletin_writer_module._validate_sentence_actor_references(
+            sentence,
+            source_items,
+        )
+
+
+def test_actor_reference_critic_allows_temporal_prefix_actor_reordering() -> None:
+    source_items = {
+        "source-0": {
+            "text": "Hôm nay Nguyễn Văn An ký hợp đồng.",
+            "actor_references": [
+                {
+                    "participant_id": "participant-an",
+                    "public_actor_label": "Nguyễn Văn An",
+                    "source_forms": ["Nguyễn Văn An"],
+                    "allowed_reference_forms": ["Nguyễn Văn An"],
+                    "attribution_required": True,
+                }
+            ],
+        }
+    }
+    sentence = bulletin_writer_module.BulletinWriterSentence(
+        draft_id="temporal-prefix",
+        text="Nguyễn Văn An hôm nay ký hợp đồng.",
+        sentence_role="event",
+        source_item_refs=["source-0"],
+    )
+
+    assert bulletin_writer_module._validate_sentence_actor_references(
+        sentence,
+        source_items,
+    ) == ["Nguyễn Văn An"]
+
+
+def test_actor_reference_critic_allows_grounded_generic_recipient() -> None:
+    source_items = {
+        "source-0": {
+            "text": "Lan gửi hồ sơ cho chị.",
+            "actor_references": [
+                {
+                    "participant_id": "participant-lan",
+                    "public_actor_label": "Lan",
+                    "source_forms": ["Lan"],
+                    "allowed_reference_forms": ["Lan"],
+                    "attribution_required": False,
+                },
+                {
+                    "participant_id": "participant-generic",
+                    "public_actor_label": "một người tham gia",
+                    "source_forms": ["chị"],
+                    "allowed_reference_forms": ["một người tham gia"],
+                    "attribution_required": False,
+                },
+            ],
+        }
+    }
+    sentence = bulletin_writer_module.BulletinWriterSentence(
+        draft_id="grounded-recipient",
+        text="Lan gửi hồ sơ cho một người tham gia.",
+        sentence_role="event",
+        source_item_refs=["source-0"],
+    )
+
+    assert bulletin_writer_module._validate_sentence_actor_references(
+        sentence,
+        source_items,
+    ) == ["Lan", "một người tham gia"]
+
+
+def test_degraded_diarization_requires_separate_generic_actor_mentions() -> None:
+    first = "Tôi đồng ý phương án đỏ."
+    second = "Tôi đồng ý phương án xanh."
+    context = _context(
+        f"{first} {second}",
+        [
+            {"speaker": "SPEAKER_00", "text": first},
+            {"speaker": "SPEAKER_01", "text": second},
+        ],
+        source_metadata={
+            **SOURCE,
+            "audio_integrity_status": "verified",
+            "has_diarization": True,
+            "degraded": True,
+            "diarization_status": "degraded",
+            "diarization_method_used": "pyannote",
+            "num_speakers": 2,
+            "diarization_degraded_reasons": ["speaker count uncertain"],
+            "speaker_provenance": {
+                "status": "degraded",
+                "speaker_count": 2,
+                "artifact_verified": True,
+                "model_revision": "a" * 40,
+                "assignment_method": "segment_max_overlap",
+                "method_used": "pyannote",
+            },
+        },
+    )
+
+    with pytest.raises(ValueError, match="conversational actor unresolved"):
+        apply_bulletin_writer_draft(
+            context,
+            {
+                "schema_version": BULLETIN_WRITER_VERSION,
+                "scenario_profile": "general",
+                "sentences": [
+                    {
+                        "draft_id": "collapsed-actors",
+                        "text": (
+                            "Một người tham gia đồng ý phương án đỏ và phương án xanh."
+                        ),
+                        "sentence_role": "outcome",
+                        "source_item_refs": [
+                            "summary:deterministic-source-0",
+                            "summary:deterministic-source-1",
+                        ],
+                    }
+                ],
+            },
+            scenario_profile="general",
+        )
+
+
+def test_trusted_anonymous_speaker_label_is_valid_third_person_prose() -> None:
+    source = "Tôi sẽ gửi hồ sơ."
+    context = _context(
+        source,
+        [{"speaker": "SPEAKER_00", "text": source}],
+        source_metadata=_trusted_source_metadata(1),
+    )
+
+    updated = apply_bulletin_writer_draft(
+        context,
+        {
+            "schema_version": BULLETIN_WRITER_VERSION,
+            "scenario_profile": "general",
+            "sentences": [
+                {
+                    "draft_id": "trusted-anonymous",
+                    "text": "Người tham gia thứ nhất sẽ gửi hồ sơ.",
+                    "sentence_role": "event",
+                    "source_item_refs": ["summary:deterministic-source-0"],
+                }
+            ],
+        },
+        scenario_profile="general",
+    )
+
+    assert updated["summary"] == "Người tham gia thứ nhất sẽ gửi hồ sơ."
+    assert "tôi" not in updated["summary"].casefold()
+
+
+def test_action_actor_is_carried_into_source_row_and_host_plan() -> None:
+    source = "Lan sẽ gửi hồ sơ."
+    context = _context(source, [{"text": source}])
+    evidence_id = context["investigation_knowledge"]["summary_sentences"][0][
+        "evidence_ids"
+    ][0]
+    context["investigation_knowledge"]["facts"].append(
+        {
+            "fact_id": "fact-action-actor",
+            "category": "action",
+            "statement": "sẽ gửi hồ sơ",
+            "actor": "Lan",
+            "status": "planned",
+            "model_generated": True,
+            "verification_status": "unverified",
+            "evidence_ids": [evidence_id],
+        }
+    )
+    context["investigation_knowledge"]["quality"]["total_items"] += 1
+    context["investigation_knowledge"]["quality"]["grounded_items"] += 1
+    payload = GroundedContextAnalysisPayload.model_validate(context)
+    source_items = _source_items(payload)
+    source_row = next(
+        row
+        for row in source_items
+        if "fact:action" in row.get("claim_group_kinds", [])
+        or row.get("kind") == "fact:action"
+    )
+    rows = bulletin_writer_module._source_rows(payload, max_words=120)
+    plan = bulletin_writer_module._build_host_bulletin_plan(rows, max_words=120)
+
+    assert source_row["text"].startswith("Lan")
+    assert any(
+        reference.public_actor_label == "người được nhắc đến là Lan"
+        for sentence in plan
+        for reference in sentence.actor_references
+    )
 
 
 def test_writer_rejects_invented_identifier_and_completed_action() -> None:
@@ -1965,13 +2704,62 @@ def test_semantic_action_extraction_ignores_common_non_action_phrases() -> None:
     assert extract_semantic_action_sequence(
         "Cán bộ phụ trách khối tài chính đến ngân hàng."
     ) == ()
+    assert extract_semantic_action_sequence(
+        "Giá phòng từ 3 triệu đến 3 triệu 500 nghìn đồng."
+    ) == ()
+    assert extract_semantic_action_sequence("Số lượng từ 2 đến 4 người.") == ()
+    assert extract_semantic_action_sequence("Số lượng 5 người đến 7 người.") == ()
+    assert extract_semantic_action_sequence("Tỷ lệ khoảng 5% đến 7%.") == ()
+    assert extract_semantic_action_sequence("Từ ngày 5 đến ngày 7.") == ()
+    assert extract_semantic_action_sequence(
+        "Khoảng 5 đến 7 người gửi hồ sơ."
+    ) == ("gửi",)
     assert extract_semantic_action_sequence("Lan bảo Minh đến nhà.") == (
         "bảo",
         "đến",
     )
+    assert extract_semantic_action_sequence("Minh đến 3 địa điểm.") == ("đến",)
+    assert extract_semantic_action_sequence(
+        "Từ 3 giờ, Minh đến 5 địa điểm."
+    ) == ("đến",)
+    assert extract_semantic_action_sequence(
+        "Sau khi cuộc gọi kết thúc, khách sạn sẽ gửi số tài khoản."
+    ) == ("gửi",)
+    assert extract_semantic_action_sequence(
+        "Chương trình yêu đãi kèm điều khoản về quỷ trả đặt phòng."
+    ) == ()
 
 
-def test_deterministic_inventory_joins_asr_fragments_before_writer_planning() -> None:
+def test_shared_relation_parser_preserves_real_movement_after_time_adjunct() -> None:
+    roles = extract_semantic_roles(
+        "Từ 3 giờ, Minh đến 5 địa điểm.",
+        allowed_actions={"đến", "gửi"},
+    )
+    range_signature = bulletin_writer_module._planning_semantic_signature(
+        "Khoảng 5 đến 7 người gửi hồ sơ."
+    )
+    movement_signature = bulletin_writer_module._planning_semantic_signature(
+        "Từ 3 giờ, Minh đến 5 địa điểm."
+    )
+
+    assert roles.actor == "minh"
+    assert roles.action == "đến"
+    assert roles.object == "5 địa điểm"
+    assert range_signature.action == "gửi"
+    assert movement_signature.actor == "minh"
+    assert movement_signature.action == "đến"
+
+    purpose_roles = extract_semantic_roles(
+        "Quyên đặt cọc để khách sạn giữ phòng cho Quyên.",
+        allowed_actions={"giữ"},
+    )
+    assert purpose_roles.actor == "khách sạn"
+    assert purpose_roles.action == "giữ"
+    assert purpose_roles.object == "phòng"
+    assert purpose_roles.recipient == "quyên"
+
+
+def test_deterministic_inventory_keeps_unknown_speaker_windows_atomic() -> None:
     transcript = (
         "Mỗi bộ phận phụ trách một lĩnh vực Có cán bộ phụ trách khối tài chính "
         "đến ngân hàng Có đồng chí theo dõi công nghiệp"
@@ -1991,7 +2779,7 @@ def test_deterministic_inventory_joins_asr_fragments_before_writer_planning() ->
     )
 
     payload = GroundedContextAnalysisPayload.model_validate(context)
-    assert len(payload.summary_sentences) == 1
+    assert len(payload.summary_sentences) == 3
     rows = _source_items(payload)
     exact_surfaces = {
         surface for row in rows for surface in row.get("exact_surfaces", [])
@@ -2540,8 +3328,118 @@ def test_writer_runs_one_schema_bound_repair_after_semantic_rejection() -> None:
     assert "bàn bạc công việc" in repair_prompt
     assert "unsupported synthesis tokens" in repair_prompt
     assert '"UNSUPPORTED_TOKENS_BY_DRAFT"' in repair_prompt
+    assert '"ALLOWED_ACTOR_FORMS_BY_DRAFT"' in repair_prompt
     assert '"HARD_MAX_WORDS":120' in repair_prompt
     assert "<host_critic_issues>" in repair_prompt
+    assert "ngôi thứ ba" in repair_prompt
+
+
+def test_writer_repairs_conversational_voice_into_third_person_report() -> None:
+    context = _context(
+        "Chị sẽ gửi hồ sơ.",
+        [{"text": "Chị sẽ gửi hồ sơ."}],
+    )
+    manager = _RepairingWriterManager(
+        [
+            _writer_response("Chị sẽ gửi hồ sơ."),
+            _writer_response("Một người tham gia sẽ gửi hồ sơ."),
+        ]
+    )
+
+    result = synthesize_bulletin_context(
+        context,
+        scenario_profile="general",
+        max_words=120,
+        model_name=None,
+        llm_manager=manager,
+    )
+
+    assert result.attempt_count == 1
+    assert result.repair_applied is False
+    assert result.deterministic_repair_applied is True
+    assert result.context_analysis["summary"] == "Một người tham gia sẽ gửi hồ sơ."
+    assert "chị" not in result.context_analysis["summary"].casefold()
+    assert len(manager.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "issue_detail",
+    [
+        "public bulletin body uses conversational voice as report actor",
+        "bulletin writer leaves a conversational actor unresolved",
+        "bulletin writer uses an actor outside cited source refs",
+    ],
+)
+def test_actor_voice_issue_markers_are_sentence_delta_repairable(
+    issue_detail: str,
+) -> None:
+    assert bulletin_writer_module._sentence_scoped_delta_targets(
+        [f"report: {issue_detail}"]
+    ) == ("report",)
+
+
+def test_delta_repair_routes_all_sentence_scoped_actor_failures() -> None:
+    issues = [
+        f"plan-{index:03d}: bulletin writer leaves a conversational actor unresolved"
+        for index in range(15)
+    ]
+
+    assert bulletin_writer_module._sentence_scoped_delta_targets(issues) == tuple(
+        f"plan-{index:03d}" for index in range(15)
+    )
+
+
+def test_delta_repair_batches_all_targets_without_loss() -> None:
+    target_ids = [f"plan-{index:03d}" for index in range(7)]
+
+    batches = bulletin_writer_module._delta_target_batches(target_ids)
+
+    assert batches == (tuple(target_ids),)
+    assert [target for batch in batches for target in batch] == target_ids
+
+
+def test_global_length_issue_does_not_hide_sentence_delta_targets() -> None:
+    assert bulletin_writer_module._sentence_scoped_delta_targets(
+        [
+            "draft: exceeds maximum 120 words",
+            "plan-000: bulletin writer leaves a conversational actor unresolved",
+            "plan-001: bulletin writer drops an exact value",
+        ]
+    ) == ("plan-000", "plan-001")
+
+
+def test_conversational_source_is_normalized_before_llm_repair() -> None:
+    context = _context(
+        "Chị sẽ gửi hồ sơ.",
+        [{"text": "Chị sẽ gửi hồ sơ."}],
+    )
+    copied_source = _writer_response("Chị sẽ gửi hồ sơ.")
+    manager = _RepairingWriterManager(
+        [
+            copied_source,
+            copied_source,
+            _delta_response(
+                copied_source,
+                {"report": "Một người tham gia sẽ gửi hồ sơ."},
+            ),
+        ]
+    )
+
+    result = synthesize_bulletin_context(
+        context,
+        scenario_profile="general",
+        max_words=120,
+        model_name=None,
+        llm_manager=manager,
+    )
+
+    assert result.attempt_count == 1
+    assert result.deterministic_repair_applied is True
+    assert result.sentence_delta_repair_applied is False
+    assert result.context_analysis["summary"] == (
+        "Một người tham gia sẽ gửi hồ sơ."
+    )
+    assert len(manager.calls) == 1
 
 
 def test_repair_prompt_ends_with_escaped_absolute_forbidden_tokens() -> None:
@@ -2630,9 +3528,11 @@ def test_delta_repair_prompt_contains_only_target_sentence_and_ledger_rows() -> 
     assert "summary:deterministic-source-0" in prompt
     assert "summary:deterministic-source-1" not in prompt
     assert "Minh đồng ý mang hồ sơ" not in prompt
-    assert "Lan yêu cầu gặp Minh" not in prompt
+    assert "Lan yêu cầu gặp Minh" in prompt
     assert bulletin_writer_module._bulletin_draft_sha256(draft) in prompt
     assert "<host_critic_issues>" not in prompt
+    assert '"ALLOWED_ACTOR_FORMS_BY_DRAFT"' in prompt
+    assert "ngôi thứ ba" in prompt
 
 
 def test_generated_writer_deduplicates_a_ref_when_later_sentence_stays_grounded() -> None:
@@ -2816,7 +3716,14 @@ def test_soft_length_repair_failure_keeps_the_first_hard_valid_draft() -> None:
     assert result.context_analysis["summary"] == long_text
 
 
-def test_writer_fails_closed_when_schema_bound_repair_is_still_unsupported() -> None:
+def test_host_residual_repair_removes_unsupported_synthesis_after_delta(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        bulletin_writer_module,
+        "BULLETIN_DELTA_REPAIR_MAX_ROUNDS",
+        1,
+    )
     context = _context()
     bad = _writer_response(
         "Lan hẹn gặp Minh lúc 09:00 tại bến xe để bàn bạc công việc; "
@@ -2838,16 +3745,18 @@ def test_writer_fails_closed_when_schema_bound_repair_is_still_unsupported() -> 
         ]
     )
 
-    with pytest.raises(BulletinSynthesisError) as exc_info:
-        synthesize_bulletin_context(
-            context,
-            scenario_profile="general",
-            max_words=120,
-            model_name=None,
-            llm_manager=manager,
-        )
+    result = synthesize_bulletin_context(
+        context,
+        scenario_profile="general",
+        max_words=120,
+        model_name=None,
+        llm_manager=manager,
+    )
 
-    assert exc_info.value.attempt_count == 3
+    assert result.attempt_count == 3
+    assert result.deterministic_repair_applied is True
+    assert "bàn bạc công việc" not in result.context_analysis["summary"]
+    assert "xử lý công việc" not in result.context_analysis["summary"]
 
 
 def test_writer_applies_sentence_scoped_delta_after_unsupported_repair() -> None:
@@ -2892,6 +3801,50 @@ def test_writer_applies_sentence_scoped_delta_after_unsupported_repair() -> None
     assert len(manager.calls) == 3
     assert "<repair_targets>" in manager.calls[2]["prompt"]
     assert "<rejected_draft>" not in manager.calls[2]["prompt"]
+
+
+def test_writer_accepts_delta_that_fully_restores_prior_semantic_corruption() -> None:
+    transcript = "Lan dự tính gọi Minh."
+    context = _context(
+        transcript,
+        [{"start": 0.0, "end": 1.0, "text": transcript}],
+    )
+    corrupted = {
+        "schema_version": BULLETIN_WRITER_VERSION,
+        "scenario_profile": "general",
+        "sentences": [
+            {
+                "draft_id": "planned-call",
+                "text": "Lan gọi Minh.",
+                "sentence_role": "event",
+                "source_item_refs": ["summary:deterministic-source-0"],
+            }
+        ],
+    }
+    manager = _RepairingWriterManager(
+        [
+            corrupted,
+            corrupted,
+            _delta_response(
+                corrupted,
+                {
+                    "planned-call": "Lan dự tính gọi Minh."
+                },
+            ),
+        ]
+    )
+
+    result = synthesize_bulletin_context(
+        context,
+        scenario_profile="general",
+        max_words=120,
+        model_name=None,
+        llm_manager=manager,
+    )
+
+    assert result.attempt_count == 3
+    assert result.sentence_delta_repair_applied is True
+    assert result.context_analysis["summary"] == "Lan dự tính gọi Minh."
 
 
 def test_apply_only_sentence_error_reaches_bounded_delta_repair(monkeypatch) -> None:
@@ -3056,7 +4009,14 @@ def test_scoped_apply_issue_requires_a_real_draft_id_and_no_global_issue() -> No
     ) == "INVESTIGATION_COVERAGE_FAILED"
 
 
-def test_writer_fails_closed_when_repair_drops_required_source_surface() -> None:
+def test_host_residual_repair_restores_required_source_surface(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        bulletin_writer_module,
+        "BULLETIN_DELTA_REPAIR_MAX_ROUNDS",
+        1,
+    )
     transcript = (
         "Tuyên truyền phương thức của tội phạm kinh tế và tội phạm sử dụng "
         "công nghệ cao."
@@ -3088,20 +4048,525 @@ def test_writer_fails_closed_when_repair_drops_required_source_surface() -> None
         ]
     )
 
-    with pytest.raises(BulletinSynthesisError, match="repair rejected") as exc_info:
-        synthesize_bulletin_context(
-            context,
-            scenario_profile="general",
-            max_words=120,
-            model_name=None,
-            llm_manager=manager,
+    result = synthesize_bulletin_context(
+        context,
+        scenario_profile="general",
+        max_words=120,
+        model_name=None,
+        llm_manager=manager,
+    )
+
+    assert result.attempt_count == 3
+    assert result.deterministic_repair_applied is True
+    assert "tội phạm kinh tế" in result.context_analysis["summary"]
+    assert "tội phạm sử dụng công nghệ cao" in result.context_analysis["summary"]
+
+
+def test_minimal_residual_repairs_grounded_payment_handoff_without_raw_transcript() -> None:
+    customer = bulletin_writer_module.BulletinActorReference(
+        participant_id="customer",
+        public_actor_label="Quyên",
+        source_forms=["chị", "mình"],
+        allowed_reference_forms=["Quyên"],
+    )
+    staff = bulletin_writer_module.BulletinActorReference(
+        participant_id="staff",
+        public_actor_label="người tham gia thứ hai",
+        source_forms=["em", "bên em"],
+        allowed_reference_forms=["người tham gia thứ hai"],
+    )
+    signature = bulletin_writer_module.BulletinSemanticSignature()
+    obligations = [
+        bulletin_writer_module.BulletinPlanObligation(
+            source_item_ref="deposit",
+            kind="fact:payment",
+            text=(
+                "Theo quy định, chị sẽ đặt cọc trước 1 đêm để khách sạn giữ "
+                "phòng cho mình."
+            ),
+            semantic_signature=signature,
+            clause_signatures=[signature],
+            semantic_markers=["sẽ"],
+            exact_surfaces=["1 đêm"],
+            actor_references=[customer, staff],
+        ),
+        bulletin_writer_module.BulletinPlanObligation(
+            source_item_ref="transfer",
+            kind="fact:payment",
+            text="Chị chuyển khoản cho em.",
+            semantic_signature=signature,
+            clause_signatures=[signature],
+            actor_references=[customer, staff],
+        ),
+    ]
+    plan = bulletin_writer_module.BulletinSentencePlan(
+        plan_id="payment",
+        sentence_role="financial",
+        source_item_refs=["deposit", "transfer"],
+        obligations=obligations,
+        exact_surfaces=["1 đêm"],
+        coverage_lock="hard",
+        salience_score=100,
+        estimated_word_cost=20,
+        target_word_budget=40,
+        budget_decision="required",
+        actor_references=[customer, staff],
+    )
+    sentence = bulletin_writer_module.BulletinWriterSentence(
+        draft_id="payment",
+        text="Quyên sẽ đặt cọc trước 1 đêm và chuyển khoản cho khách sạn.",
+        sentence_role="financial",
+        source_item_refs=["deposit", "transfer"],
+    )
+    source_items = {
+        "deposit": {"actor_references": [item.model_dump() for item in [customer, staff]]},
+        "transfer": {"actor_references": [item.model_dump() for item in [customer, staff]]},
+    }
+
+    repaired = bulletin_writer_module._minimal_plan_residual_text(
+        sentence,
+        plan,
+        source_items,
+        ["bulletin writer changes or drops source actions"],
+    )
+
+    assert repaired == (
+        "người tham gia thứ hai cho biết Quyên sẽ phải đặt cọc trước 1 đêm "
+        "để khách sạn giữ phòng cho Quyên; Quyên chuyển khoản."
+    )
+    assert "evidence" not in repaired.casefold()
+    assert "offset" not in repaired.casefold()
+
+
+def test_minimal_residual_restores_breakfast_value_and_source_wording() -> None:
+    signature = bulletin_writer_module.BulletinSemanticSignature(completed=True)
+    plan = bulletin_writer_module.BulletinSentencePlan(
+        plan_id="breakfast",
+        sentence_role="outcome",
+        source_item_refs=["breakfast"],
+        obligations=[
+            bulletin_writer_module.BulletinPlanObligation(
+                source_item_ref="breakfast",
+                kind="fact:financial",
+                text="Bữa sáng có giá 690.000 và đã gồm trong giá phòng.",
+                semantic_signature=signature,
+                clause_signatures=[signature],
+                semantic_markers=["đã"],
+                exact_surfaces=["690.000"],
+            )
+        ],
+        exact_surfaces=["690.000"],
+        coverage_lock="hard",
+        salience_score=100,
+        estimated_word_cost=10,
+        target_word_budget=20,
+        budget_decision="required",
+    )
+    sentence = bulletin_writer_module.BulletinWriterSentence(
+        draft_id="breakfast",
+        text="Bữa sáng đã bao gồm trong giá phòng.",
+        sentence_role="outcome",
+        source_item_refs=["breakfast"],
+    )
+
+    assert bulletin_writer_module._minimal_plan_residual_text(
+        sentence,
+        plan,
+        {"breakfast": {"actor_references": []}},
+        ["bulletin writer drops an exact value"],
+    ) == "Bữa sáng có giá 690.000 và đã bao gồm trong giá phòng."
+
+
+def test_residual_semantic_templates_stay_bounded_and_preserve_source_roles() -> None:
+    customer = bulletin_writer_module.BulletinActorReference(
+        participant_id="customer",
+        public_actor_label="Quyên",
+        source_forms=["chị", "mình"],
+        allowed_reference_forms=["Quyên"],
+    )
+    staff = bulletin_writer_module.BulletinActorReference(
+        participant_id="staff",
+        public_actor_label="người tham gia thứ hai",
+        source_forms=["em", "bên em"],
+        allowed_reference_forms=["người tham gia thứ hai"],
+    )
+    empty_signature = bulletin_writer_module.BulletinSemanticSignature()
+    future_signature = bulletin_writer_module.BulletinSemanticSignature(future=True)
+    availability = bulletin_writer_module.BulletinSentencePlan(
+        plan_id="availability",
+        sentence_role="event",
+        source_item_refs=["availability"],
+        obligations=[
+            bulletin_writer_module.BulletinPlanObligation(
+                source_item_ref="availability",
+                kind="source_unit",
+                text=(
+                    "Ngày 15 tháng 2 đến ngày 16 tháng 2 thì bên em vẫn còn phòng"
+                ),
+                semantic_signature=empty_signature,
+                clause_signatures=[empty_signature],
+                exact_surfaces=["ngày 15 tháng 2", "ngày 16 tháng 2"],
+                actor_references=[staff],
+            )
+        ],
+        exact_surfaces=["ngày 15 tháng 2", "ngày 16 tháng 2"],
+        coverage_lock="soft",
+        salience_score=100,
+        estimated_word_cost=16,
+        target_word_budget=20,
+        budget_decision="required",
+        actor_references=[staff],
+    )
+    deposit = bulletin_writer_module.BulletinSentencePlan(
+        plan_id="deposit",
+        sentence_role="financial",
+        source_item_refs=["deposit"],
+        obligations=[
+            bulletin_writer_module.BulletinPlanObligation(
+                source_item_ref="deposit",
+                kind="source_unit",
+                text=(
+                    "Quyên sẽ phải đặt cọc trước 1 đêm để khách sạn giữ phòng "
+                    "cho mình."
+                ),
+                semantic_signature=future_signature,
+                clause_signatures=[future_signature],
+                semantic_markers=["sẽ"],
+                exact_surfaces=["1 đêm"],
+                actor_references=[customer, staff],
+            )
+        ],
+        exact_surfaces=["1 đêm"],
+        coverage_lock="soft",
+        salience_score=100,
+        estimated_word_cost=13,
+        target_word_budget=18,
+        budget_decision="required",
+        actor_references=[customer, staff],
+    )
+    draft = bulletin_writer_module.BulletinWriterDraft(
+        schema_version=BULLETIN_WRITER_VERSION,
+        scenario_profile="financial_asset",
+        sentences=[
+            bulletin_writer_module.BulletinWriterSentence(
+                draft_id="availability",
+                text="Người tham gia thứ hai xác nhận khách sạn còn phòng.",
+                sentence_role="event",
+                source_item_refs=["availability"],
+            ),
+            bulletin_writer_module.BulletinWriterSentence(
+                draft_id="deposit",
+                text="Quyên sẽ phải đặt cọc trước 1 đêm để đảm bảo giữ phòng.",
+                sentence_role="financial",
+                source_item_refs=["deposit"],
+            ),
+        ],
+    )
+    source_items = {
+        "availability": {"actor_references": [staff.model_dump()]},
+        "deposit": {
+            "actor_references": [customer.model_dump(), staff.model_dump()]
+        },
+    }
+
+    repaired = bulletin_writer_module._deterministic_residual_repair(
+        draft,
+        sentence_plan=[availability, deposit],
+        source_items=source_items,
+        target_draft_ids=["availability", "deposit"],
+        issues=[
+            "availability: bulletin writer changes source actor binding",
+            "deposit: bulletin writer changes planned action modality",
+        ],
+    )
+
+    assert repaired.sentences[0].text == (
+        "người tham gia thứ hai báo còn phòng ngày 15 tháng 2, ngày 16 tháng 2."
+    )
+    assert repaired.sentences[1].text == (
+        "Quyên sẽ đặt cọc 1 đêm; phòng được giữ cho Quyên."
+    )
+    assert len(repaired.sentences[1].text.split()) < len(
+        draft.sentences[1].text.split()
+    )
+
+
+def test_bounded_residual_templates_avoid_conversational_source_dump() -> None:
+    customer = bulletin_writer_module.BulletinActorReference(
+        participant_id="customer",
+        public_actor_label="Quyên",
+        source_forms=["chị", "mình"],
+        allowed_reference_forms=["Quyên"],
+    )
+    staff = bulletin_writer_module.BulletinActorReference(
+        participant_id="staff",
+        public_actor_label="người tham gia thứ hai",
+        source_forms=["em", "bên em"],
+        allowed_reference_forms=["người tham gia thứ hai"],
+    )
+    signature = bulletin_writer_module.BulletinSemanticSignature()
+    specifications = [
+        (
+            "prices",
+            [
+                (
+                    "prices-a",
+                    "Dạ vâng ạ, bên em thì vẫn còn phòng Đình Lận với giá từ "
+                    "3 triệu đến 3 triệu 500 nghìn và phòng X kế tiếp với giá "
+                    "4 triệu 500 nghìn đến 5 triệu",
+                    ["3 triệu", "3 triệu 500 nghìn", "4 triệu 500 nghìn", "5 triệu"],
+                ),
+                (
+                    "prices-b",
+                    "Chị chỉ cần phòng 3 triệu; em giảm giá phòng cho chị đi.",
+                    ["3 triệu"],
+                ),
+            ],
+            (
+                "người tham gia thứ hai còn phòng Đình Lận giá từ 3 triệu đến "
+                "3 triệu 500 nghìn và phòng X giá từ 4 triệu 500 nghìn đến 5 "
+                "triệu; Quyên chỉ cần phòng 3 triệu và yêu cầu giảm giá phòng."
+            ),
+        ),
+        (
+            "discount",
+            [
+                (
+                    "discount",
+                    "Đây là giá niêm yết của khách sạn em nên em không để giảm "
+                    "giá cho chị được, nhưng bên em có chương trình yêu đãi đặc "
+                    "biệt cho khách hàng sử dụng dịch vụ fitness center vào thứ "
+                    "tư hàng tuần.",
+                    [],
+                )
+            ],
+            (
+                "người tham gia thứ hai cho biết đây là giá niêm yết của khách "
+                "sạn nên không để giảm giá cho Quyên được; khách sạn đang có "
+                "chương trình yêu đãi đặc biệt cho khách hàng sử dụng dịch vụ "
+                "fitness center vào thứ tư hàng tuần."
+            ),
+        ),
+        (
+            "fitness",
+            [
+                (
+                    "fitness",
+                    "Thời gian chị lưu trú đúng thứ tư nên chị sẽ được sử dụng "
+                    "dịch vụ fitness center free.",
+                    [],
+                )
+            ],
+            (
+                "Thời gian Quyên lưu trú đúng thứ tư; Quyên sẽ được sử dụng "
+                "dịch vụ fitness center free."
+            ),
+        ),
+        (
+            "breakfast-price",
+            [
+                (
+                    "breakfast-price",
+                    "Bữa sáng của một xuất là 690.000 nhưng đã gồm trong giá phòng.",
+                    ["690.000"],
+                )
+            ],
+            "Bữa sáng 690.000 đã gồm trong giá phòng.",
+        ),
+        (
+            "breakfast-entitlement",
+            [
+                (
+                    "breakfast-entitlement",
+                    "Mình sẽ được sử dụng bữa sáng buffet tự chọn món và mình "
+                    "không phải mất thêm tiền.",
+                    [],
+                )
+            ],
+            (
+                "Quyên sẽ được sử dụng bữa sáng buffet tự chọn món và không mất "
+                "thêm tiền."
+            ),
+        ),
+        (
+            "account-email",
+            [
+                (
+                    "account-email",
+                    "Khách sạn em sẽ gửi tới email của chị số tài khoản của khách "
+                    "sạn và các điều khoản về quỷ trả đặt phòng.",
+                    [],
+                )
+            ],
+            (
+                "người tham gia thứ hai sẽ gửi tới email của Quyên số tài khoản "
+                "của khách sạn và các điều khoản về quỷ trả đặt phòng."
+            ),
+        ),
+        (
+            "closing",
+            [
+                (
+                    "closing",
+                    "Cảm ơn chị đã lựa chọn khách sạn G.W. Marriott Hotel Hà Nội; "
+                    "rất hân hạnh được phục vụ chị vào ngày 15 tháng 2.",
+                    ["khách sạn G.W. Marriott Hotel Hà Nội", "ngày 15 tháng 2"],
+                )
+            ],
+            (
+                "khách sạn G.W. Marriott Hotel Hà Nội phục vụ Quyên vào ngày 15 "
+                "tháng 2."
+            ),
+        ),
+    ]
+    plans = []
+    sentences = []
+    source_items = {}
+    expected = {}
+    for index, (plan_id, obligation_specs, rendered) in enumerate(specifications):
+        obligations = []
+        plan_surfaces = []
+        refs = []
+        for ref, source_text, exact_surfaces in obligation_specs:
+            refs.append(ref)
+            plan_surfaces.extend(exact_surfaces)
+            obligations.append(
+                bulletin_writer_module.BulletinPlanObligation(
+                    source_item_ref=ref,
+                    kind="source_unit",
+                    text=source_text,
+                    semantic_signature=signature,
+                    clause_signatures=[signature],
+                    exact_surfaces=exact_surfaces,
+                    actor_references=[customer, staff],
+                )
+            )
+            source_items[ref] = {
+                "actor_references": [customer.model_dump(), staff.model_dump()]
+            }
+        plans.append(
+            bulletin_writer_module.BulletinSentencePlan(
+                plan_id=plan_id,
+                sentence_role="financial" if index in {0, 5} else "outcome",
+                source_item_refs=refs,
+                obligations=obligations,
+                exact_surfaces=list(dict.fromkeys(plan_surfaces)),
+                coverage_lock="hard",
+                salience_score=100,
+                estimated_word_cost=40,
+                target_word_budget=48,
+                budget_decision="required",
+                actor_references=[customer, staff],
+            )
         )
+        sentences.append(
+            bulletin_writer_module.BulletinWriterSentence(
+                draft_id=plan_id,
+                text="; ".join(item[1] for item in obligation_specs),
+                sentence_role=plans[-1].sentence_role,
+                source_item_refs=refs,
+            )
+        )
+        expected[plan_id] = rendered
 
-    assert exc_info.value.attempt_count == 3
-    assert exc_info.value.code == "INVESTIGATION_WRITER_REJECTED"
+    draft = bulletin_writer_module.BulletinWriterDraft(
+        schema_version=BULLETIN_WRITER_VERSION,
+        scenario_profile="financial_asset",
+        sentences=sentences,
+    )
+    repaired = bulletin_writer_module._deterministic_residual_repair(
+        draft,
+        sentence_plan=plans,
+        source_items=source_items,
+        target_draft_ids=[plan.plan_id for plan in plans],
+        issues=[
+            f"{plan.plan_id}: bulletin writer sentence contains unsupported synthesis tokens"
+            for plan in plans
+        ],
+    )
+
+    assert {sentence.draft_id: sentence.text for sentence in repaired.sentences} == expected
+    repaired_word_count = len(
+        " ".join(sentence.text for sentence in repaired.sentences).split()
+    )
+    assert repaired_word_count == 172
+    assert repaired_word_count <= 200
+    assert repaired_word_count < len(
+        " ".join(sentence.text for sentence in draft.sentences).split()
+    )
+    assert not re.search(
+        r"\b(?:dạ|vâng|chị|em|mình)\b",
+        " ".join(sentence.text for sentence in repaired.sentences),
+        re.IGNORECASE,
+    )
+    assert [sentence.source_item_refs for sentence in repaired.sentences] == [
+        sentence.source_item_refs for sentence in draft.sentences
+    ]
 
 
-def test_writer_fails_closed_when_repair_changes_source_negation() -> None:
+def test_bounded_price_template_requires_all_grounded_price_surfaces() -> None:
+    signature = bulletin_writer_module.BulletinSemanticSignature()
+    plan = bulletin_writer_module.BulletinSentencePlan(
+        plan_id="prices",
+        sentence_role="financial",
+        source_item_refs=["prices-a", "prices-b"],
+        obligations=[
+            bulletin_writer_module.BulletinPlanObligation(
+                source_item_ref="prices-a",
+                kind="source_unit",
+                text=(
+                    "Bên em còn phòng Đình Lận giá từ 3 triệu đến 3 triệu 500 "
+                    "nghìn và phòng X giá từ 4 triệu 500 nghìn đến 5 triệu."
+                ),
+                semantic_signature=signature,
+                clause_signatures=[signature],
+            ),
+            bulletin_writer_module.BulletinPlanObligation(
+                source_item_ref="prices-b",
+                kind="source_unit",
+                text="Chị yêu cầu giảm giá phòng.",
+                semantic_signature=signature,
+                clause_signatures=[signature],
+            ),
+        ],
+        exact_surfaces=["3 triệu", "3 triệu 500 nghìn", "4 triệu 500 nghìn"],
+        coverage_lock="hard",
+        salience_score=100,
+        estimated_word_cost=30,
+        target_word_budget=40,
+        budget_decision="required",
+        actor_references=[
+            bulletin_writer_module.BulletinActorReference(
+                participant_id="customer",
+                public_actor_label="Quyên",
+                source_forms=["chị"],
+                allowed_reference_forms=["Quyên"],
+            ),
+            bulletin_writer_module.BulletinActorReference(
+                participant_id="staff",
+                public_actor_label="người tham gia thứ hai",
+                source_forms=["em", "bên em"],
+                allowed_reference_forms=["người tham gia thứ hai"],
+            ),
+        ],
+    )
+    customer_label, service_label = bulletin_writer_module._plan_actor_labels(plan)
+
+    assert bulletin_writer_module._bounded_plan_residual_template(
+        plan,
+        customer_label=customer_label,
+        service_label=service_label,
+    ) is None
+
+
+def test_writer_fails_closed_when_repair_changes_source_negation(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        bulletin_writer_module,
+        "BULLETIN_DELTA_REPAIR_MAX_ROUNDS",
+        1,
+    )
     transcript = "Minh không giao hồ sơ cho Lan."
     context = _context(
         transcript,
@@ -3125,7 +4590,7 @@ def test_writer_fails_closed_when_repair_changes_source_negation() -> None:
             draft,
             _delta_response(
                 draft,
-                {"negation": "Minh giao tài liệu cho Lan."},
+                {"negation": "Lan không giao hồ sơ cho Minh."},
             ),
         ]
     )
@@ -3143,7 +4608,14 @@ def test_writer_fails_closed_when_repair_changes_source_negation() -> None:
     assert exc_info.value.code == "INVESTIGATION_WRITER_REJECTED"
 
 
-def test_writer_fails_closed_when_repair_keeps_unsupported_lexical_tail() -> None:
+def test_host_residual_repair_removes_unsupported_lexical_tail(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        bulletin_writer_module,
+        "BULLETIN_DELTA_REPAIR_MAX_ROUNDS",
+        1,
+    )
     context = _context()
     draft = {
         "schema_version": BULLETIN_WRITER_VERSION,
@@ -3180,7 +4652,63 @@ def test_writer_fails_closed_when_repair_keeps_unsupported_lexical_tail() -> Non
         ]
     )
 
-    with pytest.raises(BulletinSynthesisError, match="delta repair rejected") as exc_info:
+    result = synthesize_bulletin_context(
+        context,
+        scenario_profile="general",
+        max_words=120,
+        model_name=None,
+        llm_manager=manager,
+    )
+
+    assert result.attempt_count == 3
+    assert result.deterministic_repair_applied is True
+    assert "bảo đảm" not in result.context_analysis["summary"]
+
+
+def test_delta_no_op_is_recovered_only_by_post_critic_host_repair(monkeypatch) -> None:
+    monkeypatch.setattr(
+        bulletin_writer_module,
+        "BULLETIN_DELTA_REPAIR_MAX_ROUNDS",
+        1,
+    )
+    context = _context()
+    bad = _writer_response(
+        "Lan hẹn gặp Minh lúc 09:00 tại bến xe để bàn bạc công việc; "
+        "Minh đồng ý mang hồ sơ đến."
+    )
+    manager = _RepairingWriterManager(
+        [
+            bad,
+            bad,
+            _delta_response(
+                bad,
+                {"report": bad["sentences"][0]["text"]},
+            ),
+        ]
+    )
+
+    result = synthesize_bulletin_context(
+        context,
+        scenario_profile="general",
+        max_words=120,
+        model_name=None,
+        llm_manager=manager,
+    )
+
+    assert result.attempt_count == 3
+    assert result.deterministic_repair_applied is True
+    assert "bàn bạc công việc" not in result.context_analysis["summary"]
+
+
+def test_delta_parse_failure_exposes_only_sanitized_runtime_stage() -> None:
+    context = _context()
+    bad = _writer_response(
+        "Lan hẹn gặp Minh lúc 09:00 tại bến xe để bàn bạc công việc; "
+        "Minh đồng ý mang hồ sơ đến."
+    )
+    manager = _RepairingWriterManager([bad, bad, "not-json"])
+
+    with pytest.raises(BulletinSynthesisError) as exc_info:
         synthesize_bulletin_context(
             context,
             scenario_profile="general",
@@ -3189,8 +4717,12 @@ def test_writer_fails_closed_when_repair_keeps_unsupported_lexical_tail() -> Non
             llm_manager=manager,
         )
 
-    assert exc_info.value.attempt_count == 3
-    assert exc_info.value.code == "INVESTIGATION_WRITER_REJECTED"
+    assert exc_info.value.failure_stage == "delta_parse"
+    assert exc_info.value.failure_detail_code == "invalid_json"
+    assert exc_info.value.delta_target_count == 1
+    assert exc_info.value.delta_operation_count == 0
+    assert exc_info.value.diagnostic_counts == {}
+    assert "not-json" not in str(exc_info.value)
 
 
 def test_writer_fails_closed_when_text_map_omits_host_plan_id() -> None:
@@ -3589,3 +5121,130 @@ def test_summary_service_preserves_context_window_code_and_root_cause(
     assert "verified context window is 8192" in result["error"]["message"]
     assert result["runtime"]["token_budgets"][0]["total_tokens"] == 8576
     assert observed_writer_options["context_window_tokens"] == 12288
+
+
+def test_summary_service_persists_privacy_safe_writer_rejection_stage(
+    monkeypatch,
+) -> None:
+    class AvailableManager:
+        @staticmethod
+        def check_availability() -> bool:
+            return True
+
+        @staticmethod
+        def get_last_generation_metadata() -> dict:
+            return {}
+
+    def reject_writer(*_args, **_kwargs):
+        raise BulletinSynthesisError(
+            "bulletin writer delta repair rejected by host validation",
+            attempt_count=3,
+            failure_stage="delta_critic",
+            failure_detail_code="critic_issues_remain",
+            diagnostic_counts={"unresolved_actor": 12},
+            delta_target_count=15,
+            delta_operation_count=15,
+        )
+
+    monkeypatch.setattr(summary_service_v2, "get_llm_manager", AvailableManager)
+    monkeypatch.setattr(
+        summary_service_v2,
+        "synthesize_bulletin_context",
+        reject_writer,
+    )
+
+    result = summary_service_v2._summarize_transcript_evidence_preview(
+        transcript=TRANSCRIPT,
+        model_name=None,
+        include_context=False,
+        user_prompt=None,
+        min_length=50,
+        max_length=200,
+        transcript_segments=SEGMENTS,
+        source_metadata=SOURCE,
+        grounded_context=_context(),
+        investigation_scenario="general",
+    )
+
+    runtime = result["runtime"]
+    assert result["available"] is False
+    assert runtime["writer_failure_stage"] == "delta_critic"
+    assert runtime["writer_failure_detail_code"] == "critic_issues_remain"
+    assert runtime["writer_diagnostic_counts"] == {"unresolved_actor": 12}
+    assert runtime["writer_delta_target_count"] == 15
+    assert runtime["writer_delta_operation_count"] == 15
+    assert "transcript" not in repr(runtime).casefold()
+
+
+def test_residual_repair_uses_source_text_for_unbound_slang_semantics() -> None:
+    attributed = bulletin_writer_module.BulletinActorReference(
+        participant_id="mentioned-thoi",
+        public_actor_label="người được nhắc đến là Thôi",
+        allowed_reference_forms=["người được nhắc đến là Thôi"],
+        attribution_required=True,
+    )
+    obligation = BulletinPlanObligation(
+        source_item_ref="summary:deterministic-source-1",
+        kind="source_unit",
+        text=(
+            "Thôi có gì nói ra đi chứ mày Hồi hồi xưng cha với người ta "
+            "đòi kè táu là kè táu đó nè Chịu đau phải chi?"
+        ),
+        status="source_reported",
+        semantic_signature=BulletinSemanticSignature(
+            uncertain=True,
+            interrogative=True,
+        ),
+        clause_signatures=[BulletinSemanticSignature()],
+        exact_surfaces=["Thôi"],
+        actor_references=[attributed],
+    )
+    plan = BulletinSentencePlan(
+        plan_id="plan-000",
+        sentence_role="participant",
+        source_item_refs=[obligation.source_item_ref],
+        obligations=[obligation],
+        exact_surfaces=["Thôi"],
+        coverage_lock="soft",
+        salience_score=1,
+        estimated_word_cost=8,
+        target_word_budget=20,
+        budget_decision="required",
+        actor_references=[attributed],
+    )
+    draft = BulletinWriterDraft(
+        scenario_profile="general",
+        sentences=[
+            BulletinWriterSentence(
+                draft_id="plan-000",
+                text=(
+                    "người được nhắc đến là nhắc đến việc Hồi từng xưng cha với "
+                    "người khác và hỏi liệu có phải chịu đau không."
+                ),
+                sentence_role="participant",
+                source_item_refs=[obligation.source_item_ref],
+            )
+        ],
+    )
+    source_items = {
+        obligation.source_item_ref: {
+            "ref": obligation.source_item_ref,
+            "text": obligation.text,
+            "actor_references": [attributed.model_dump()],
+        }
+    }
+
+    repaired = bulletin_writer_module._deterministic_residual_repair(
+        draft,
+        sentence_plan=[plan],
+        source_items=source_items,
+        target_draft_ids=["plan-000"],
+        issues=[
+            "plan-000: bulletin writer sentence plan-000 contains unsupported "
+            "synthesis tokens: hỏi, khác, không, liệu"
+        ],
+    )
+
+    assert "hỏi liệu" not in repaired.sentences[0].text
+    assert "Thôi" in repaired.sentences[0].text
+    assert "kè táu" in repaired.sentences[0].text

@@ -1,0 +1,35 @@
+project: stt-product-development
+status: active
+updated_at: 2026-08-14
+objective: >-
+  Hoan thien Analysis/Visualization theo mot LLM call va prompt toi uu, sau do
+  review/audit toan bo, chuan hoa clone-run-release, push Git va tiep tuc phat
+  trien cac nang luc ho tro dieu tra/trinh sat theo quality gate.
+current_phase: analysis_v13_integration_security
+requirements:
+  - one_llm_call_over_complete_transcript
+  - tolerant_partial_structured_output
+  - visualization_creates_no_new_facts
+  - real_task_replay_and_runtime_verification
+  - full_repository_review_and_audit
+  - clean_machine_clone_setup_smoke
+  - gated_git_commit_and_push
+  - research_backed_product_capability_roadmap
+evaluation:
+  replay_task_ids:
+    - 84c115af-c025-4d0e-b0ef-cf2d4b099cc6
+    - d59205bd-7955-4143-a721-3cb40ca4ba7c
+    - cd6f85d0-ac0a-438d-86b1-a1df43d0767d
+    - c5923a81-3c7a-4e9c-aa06-29ef2c8dd887
+  primary_gates:
+    - exactly_one_generation_call
+    - complete_transcript_present_in_prompt
+    - optional_categories_never_reject_usable_output
+    - partial_and_plain_text_results_render
+    - frontend_tests_and_production_build_pass
+    - persisted_real_tasks_complete
+next_actions:
+  - remediate_analysis_integration_security_and_long_context_p1
+  - restart_api_and_worker_on_v13
+  - run_authenticated_persistence_cache_and_ui_e2e
+  - remediate_release_dependency_and_manifest_blockers

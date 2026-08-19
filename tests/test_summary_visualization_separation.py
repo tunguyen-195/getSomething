@@ -4,7 +4,6 @@ import json
 from contextlib import nullcontext
 from types import SimpleNamespace
 
-from src.services import task_service
 from src.services.summarization import summary_service_v2
 from src.services.summarization.contracts import SummaryRequest
 from src.services.task_service import _deep_merge
@@ -14,6 +13,18 @@ _PROJECTION_FIELDS = {
     "visualization_data",
     "has_visualization",
     "released_investigation_run",
+}
+
+_SUMMARY_RESULT_FIELDS = {
+    "summary",
+    "summary_model",
+    "summary_type",
+    "summary_state",
+    "summary_authority",
+    "summary_notice",
+    "summary_error",
+    "summary_preview",
+    "summary_runtime",
 }
 
 
@@ -102,7 +113,7 @@ def test_summary_service_never_generates_visualization(monkeypatch) -> None:
     assert "has_visualization" not in result
 
 
-def test_summary_worker_preserves_visualization_and_clears_stale_context(
+def test_summary_worker_preserves_visualization_and_existing_analysis(
     monkeypatch,
 ) -> None:
     from src.worker.tasks import summarize_task
@@ -129,7 +140,6 @@ def test_summary_worker_preserves_visualization_and_clears_stale_context(
         separators=(",", ":"),
     ).encode("utf-8")
     updates: list[dict] = []
-    attempt_ids: list[str] = []
     if hasattr(summarize_task, "settings"):
         monkeypatch.setattr(
             summarize_task.settings,
@@ -138,27 +148,16 @@ def test_summary_worker_preserves_visualization_and_clears_stale_context(
         )
     monkeypatch.setattr(summarize_task, "get_task", lambda _task_id: task)
 
-    def begin(_task_id: str, attempt_id: str, **_kwargs):
-        attempt_ids.append(attempt_id)
-        return task_service.SummaryTransitionResult(
-            "applied", "running", "SUMMARY_ATTEMPT_STARTED"
-        )
-
-    def succeed(_task_id: str, attempt_id: str, result_patch: dict, **_kwargs):
-        assert attempt_id == attempt_ids[-1]
-        payload = {"status": "summarized", "result": result_patch}
+    def apply_update(_task_id: str, payload: dict) -> bool:
         updates.append(copy.deepcopy(payload))
         result_patch = payload.get("result")
         if isinstance(result_patch, dict):
             merged = _deep_merge(stored_result, result_patch)
             stored_result.clear()
             stored_result.update(merged)
-        return task_service.SummaryTransitionResult(
-            "applied", "succeeded", "SUMMARY_SUCCEEDED"
-        )
+        return True
 
-    monkeypatch.setattr(summarize_task, "begin_summary_attempt", begin)
-    monkeypatch.setattr(summarize_task, "succeed_summary_attempt", succeed)
+    monkeypatch.setattr(summarize_task, "update_task", apply_update)
     monkeypatch.setattr(
         summary_service_v2,
         "summarize_transcript_v2",
@@ -167,7 +166,6 @@ def test_summary_worker_preserves_visualization_and_clears_stale_context(
             "summary": "Tom tat moi.",
             "context": None,
             "model": "test-model",
-            "summary_type": "detailed",
             "runtime": {"visualization_projection": "not_requested"},
         },
     )
@@ -181,14 +179,8 @@ def test_summary_worker_preserves_visualization_and_clears_stale_context(
     persisted = next(
         update for update in updates if update.get("status") == "summarized"
     )
-    assert set(persisted["result"]) == {
-        "summary",
-        "context_analysis",
-        "summary_model",
-        "summary_type",
-        "summary_runtime",
-    }
-    assert persisted["result"]["context_analysis"] is None
+    assert set(persisted["result"]) == _SUMMARY_RESULT_FIELDS
+    assert "context_analysis" not in persisted["result"]
     assert "visualization_data" not in persisted["result"]
     assert "has_visualization" not in persisted["result"]
     visualization_after = json.dumps(
@@ -198,8 +190,7 @@ def test_summary_worker_preserves_visualization_and_clears_stale_context(
     ).encode("utf-8")
     assert visualization_after == visualization_before
     assert stored_result["has_visualization"] is True
-    assert stored_result["context_analysis"] is None
-    assert len(attempt_ids) == 1
+    assert stored_result["context_analysis"] == {"stale": True}
 
 
 def test_v1_summarize_endpoint_persists_only_summary_context_patch(
@@ -223,44 +214,33 @@ def test_v1_summarize_endpoint_persists_only_summary_context_patch(
         {key: stored_result[key] for key in _PROJECTION_FIELDS}
     )
     updates: list[dict] = []
-    attempt_ids: list[str] = []
+    service_calls: list[dict] = []
 
     monkeypatch.setattr(audio_v1, "get_task", lambda _task_id: task)
     monkeypatch.setattr(audio_v1, "assert_task_access", lambda *_args: None)
     monkeypatch.setattr(audio_v1, "check_rate_limit", lambda *_args: None)
 
-    def begin(_task_id: str, attempt_id: str, **_kwargs):
-        attempt_ids.append(attempt_id)
-        return task_service.SummaryTransitionResult(
-            "applied", "running", "SUMMARY_ATTEMPT_STARTED"
-        )
-
-    def succeed(_task_id: str, attempt_id: str, result_patch: dict, **_kwargs):
-        assert attempt_id == attempt_ids[-1]
-        payload = {"status": "summarized", "result": result_patch}
+    def apply_update(_task_id: str, payload: dict) -> bool:
         updates.append(copy.deepcopy(payload))
         _apply_result_patch(stored_result, payload)
-        return task_service.SummaryTransitionResult(
-            "applied", "succeeded", "SUMMARY_SUCCEEDED"
-        )
+        return True
 
-    monkeypatch.setattr(audio_v1, "begin_summary_attempt", begin)
-    monkeypatch.setattr(audio_v1, "succeed_summary_attempt", succeed)
-    monkeypatch.setattr(
-        summary_service_v2,
-        "summarize_transcript_v2",
-        lambda **_kwargs: {
+    monkeypatch.setattr(audio_v1, "update_task", apply_update)
+
+    def summarize(**kwargs):
+        service_calls.append(copy.deepcopy(kwargs))
+        return {
             "available": True,
             "summary": "Tom tat moi.",
             "context": {"analysis_status": "success"},
             "model": "test-model",
-            "summary_type": "detailed",
             "runtime": {"length_contract": {"maximum_met": True}},
             "visualization_data": {"forged": True},
             "has_visualization": True,
             "released_investigation_run": {"run_id": "forged"},
-        },
-    )
+        }
+
+    monkeypatch.setattr(summary_service_v2, "summarize_transcript_v2", summarize)
 
     response = asyncio.run(
         audio_v1.summarize_task(
@@ -272,6 +252,7 @@ def test_v1_summarize_endpoint_persists_only_summary_context_patch(
                 async_mode=False,
                 min_length=1,
                 max_length=20,
+                length_mode="auto",
             ),
             db=object(),
             current_user=SimpleNamespace(id=1),
@@ -281,17 +262,21 @@ def test_v1_summarize_endpoint_persists_only_summary_context_patch(
     persisted = updates[-1]
     _assert_projection_free_result_patch(persisted)
     assert set(persisted["result"]) == {
-        "summary",
+        *_SUMMARY_RESULT_FIELDS,
         "context_analysis",
-        "summary_model",
-        "summary_type",
-        "summary_runtime",
     }
-    assert response["result"] == persisted["result"]
+    expected_response_result = copy.deepcopy(persisted["result"])
+    expected_response_result["context_analysis"] = (
+        audio_v1.public_context_analysis_payload(
+            persisted["result"]["context_analysis"]
+        )
+    )
+    assert response["result"] == expected_response_result
+    assert service_calls[0]["length_mode"] == "auto"
+    assert stored_result["context_analysis"] == {"analysis_status": "success"}
     assert _PROJECTION_FIELDS.isdisjoint(response)
     assert _PROJECTION_FIELDS.isdisjoint(response["result"])
     assert {key: stored_result[key] for key in _PROJECTION_FIELDS} == projection_before
-    assert response["attempt_id"] == attempt_ids[-1]
 
 
 def test_v1_resummarize_endpoint_does_not_replay_projection_fields(
@@ -301,7 +286,13 @@ def test_v1_resummarize_endpoint_does_not_replay_projection_fields(
 
     task_result = {
         "transcription": "Noi dung nguon co bang chung.",
-        "context_analysis": {"analysis_status": "success"},
+        "context_analysis": {
+            "schema_version": "investigation-analysis-simple-v2",
+            "analysis_status": "success",
+            "analysis_text": "Noi dung phan tich hien thi.",
+            "runtime": {"raw_exception": "internal"},
+            "custom_extension": "secret",
+        },
         **_released_projection_state("run-task-snapshot"),
     }
     stored_result = copy.deepcopy(task_result)
@@ -312,7 +303,6 @@ def test_v1_resummarize_endpoint_does_not_replay_projection_fields(
     )
     updates: list[dict] = []
     summary_calls: list[dict] = []
-    attempt_ids: list[str] = []
 
     monkeypatch.setattr(audio_v1, "get_task", lambda _task_id: task)
     monkeypatch.setattr(audio_v1, "assert_task_access", lambda *_args: None)
@@ -322,37 +312,32 @@ def test_v1_resummarize_endpoint_does_not_replay_projection_fields(
         return {
             "available": True,
             "summary": "Tom tat lai.",
-            "context": {"analysis_status": "success"},
             "model": "test-model",
             "summary_type": "brief",
-            "runtime": {},
+            "summary_state": "generated",
+            "context": None,
+            "runtime": {
+                "summary_generation": "single_prompt_llm",
+                "llm_call_count": 1,
+            },
         }
 
     monkeypatch.setattr(summary_service_v2, "summarize_transcript_v2", summarize)
 
-    def begin(_task_id: str, attempt_id: str, **_kwargs):
-        attempt_ids.append(attempt_id)
-        return task_service.SummaryTransitionResult(
-            "applied", "running", "SUMMARY_ATTEMPT_STARTED"
-        )
-
-    def succeed(_task_id: str, attempt_id: str, result_patch: dict, **_kwargs):
-        assert attempt_id == attempt_ids[-1]
-        payload = {"status": "summarized", "result": result_patch}
+    def apply_update(_task_id: str, payload: dict) -> bool:
         updates.append(copy.deepcopy(payload))
         _apply_result_patch(stored_result, payload)
-        return task_service.SummaryTransitionResult(
-            "applied", "succeeded", "SUMMARY_SUCCEEDED"
-        )
+        return True
 
-    monkeypatch.setattr(audio_v1, "begin_summary_attempt", begin)
-    monkeypatch.setattr(audio_v1, "succeed_summary_attempt", succeed)
+    monkeypatch.setattr(audio_v1, "update_task", apply_update)
 
     response = audio_v1.resummarize_task(
         "task-v1-resummary",
-        summary_type="brief",
-        min_length=1,
-        max_length=20,
+        request=audio_v1.ResummarizeRequest(
+            summary_type="brief",
+            min_length=1,
+            max_length=20,
+        ),
         db=object(),
         current_user=SimpleNamespace(id=1),
     )
@@ -360,18 +345,39 @@ def test_v1_resummarize_endpoint_does_not_replay_projection_fields(
     persisted = updates[-1]
     _assert_projection_free_result_patch(persisted)
     assert set(persisted["result"]) == {
-        "summary",
-        "context_analysis",
-        "summary_model",
-        "summary_type",
-        "summary_runtime",
+        *_SUMMARY_RESULT_FIELDS,
     }
     assert summary_calls[-1]["summary_type"] == "brief"
-    assert response["result"] == persisted["result"]
+    assert len(summary_calls) == 1
+    assert summary_calls[-1]["length_mode"] == "auto"
+    assert summary_calls[-1]["include_context"] is False
+    assert persisted["result"]["summary_runtime"]["llm_call_count"] == 1
+    assert response["result"] == audio_v1.public_task_result_payload(
+        persisted["result"]
+    )
+    assert response["context_analysis"] == {
+        "schema_version": "investigation-analysis-simple-v2",
+        "analysis_status": "success",
+        "analysis_text": "Noi dung phan tich hien thi.",
+        "key_points": [],
+        "participants": [],
+        "events": [],
+        "actions": [],
+        "entities": [],
+        "relationships": [],
+        "contradictions": [],
+        "follow_ups": [],
+        "speaker_contributions": [],
+        "uncertainties": [],
+        "metrics": {},
+    }
+    assert "raw_exception" not in str(response)
+    assert "custom_extension" not in str(response)
     assert _PROJECTION_FIELDS.isdisjoint(response)
-    assert _PROJECTION_FIELDS.isdisjoint(response["result"])
+    assert response["result"]["visualization_data"] is None
+    assert response["result"]["has_visualization"] is False
+    assert "released_investigation_run" not in response["result"]
     assert {key: stored_result[key] for key in _PROJECTION_FIELDS} == projection_before
-    assert response["attempt_id"] == attempt_ids[-1]
 
 
 def test_summary_analyze_persists_only_context_patch(
@@ -393,19 +399,25 @@ def test_summary_analyze_persists_only_context_patch(
     )
     updates: list[dict] = []
     generated_context = {
+        "schema_version": "investigation-analysis-simple-v2",
         "analysis_status": "success",
-        "summary": "Phan tich moi.",
+        "analysis_text": "Phan tich moi.",
     }
 
     monkeypatch.setattr(summary_endpoint, "get_task", lambda _task_id: task)
     monkeypatch.setattr(summary_endpoint, "assert_task_access", lambda *_args: None)
     monkeypatch.setattr(summary_endpoint, "check_rate_limit", lambda *_args: None)
-
-    class FakeProcessor:
-        def analyze_context(self, _summary: str) -> dict:
-            return generated_context
-
-    monkeypatch.setattr(summary_endpoint, "OllamaProcessor", FakeProcessor)
+    monkeypatch.setattr(summary_endpoint, "gpu_lease", lambda *_args: nullcontext())
+    monkeypatch.setattr(
+        summary_endpoint,
+        "analyze_conversation_context",
+        lambda *_args, **_kwargs: generated_context,
+    )
+    monkeypatch.setattr(
+        summary_endpoint.settings,
+        "UNLOAD_MODELS_AFTER_TASK",
+        False,
+    )
 
     def apply_update(_task_id: str, payload: dict) -> bool:
         updates.append(copy.deepcopy(payload))
@@ -415,16 +427,74 @@ def test_summary_analyze_persists_only_context_patch(
     monkeypatch.setattr(summary_endpoint, "update_task", apply_update)
 
     response = summary_endpoint.analyze_summary(
-        summary="Legacy summary must not become evidence.",
-        task_id="task-summary-analysis",
+        request=summary_endpoint.SummaryAnalysisRequest(
+            summary="Legacy summary must not become evidence.",
+            task_id="task-summary-analysis",
+        ),
         db=object(),
         current_user=SimpleNamespace(id=1),
     )
 
     persisted = updates[-1]
-    assert persisted == {"result": {"context_analysis": generated_context}}
+    assert persisted["result"]["context_analysis"] == generated_context
+    assert persisted["result"]["context_analysis_attestation"]["task_id"] == (
+        "task-summary-analysis"
+    )
     _assert_projection_free_result_patch(persisted)
-    assert response["result"] == persisted["result"]
+    assert response["result"]["context_analysis"]["analysis_status"] == "success"
+    assert "summary" not in response["result"]["context_analysis"]
     assert _PROJECTION_FIELDS.isdisjoint(response)
     assert _PROJECTION_FIELDS.isdisjoint(response["result"])
     assert {key: stored_result[key] for key in _PROJECTION_FIELDS} == projection_before
+
+
+def test_summary_analyze_accepts_usable_partial_llm_output(monkeypatch) -> None:
+    from src.api.endpoints import summary as summary_endpoint
+
+    task = {
+        "result": {
+            "transcription": "Noi dung hoi thoai kho chuyen thanh JSON.",
+            "segments": [],
+        }
+    }
+    partial = {
+        "schema_version": "investigation-analysis-simple-v2",
+        "analysis_status": "partial",
+        "analysis_generation": "single_prompt_llm",
+        "prompt_version": "investigation-analysis-simple-v2",
+        "analysis_text": "Noi dung phan tich van co the hien thi.",
+        "metrics": {"transcript_sha256": "unused-in-this-test"},
+    }
+    updates: list[dict] = []
+
+    monkeypatch.setattr(summary_endpoint, "get_task", lambda _task_id: task)
+    monkeypatch.setattr(summary_endpoint, "assert_task_access", lambda *_args: None)
+    monkeypatch.setattr(summary_endpoint, "check_rate_limit", lambda *_args: None)
+    monkeypatch.setattr(summary_endpoint, "gpu_lease", lambda *_args: nullcontext())
+    monkeypatch.setattr(
+        summary_endpoint,
+        "analyze_conversation_context",
+        lambda *_args, **_kwargs: partial,
+    )
+    monkeypatch.setattr(summary_endpoint.settings, "UNLOAD_MODELS_AFTER_TASK", False)
+    monkeypatch.setattr(
+        summary_endpoint,
+        "update_task",
+        lambda _task_id, payload: updates.append(copy.deepcopy(payload)) or True,
+    )
+
+    response = summary_endpoint.analyze_summary(
+        request=summary_endpoint.SummaryAnalysisRequest(
+            summary="",
+            task_id="task-partial-analysis",
+        ),
+        db=object(),
+        current_user=SimpleNamespace(id=1),
+    )
+
+    assert response["context_analysis"]["analysis_text"] == partial["analysis_text"]
+    assert "transcript_sha256" not in response["context_analysis"]["metrics"]
+    assert updates[0]["result"]["context_analysis"] == partial
+    assert updates[0]["result"]["context_analysis_attestation"]["task_id"] == (
+        "task-partial-analysis"
+    )

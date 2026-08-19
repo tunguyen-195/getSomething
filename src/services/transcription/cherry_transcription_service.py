@@ -5,10 +5,11 @@ Integrates Cherry Core ASR and Diarization into SpeechToInformation.
 import logging
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 from src.cherry_core.domain.entities import Transcript, SpeakerSegment
 
 logger = logging.getLogger(__name__)
+
 
 class CherryTranscriberService:
     def __init__(self):
@@ -51,11 +52,18 @@ class CherryTranscriberService:
         logger.info(f"[CHERRY_TRANSCRIBE] ASR complete. Text length: {len(transcript_entity.text)}")
 
         # 2. Diarization
-        speakers_map = {}
-        num_speakers = 1
+        num_speakers = None
         diarization_time = 0
+        has_diarization = False
+        diarization_status = "disabled"
+        diarization_fallback_reason = None
+        speaker_provenance = {
+            "provider": "none",
+            "assignment_method": "none",
+        }
 
         if enable_diarization:
+            diarization_status = "unavailable"
             dia_start = time.time()
             try:
                 segments = self.diarizer.diarize(str(audio_path))
@@ -64,19 +72,34 @@ class CherryTranscriberService:
                 # Enhance transcript segments with speaker based on overlap
                 self._merge_speakers(transcript_entity, segments)
 
-                # Count speakers
-                speakers_found = set()
-                for seg in transcript_entity.segments:
-                    if 'speaker' in seg:
-                        speakers_found.add(seg['speaker'])
-
-                num_speakers = len(speakers_found) if speakers_found else 1
+                speakers_found = {segment.speaker_id for segment in segments}
                 diarization_time = time.time() - dia_start
-                logger.info(f"[CHERRY_TRANSCRIBE] Diarization complete. Speakers: {num_speakers}")
+                speaker_provenance = self.diarizer.provenance()
+                if speakers_found:
+                    num_speakers = len(speakers_found)
+                    has_diarization = True
+                    diarization_status = "success"
+                    logger.info(
+                        "[CHERRY_TRANSCRIBE] Diarization complete. Speakers: %s",
+                        num_speakers,
+                    )
+                else:
+                    diarization_status = "degraded"
+                    diarization_fallback_reason = "pyannote_returned_no_speaker_turns"
+                    logger.warning("[CHERRY_TRANSCRIBE] Pyannote returned no speaker turns")
 
             except Exception as e:
                 logger.error(f"[CHERRY_TRANSCRIBE] Diarization failed: {e}")
-                # Continue without diarization
+                diarization_time = time.time() - dia_start
+                diarization_fallback_reason = f"{type(e).__name__}: {e}"[:500]
+                provenance = getattr(self.diarizer, "provenance", None)
+                if callable(provenance):
+                    speaker_provenance = provenance()
+                speaker_provenance["load_error"] = diarization_fallback_reason
+                if not isinstance(e, FileNotFoundError) and speaker_provenance.get(
+                    "artifact_verified"
+                ):
+                    diarization_status = "failed"
 
         # 3. Format Output compatible with existing system
         # Existing system expects segments to be list of dicts: {'start', 'end', 'text', 'speaker', ...}
@@ -101,7 +124,13 @@ class CherryTranscriberService:
             "duration": self._estim_duration(result_segments), # Estimate if not provided
             "processing_time": total_time,
             "diarization_time": diarization_time,
-            "model_used": model_type
+            "model_used": model_type,
+            "has_diarization": has_diarization,
+            "diarization_status": diarization_status,
+            "diarization_method_used": "pyannote" if has_diarization else None,
+            "diarization_fallback_reason": diarization_fallback_reason,
+            "degraded": enable_diarization and diarization_status != "success",
+            "speaker_provenance": speaker_provenance,
         }
 
     def _merge_speakers(self, transcript: Transcript, diarization_segments: List[SpeakerSegment]):
@@ -130,17 +159,41 @@ class CherryTranscriberService:
                         best_overlap = ratio
                         best_speaker = d_seg.speaker_id
 
-            if best_speaker and best_overlap > 0.3: # Threshold
+            if best_speaker and best_overlap > 0.3:  # Threshold
                 t_seg['speaker'] = best_speaker
 
     def _estim_duration(self, segments):
-        if not segments: return 0.0
+        if not segments:
+            return 0.0
         return segments[-1]['end']
+
+    def unload(self) -> None:
+        """Release every optional Cherry model before another GPU stage."""
+
+        for adapter in (
+            self.whisper_adapter,
+            self.phowhisper_adapter,
+            self.diarizer,
+        ):
+            unload = getattr(adapter, "unload", None)
+            if callable(unload):
+                unload()
+
 
 # Singleton access
 _service = None
+
+
 def get_cherry_transcriber():
     global _service
     if _service is None:
         _service = CherryTranscriberService()
     return _service
+
+
+def unload_cherry_transcriber() -> None:
+    """Unload an existing singleton without instantiating a new service."""
+
+    global _service
+    if _service is not None:
+        _service.unload()

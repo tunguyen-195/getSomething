@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:speech-to-information:offline-bundle:v1",
+  "title": "Offline benchmark-candidate bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "bundle"],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "state",
+        "target_profile",
+        "required_roles",
+        "components"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"
+        },
+        "state": {
+          "const": "benchmark_candidate"
+        },
+        "target_profile": {
+          "$ref": "#/$defs/identifier"
+        },
+        "required_roles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/role"
+          }
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/component"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "role": {
+      "enum": [
+        "app-source-bundle",
+        "asr-model",
+        "database-runtime",
+        "diarization-model",
+        "ffmpeg-runtime",
+        "frontend-package-cache",
+        "license-bundle",
+        "llm-model",
+        "llm-runtime",
+        "node-runtime",
+        "os-prerequisites",
+        "prompt-schema-bundle",
+        "python-runtime",
+        "python-wheelhouse",
+        "queue-runtime",
+        "startup-profile"
+      ]
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "size_bytes", "sha256"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?![A-Za-z]:)(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role", "kind", "files"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "role": {
+          "$ref": "#/$defs/role"
+        },
+        "kind": {
+          "enum": ["file_set", "model_manifest", "runtime_manifest"]
+        },
+        "subject_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/file"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": ["model_manifest", "runtime_manifest"]
+              }
+            }
+          },
+          "then": {
+            "required": ["subject_id"],
+            "properties": {
+              "files": {
+                "maxItems": 1
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "required": ["subject_id"]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

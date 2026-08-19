@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "manifest_version": "1.0.0",
+  "model": {
+    "id": "qwen.qwen3-8b-q4_k_m",
+    "version": "7c41481f57cb95916b40956ab2f0b139b296d974",
+    "relative_path": "qwen3",
+    "tasks": ["summary", "analysis", "reasoning"],
+    "profiles": ["offline", "production-gpu"],
+    "artifact_size_bytes": 5027802879,
+    "source": {
+      "provider": "huggingface",
+      "repository": "Qwen/Qwen3-8B-GGUF",
+      "revision": "7c41481f57cb95916b40956ab2f0b139b296d974"
+    },
+    "license": {
+      "spdx": "Apache-2.0",
+      "name": "Apache License 2.0",
+      "url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/blob/7c41481f57cb95916b40956ab2f0b139b296d974/LICENSE"
+    },
+    "backend": {
+      "engine": "llama.cpp",
+      "format": "gguf",
+      "quantization": "Q4_K_M"
+    },
+    "files": [
+      {
+        "path": "Qwen3-8B-Q4_K_M.gguf",
+        "size_bytes": 5027783488,
+        "sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+        "required": true
+      },
+      {
+        "path": "LICENSE",
+        "size_bytes": 11544,
+        "sha256": "5de36594c10839788a8c589443a8ef9d8b8d17c65a1b5807206ae037fc36c6bd",
+        "required": true
+      },
+      {
+        "path": "README.md",
+        "size_bytes": 7577,
+        "sha256": "913fd918b4afb4511accca0874f701248b024013e804fa7a463639ead74e4dcb",
+        "required": true
+      },
+      {
+        "path": "params",
+        "size_bytes": 270,
+        "sha256": "52610851456960402dc4ce4966dbea0eb83bb1d72c3eeeaefaafe09b4690ad9c",
+        "required": true
+      }
+    ]
+  }
+}

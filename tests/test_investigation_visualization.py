@@ -299,6 +299,64 @@ def _released_visualization_payload() -> dict[str, object]:
     ).model_dump(mode="json", exclude_none=True)
 
 
+def _semantic_stored_release_and_visualization() -> tuple[
+    dict[str, object], dict[str, object]
+]:
+    released_run = _released_shaped_run().model_dump(mode="json", exclude_none=True)
+    source_revision_id = "source-revision-1"
+    evidence = []
+    for item in released_run["ledger"]["evidence"]:
+        if item["evidence_id"] not in {"ev-a", "ev-b"}:
+            continue
+        evidence.append(
+            {
+                key: item[key]
+                for key in (
+                    "evidence_id",
+                    "segment_id",
+                    "quote_exact",
+                    "quote_sha256",
+                    "source_sha256",
+                    "start_seconds",
+                    "end_seconds",
+                    "speaker_id",
+                )
+                if key in item
+            }
+            | {"source_revision_id": source_revision_id}
+        )
+    display_text = released_run["projections"]["summary"]["narrative"]["overview"][
+        0
+    ]["text"]
+    payload: dict[str, object] = {
+        "schema_version": "investigation-visualization-v1",
+        "authority": "released_investigation_run",
+        "run_id": "run-released-1",
+        "source_revision_id": source_revision_id,
+        "release_subject_sha256": sha256_canonical_json(released_run),
+        "nodes": [
+            {
+                "id": "claim-released",
+                "kind": "claim",
+                "label": display_text,
+                "type": "event.meeting",
+                "epistemic_type": "source_attributed",
+                "source_revision_id": source_revision_id,
+                "claim_refs": ["claim-released"],
+                "evidence": evidence,
+            }
+        ],
+        "edges": [],
+        "timeline": [],
+        "main_events": [],
+        "extracted_entities": [],
+    }
+    artifact = InvestigationVisualization.model_validate(
+        {**payload, "content_hash": sha256_canonical_json(payload)}
+    ).model_dump(mode="json", exclude_none=True)
+    return released_run, artifact
+
+
 def test_model_construct_typed_run_cannot_forge_release_authority() -> None:
     forged = _released_shaped_run()
 
@@ -339,7 +397,7 @@ def test_visualization_contract_rejects_content_tampering() -> None:
     payload = _released_visualization_payload()
     payload["nodes"] = [
         {
-            "id": "tampered-node",
+            "id": "claim-1",
             "kind": "claim",
             "label": "tampered",
             "type": "event",
@@ -398,6 +456,76 @@ def test_visualization_contract_rejects_reversed_time_bounds() -> None:
         )
 
 
+def test_visualization_contract_rejects_nested_provenance_forgery() -> None:
+    released_run, artifact = _semantic_stored_release_and_visualization()
+    del released_run
+    artifact["nodes"][0]["source_revision_id"] = "source-other"
+    payload = copy.deepcopy(artifact)
+    payload.pop("content_hash")
+    artifact["content_hash"] = sha256_canonical_json(payload)
+
+    with pytest.raises(ValidationError, match="top-level source revision"):
+        InvestigationVisualization.model_validate(artifact)
+
+
+def test_visualization_contract_rejects_quote_hash_and_graph_identity_errors() -> None:
+    released_run, artifact = _semantic_stored_release_and_visualization()
+    del released_run
+    evidence = artifact["nodes"][0]["evidence"][0]
+    evidence["quote_exact"] = "Noi dung bi thay doi."
+    payload = copy.deepcopy(artifact)
+    payload.pop("content_hash")
+    artifact["content_hash"] = sha256_canonical_json(payload)
+    with pytest.raises(ValidationError, match="quote_sha256"):
+        InvestigationVisualization.model_validate(artifact)
+
+    _, artifact = _semantic_stored_release_and_visualization()
+    artifact["nodes"].append(copy.deepcopy(artifact["nodes"][0]))
+    payload = copy.deepcopy(artifact)
+    payload.pop("content_hash")
+    artifact["content_hash"] = sha256_canonical_json(payload)
+    with pytest.raises(ValidationError, match="node IDs must be unique"):
+        InvestigationVisualization.model_validate(artifact)
+
+    _, artifact = _semantic_stored_release_and_visualization()
+    artifact["edges"] = [
+        {
+            "id": "edge-dangling",
+            "source": "claim-released",
+            "target": "node-missing",
+            "label": "dangling",
+            "type": "relation",
+            "epistemic_type": "source_attributed",
+            "source_revision_id": "source-revision-1",
+            "claim_refs": ["claim-released"],
+            "evidence": artifact["nodes"][0]["evidence"],
+        }
+    ]
+    payload = copy.deepcopy(artifact)
+    payload.pop("content_hash")
+    artifact["content_hash"] = sha256_canonical_json(payload)
+    with pytest.raises(ValidationError, match="edge endpoints"):
+        InvestigationVisualization.model_validate(artifact)
+
+    _, artifact = _semantic_stored_release_and_visualization()
+    concept_node = {
+        "id": "concept-z",
+        "kind": "concept",
+        "label": "Concept Z",
+        "type": "person",
+        "epistemic_type": "source_attributed",
+        "source_revision_id": "source-revision-1",
+        "claim_refs": ["claim-released"],
+        "evidence": artifact["nodes"][0]["evidence"],
+    }
+    artifact["nodes"] = [concept_node, artifact["nodes"][0]]
+    payload = copy.deepcopy(artifact)
+    payload.pop("content_hash")
+    artifact["content_hash"] = sha256_canonical_json(payload)
+    with pytest.raises(ValidationError, match="canonical sorted order"):
+        InvestigationVisualization.model_validate(artifact)
+
+
 def test_visualization_extraction_requires_matching_active_run_identity() -> None:
     artifact = _released_visualization_payload()
     active_identity = _stored_release_identity()
@@ -453,13 +581,58 @@ def test_active_visualization_hides_standalone_and_stale_artifacts() -> None:
         "released_investigation_run": _stored_release_identity(),
         "visualization_data": artifact,
     }
-    assert extract_active_visualization_payload(matching) == artifact
+    assert extract_active_visualization_payload(matching) is None
+
+    released_run, semantic_artifact = _semantic_stored_release_and_visualization()
+    assert (
+        extract_active_visualization_payload(
+            {
+                "released_investigation_run": released_run,
+                "visualization_data": semantic_artifact,
+            }
+        )
+        == semantic_artifact
+    )
 
     stale = copy.deepcopy(matching)
     stale["released_investigation_run"] = _stored_release_identity(
         run_id="run-new"
     )
     assert extract_active_visualization_payload(stale) is None
+
+
+def test_rehashed_visualization_must_match_released_run_semantics() -> None:
+    released_run, artifact = _semantic_stored_release_and_visualization()
+    artifact["nodes"][0]["label"] = "Noi dung bi gia mao."
+    payload = copy.deepcopy(artifact)
+    payload.pop("content_hash")
+    artifact["content_hash"] = sha256_canonical_json(payload)
+
+    assert (
+        extract_active_visualization_payload(
+            {
+                "released_investigation_run": released_run,
+                "visualization_data": artifact,
+            }
+        )
+        is None
+    )
+
+    released_run, artifact = _semantic_stored_release_and_visualization()
+    artifact["nodes"][0]["id"] = "hypothesis-forged"
+    artifact["nodes"][0]["claim_refs"] = ["hypothesis-forged"]
+    payload = copy.deepcopy(artifact)
+    payload.pop("content_hash")
+    artifact["content_hash"] = sha256_canonical_json(payload)
+    assert (
+        extract_active_visualization_payload(
+            {
+                "released_investigation_run": released_run,
+                "visualization_data": artifact,
+            }
+        )
+        is None
+    )
 
 
 def test_changing_active_release_identity_clears_stale_visualization() -> None:

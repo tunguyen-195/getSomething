@@ -1,0 +1,238 @@
+@startuml Summarize Workflow Sequence Diagram
+
+title Transcript Summarization with Context Analysis
+
+actor User
+participant "React UI" as UI
+participant "FastAPI\nGateway" as API
+participant "Redis\nQueue" as Redis
+participant "Celery\nWorker" as Worker
+participant "LLM\nManager" as LLM
+participant "Context\nService" as Context
+database "PostgreSQL" as DB
+
+== 1. User Initiates Summarization ==
+
+User -> UI: Click "Start Summary"
+activate UI
+
+UI -> UI: Open Summary Dialog\nSelect options:\n- Model (gemma2:9b)\n- Type (detailed/investigation)\n- Include context (yes/no)
+
+User -> UI: Configure & Submit
+
+UI -> API: POST /api/v1/audio/v2/summarize/{task_id}\nBody: {\n  model_name: "gemma2:9b",\n  summary_type: "detailed",\n  include_context: true\n}
+activate API
+
+API -> DB: Get Task.result to extract transcript
+activate DB
+DB --> API: Return task.result.transcription
+deactivate DB
+
+alt Transcript not found
+  API --> UI: Error 400: {\n  detail: "No transcript found.\n  Please transcribe first."\n}
+  UI -> User: Show error notification
+else Transcript exists
+
+  API -> Redis: Enqueue summarize_task(task_id, params)
+  activate Redis
+  Redis --> API: Task queued
+  deactivate Redis
+
+  API -> DB: Update task.status = "summarizing"
+
+  API --> UI: Return {\n  task_id: "...",\n  status: "summarizing",\n  celery_task_id: "..."\n}
+  deactivate API
+
+  UI -> UI: Start polling status\n(every 2 seconds)
+
+end
+
+== 2. Worker Processes Summarization ==
+
+Redis -> Worker: Assign summarize_task
+activate Worker
+
+Worker -> DB: Get transcript from Task.result
+activate DB
+DB --> Worker: Return transcript text
+deactivate DB
+
+alt Include Context = true
+
+  == 3. Context Analysis (Multi-layer) ==
+
+  Worker -> Context: analyze_context(transcript)
+  activate Context
+
+  === Layer 1: Entity Extraction ===
+
+  Context -> LLM: Extract entities from transcript
+  activate LLM
+
+  LLM -> LLM: Analyze text for:\n- People (names, roles)\n- Locations (addresses, places)\n- Organizations\n- Times, dates\n- Money, values
+
+  LLM --> Context: Return entities[]:\n[\n  {type: "person", name: "Khách A", role: "customer"},\n  {type: "location", name: "Khách sạn Hilton"},\n  {type: "money", value: 1500000, currency: "VND"},\n  ...\n]
+  deactivate LLM
+
+  === Layer 2: Relationship Mining ===
+
+  Context -> LLM: Extract relationships
+  activate LLM
+
+  LLM -> LLM: Analyze interactions:\n- Direct relationships\n- Hidden relationships\n- Influence mapping
+
+  LLM --> Context: Return relationships[]:\n[\n  {from: "Khách A", to: "Nhân viên B", type: "communicates"},\n  {from: "Khách A", to: "Phòng Deluxe", type: "transacts"},\n  ...\n]
+  deactivate LLM
+
+  === Layer 3: Action & Decision Tracking ===
+
+  Context -> LLM: Extract actions & decisions
+  activate LLM
+
+  LLM -> LLM: Identify:\n- Commitments\n- Offers\n- Decisions\n- Requests
+
+  LLM --> Context: Return actions[]:\n[\n  {type: "commitment", actor: "Khách A", \n   action: "thanh toán", value: "1.5M VNĐ"},\n  {type: "decision", actor: "Khách A", \n   action: "đặt phòng", object: "Deluxe 2 đêm"},\n  ...\n]
+  deactivate LLM
+
+  === Layer 4: Risk & Anomaly Detection ===
+
+  Context -> LLM: Detect anomalies & risks
+  activate LLM
+
+  LLM -> LLM: Check for:\n- Time contradictions\n- Evasion patterns\n- Suspicious language\n- Behavior changes
+
+  LLM --> Context: Return anomalies[]:\n[\n  {type: "time_contradiction", \n   description: "Mentioned yesterday but..."},\n  {type: "evasion", severity: "low", ...},\n  ...\n]
+  deactivate LLM
+
+  === Layer 5: Deep Insights ===
+
+  Context -> LLM: Generate insights
+  activate LLM
+
+  LLM -> LLM: Synthesize:\n- Key takeaways\n- Actionable intelligence\n- Recommendations\n- Missing information
+
+  LLM --> Context: Return insights[]:\n[\n  "Khách đặt phòng Deluxe 2 đêm (25-26/12)",\n  "Cam kết thanh toán đặt cọc 50%",\n  "Chưa có xác nhận bằng văn bản",\n  ...\n]
+  deactivate LLM
+
+  Context --> Worker: Return full context_analysis:\n{\n  entities: [...],\n  relationships: [...],\n  actions: [...],\n  anomalies: [...],\n  risks: [...],\n  insights: [...]\n}
+  deactivate Context
+
+end
+
+== 4. Generate Summary ==
+
+Worker -> Worker: Build prompt based on summary_type
+
+alt Summary Type = "brief"
+  Worker -> Worker: prompt = "Tóm tắt ngắn gọn (1-2 câu)..."
+
+else Summary Type = "detailed"
+  Worker -> Worker: prompt = "Tóm tắt chi tiết (50-200 từ):\n- Nội dung chính\n- Điểm quan trọng\n- Kết luận..."
+
+else Summary Type = "investigation"
+  Worker -> Worker: prompt = "Phân tích điều tra:\n- Sự kiện theo thời gian\n- Nhân vật và vai trò\n- Dấu hiệu bất thường\n- Bằng chứng\n- Điểm cần làm rõ..."
+
+end
+
+Worker -> LLM: generate(prompt, model="gemma2:9b",\n  temperature=0.7, max_tokens=1024)
+activate LLM
+
+LLM -> LLM: Run LLM inference:\n- Load model (lazy)\n- Generate text\n- Apply constraints
+
+LLM --> Worker: Return summary text:\n"Cuộc hội thoại giữa khách hàng A và\nnhân viên lễ tân về việc đặt phòng...\n[Chi tiết tóm tắt]"
+deactivate LLM
+
+== 5. Save Results ==
+
+Worker -> Worker: Build result update:\n{\n  summary: "...",\n  context_analysis: {...},\n  summary_model: "gemma2:9b",\n  summary_type: "detailed"\n}
+
+Worker -> DB: Get current Task.result
+activate DB
+DB --> Worker: Return current result
+deactivate DB
+
+Worker -> Worker: Merge new data into result:\nresult["summary"] = summary\nresult["context_analysis"] = {...}
+
+Worker -> DB: Update Task:\n- status = "summarized"\n- result = {merged result}\n- summary = summary text (direct field)
+activate DB
+DB --> Worker: Updated
+deactivate DB
+
+Worker --> Redis: Task completed
+deactivate Worker
+
+== 6. UI Polls & Displays Results ==
+
+loop Every 2 seconds
+
+  UI -> API: GET /api/v1/audio/v2/tasks/{task_id}/status
+  activate API
+
+  API -> DB: Get Task.result
+  activate DB
+  DB --> API: Return task with full result
+  deactivate DB
+
+  API --> UI: Return {\n  status: "summarized",\n  summary: "...",\n  context_analysis: {\n    entities: [...],\n    insights: [...],\n    ...\n  }\n}
+  deactivate API
+
+  alt Status = "summarized"
+    UI -> UI: Stop polling
+    UI -> UI: Display summary\nShow "View Summary" button\nShow entities, insights
+    UI -> User: Show success notification
+
+    User -> UI: Click "View Summary"
+    UI -> UI: Expand summary panel:\n- Summary text (+ Copy button)\n- Entities list\n- Insights list\n- Relationships (if available)
+  end
+
+end
+
+deactivate UI
+
+note over Context, LLM
+  **Multi-Layer Context Analysis**
+
+  Layer 1: Entity Extraction
+    → People, Locations, Organizations, Times, Money
+
+  Layer 2: Relationship Mining
+    → Direct & hidden relationships, influence mapping
+
+  Layer 3: Action & Decision Tracking
+    → Commitments, offers, decisions, requests
+
+  Layer 4: Risk & Anomaly Detection
+    → Time contradictions, evasion, suspicious language
+
+  Layer 5: Deep Insights
+    → Key takeaways, actionable intelligence, recommendations
+
+  This comprehensive analysis ensures
+  NO INFORMATION IS LOST!
+end note
+
+note over Worker
+  **Summary Types**
+
+  1. Brief (1-2 sentences, < 50 words)
+     - Quick overview
+     - Main point only
+
+  2. Detailed (50-200 words)
+     - Main content
+     - Key points
+     - Conclusions
+
+  3. Investigation (Specialized)
+     - Event timeline
+     - Participants & roles
+     - Anomalies & evidence
+     - Points to clarify
+     - Investigation recommendations
+
+  Investigation mode uses advanced
+  prompt engineering with Chain-of-Thought
+  and Persona Prompting techniques.
+end note
+
+@enduml

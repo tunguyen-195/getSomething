@@ -24,6 +24,9 @@ models/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.planning/
+.playwright-cli/
+output/
 
 .agent/
 .gradio/

@@ -27,8 +27,7 @@ $RequiredWorkerArgs = @(
 )
 $CriticalSources = @(
     'src\core\config.py',
-    'src\services\summarization\bulletin_writer.py',
-    'src\services\summarization\deterministic_analysis.py',
+    'src\services\summarization\adaptive_length.py',
     'src\services\summarization\summary_service_v2.py',
     'src\services\summarization\models\llm_manager.py',
     'src\services\summarization\models\openai_compatible_client.py',
@@ -142,28 +141,9 @@ function Get-ReplayTerminalDisposition {
         }
     }
 
-    if ([string]$Verification.outcome -eq 'typed_writer_rejection') {
-        $generationPath = [string]$Verification.recovery.generation_path
-        $message = switch ($generationPath) {
-            'all_attempts_rejected' {
-                'Worker contract passed, but the writer rejected all three attempts.'
-            }
-            'bounded_non_delta_rejection' {
-                'Worker contract passed, but the investigation report was rejected after the bounded initial and repair attempts.'
-            }
-            default {
-                throw "Verifier returned an unexpected typed rejection path: $generationPath"
-            }
-        }
-        return [pscustomobject]@{
-            exit_code = 3
-            stream = 'warning'
-            message = $message
-        }
-    }
-
     if (
         [string]$Verification.outcome -eq 'summarized' -and
+        [string]$Verification.recovery.generation_path -eq 'single_prompt_llm' -and
         [string]$Verification.report_availability.status -eq 'AVAILABLE'
     ) {
         return [pscustomobject]@{
@@ -295,6 +275,7 @@ try {
         async_mode = $true
         min_length = 120
         max_length = 400
+        length_mode = 'auto'
         investigation_scenario = 'auto'
     } | ConvertTo-Json -Compress
 

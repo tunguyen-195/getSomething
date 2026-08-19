@@ -1,0 +1,268 @@
+@startuml SpeechToInformation Deployment Diagram
+
+title SpeechToInformation - Deployment Architecture
+
+!define NODE
+skinparam node {
+  BackgroundColor #E3F2FD
+  BorderColor #1976D2
+}
+skinparam component {
+  BackgroundColor #FFF9C4
+  BorderColor #F57F17
+}
+skinparam database {
+  BackgroundColor #FFF3E0
+  BorderColor #E65100
+}
+
+' Client Layer
+node "Client Device" as Client {
+  component [Web Browser\nChrome/Edge/Firefox] as Browser
+}
+
+' Load Balancer (Future)
+node "Load Balancer\n(Future: Nginx/HAProxy)" as LB {
+  component [Reverse Proxy] as Proxy
+  component [SSL/TLS\nTermination] as SSL
+  component [Rate Limiting] as RateLimit
+}
+
+' Application Server
+node "Application Server\n(Windows/Linux)" as AppServer {
+  component [FastAPI\nPort 8000] as FastAPI {
+    artifact [main.py] as Main
+    artifact [routers/] as Routers
+    artifact [middleware/] as Middleware
+  }
+
+  component [React Dev Server\nPort 3000\n(Vite)] as ReactDev {
+    artifact [dist/] as ReactDist
+  }
+
+  note right of FastAPI
+    **Production**: Uvicorn + Gunicorn
+    Workers: 4-8 (CPU cores * 2)
+    Concurrency: 100-200 connections/worker
+  end note
+
+  note right of ReactDev
+    **Development**: Vite dev server
+    **Production**: Static files served by Nginx
+  end note
+}
+
+' Worker Server(s)
+node "Worker Server 1\n(GPU-enabled)" as WorkerServer1 {
+  component [Celery Worker 1\nGevent Pool] as Worker1 {
+    artifact [transcribe_task] as Task1
+    artifact [summarize_task] as Task2
+    artifact [visualize_task] as Task3
+  }
+
+  component [AI Models] as Models1 {
+    artifact [whisper-large-v3\n3GB VRAM] as Whisper1
+    artifact [pyannote-audio\n1GB VRAM] as Pyannote1
+  }
+
+  component [Ollama Server\nPort 11434] as Ollama1 {
+    artifact [gemma2:9b\n5GB VRAM] as Gemma1
+    artifact [deepseek-r1:7b] as DeepSeek1
+  }
+
+  note right of Worker1
+    **Configuration**:
+    - Pool: gevent
+    - Concurrency: 10
+    - Flags: --without-heartbeat
+            --without-gossip
+            --without-mingle
+    - Time limit: 7200s
+    - Auto-restart: enabled
+  end note
+
+  note right of Models1
+    **GPU Requirements**:
+    - NVIDIA GPU (CUDA 11.8+)
+    - VRAM: 8GB minimum, 16GB recommended
+    - Model loading: Lazy (on-demand)
+  end note
+}
+
+node "Worker Server 2\n(Optional Scale-out)" as WorkerServer2 {
+  component [Celery Worker 2] as Worker2
+  component [AI Models] as Models2
+  component [Ollama Server] as Ollama2
+}
+
+' Message Broker
+node "Message Broker Server" as BrokerServer {
+  database "Redis\nPort 6379" as Redis {
+    artifact [Task Queue] as Queue
+    artifact [Result Backend] as Results
+    artifact [Cache] as Cache
+  }
+
+  note right of Redis
+    **Configuration**:
+    - Persistence: RDB + AOF
+    - Max memory: 2GB
+    - Eviction: allkeys-lru
+    - Backup: Daily snapshots
+  end note
+}
+
+' Database Server
+node "Database Server" as DBServer {
+  database "PostgreSQL 14\nPort 5432" as PostgreSQL {
+    artifact [speechtoinfo_db] as DB
+    artifact [Connection Pool\n20+10] as Pool
+  }
+
+  component [pgAdmin\n(Management)] as pgAdmin
+
+  note right of PostgreSQL
+    **Configuration**:
+    - Max connections: 100
+    - Shared buffers: 2GB
+    - Work mem: 50MB
+    - Effective cache: 6GB
+    - WAL level: replica
+    - Backup: Daily full + hourly incremental
+  end note
+}
+
+' File Storage
+node "File Storage Server\n(or S3)" as StorageServer {
+  component [Local Storage] as LocalStorage {
+    folder "storage/audio/cases/" as CasesDir
+    folder "storage/audio/archive/" as ArchiveDir
+    folder "storage/models/" as ModelsDir
+  }
+
+  component [S3/GCS\n(Future)" as S3 {
+    folder "Bucket: audio-files" as S3Bucket
+    folder "Bucket: archives" as S3Archive
+  }
+
+  note right of LocalStorage
+    **Storage Layout**:
+    /storage/audio/cases/{case_id}/{filename}
+    /storage/audio/archive/{audio_id}/{filename}
+    /storage/models/{model_name}/
+
+    **Backup**: Rsync to S3 daily
+  end note
+}
+
+' Monitoring (Future)
+node "Monitoring Server\n(Future)" as MonitoringServer {
+  component [Prometheus\nPort 9090] as Prometheus
+  component [Grafana\nPort 3001] as Grafana
+  component [AlertManager] as AlertMgr
+
+  note right of Prometheus
+    **Metrics Collected**:
+    - API latency (P50, P95, P99)
+    - Task processing time
+    - Queue depth
+    - Error rate
+    - Worker health
+    - Database queries
+  end note
+}
+
+' Connections - Client to LB
+Client ..> LB : HTTPS (443)
+
+' Connections - LB to App Server
+LB ..> AppServer : HTTP (8000, 3000)
+SSL --> Proxy
+RateLimit --> Proxy
+Proxy --> FastAPI : HTTP
+Proxy --> ReactDev : HTTP
+
+' Connections - App Server to Workers
+FastAPI --> Redis : Enqueue tasks\nTCP 6379
+Worker1 --> Redis : Fetch tasks\nStore results
+Worker2 --> Redis : Fetch tasks\nStore results
+
+' Connections - App/Workers to Database
+FastAPI --> PostgreSQL : Read/Write\nTCP 5432
+Worker1 --> PostgreSQL : Read/Write\nTCP 5432
+Worker2 --> PostgreSQL : Read/Write\nTCP 5432
+
+' Connections - App/Workers to Storage
+FastAPI --> LocalStorage : Upload/Download\nSMB/NFS
+Worker1 --> LocalStorage : Read audio\nWrite transcripts
+Worker2 --> LocalStorage : Read audio
+
+' Connections - Workers to AI Models
+Worker1 --> Models1 : Load & infer
+Worker1 --> Ollama1 : HTTP API\nPort 11434
+Worker2 --> Models2 : Load & infer
+Worker2 --> Ollama2 : HTTP API
+
+' Connections - Monitoring
+AppServer ..> Prometheus : Expose metrics\n/metrics
+WorkerServer1 ..> Prometheus : Expose metrics
+DBServer ..> Prometheus : Postgres exporter
+Prometheus --> Grafana : Data source
+Prometheus --> AlertMgr : Send alerts
+
+' Network Zones
+package "Public Zone" {
+  Client
+}
+
+package "DMZ Zone\n(Load Balancer)" {
+  LB
+}
+
+package "Application Zone\n(Private Network: 10.0.1.0/24)" {
+  AppServer
+  WorkerServer1
+  WorkerServer2
+}
+
+package "Data Zone\n(Private Network: 10.0.2.0/24)" {
+  BrokerServer
+  DBServer
+  StorageServer
+}
+
+package "Monitoring Zone\n(Private Network: 10.0.3.0/24)" {
+  MonitoringServer
+}
+
+note as DeploymentNotes
+  **Deployment Configurations**
+
+  **Development**:
+  - Single server runs all components
+  - FastAPI + Vite dev server + 1 Worker + Redis + PostgreSQL
+  - No load balancer, no monitoring
+
+  **Staging**:
+  - 2 servers: App + Worker/Data
+  - Basic monitoring with logs
+  - Limited resources
+
+  **Production**:
+  - Load balancer for high availability
+  - 2+ worker servers for scale
+  - Separate DB server with replication
+  - Full monitoring & alerting
+  - S3 for file storage
+  - Redis Sentinel for HA
+  - PostgreSQL streaming replication
+
+  **Kubernetes (Future)**:
+  - All components as deployments
+  - HPA for auto-scaling workers
+  - PersistentVolumes for storage
+  - Helm charts for deployment
+  - Multi-region for disaster recovery
+end note
+
+@enduml

@@ -137,24 +137,37 @@ _ROLE_ACTIONS = frozenset(
     {
         "báo",
         "bán",
+        "bảo",
         "bắt",
         "buy",
         "call",
         "called",
         "chuyển",
         "đến",
+        "đánh",
         "đưa",
         "gặp",
         "giao",
         "gọi",
         "gửi",
+        "giữ",
+        "hẹn",
+        "hứa",
+        "khai",
+        "khẳng",
         "kể",
+        "ký",
+        "lấy",
         "leave",
         "mang",
+        "mặc",
+        "mượn",
         "mua",
         "nhắn",
         "nhận",
+        "nghi",
         "nói",
+        "phủ",
         "pay",
         "rời",
         "said",
@@ -162,19 +175,75 @@ _ROLE_ACTIONS = frozenset(
         "send",
         "sent",
         "thanh",
+        "thông",
+        "thừa",
         "trao",
         "trả",
+        "trộm",
         "transfer",
         "transferred",
         "tới",
+        "vay",
+        "yêu",
+        "đội",
     }
 )
 _ROLE_RECIPIENT_MARKERS = frozenset({"cho", "tới", "với", "to"})
+_RANGE_UNITS = frozenset(
+    {
+        "%",
+        "cái",
+        "chiếc",
+        "chỗ",
+        "đồng",
+        "đêm",
+        "điểm",
+        "eur",
+        "g",
+        "giờ",
+        "gói",
+        "hộp",
+        "kg",
+        "km",
+        "lần",
+        "lít",
+        "mét",
+        "ml",
+        "năm",
+        "ngàn",
+        "nghìn",
+        "ngày",
+        "người",
+        "phòng",
+        "phút",
+        "suất",
+        "tháng",
+        "thùng",
+        "triệu",
+        "tỷ",
+        "tấn",
+        "usd",
+        "vé",
+        "vnd",
+    }
+)
+_RANGE_CUES = frozenset({"giá", "khoảng", "mức"})
+_RANGE_CLAUSE_BOUNDARY = re.compile(r"[;,!?]|(?<!\d)\.(?!\d)")
+_LEADING_ROLE_ADJUNCT = re.compile(
+    r"^\s*(?:từ|trong\s+khoảng|khoảng|lúc|vào|ngày|tại|ở)\b",
+    re.IGNORECASE,
+)
+_LEADING_TEMPORAL_ROLE_ADJUNCT = re.compile(
+    r"^\s*(?:hôm\s+(?:nay|qua|kia)|(?:sáng|trưa|chiều|tối|đêm)\s+nay)\b"
+    r"\s*,?\s*",
+    re.IGNORECASE,
+)
 _PASSIVE_MARKERS = frozenset({"bị", "được", "was", "were"})
 _PASSIVE_AGENT_MARKERS = frozenset({"bởi", "by"})
 _ROLE_ADJUNCT_MARKERS = frozenset(
     {"lúc", "vào", "tại", "ở", "ngày", "hôm", "when", "at", "on"}
 )
+_ROLE_ACTOR_RESET_MARKERS = frozenset({"để", "thì"})
 _AMBIGUOUS_PRONOUNS = frozenset(
     {
         "anh",
@@ -287,7 +356,7 @@ def _role_phrase(tokens: tuple[str, ...]) -> str | None:
     content = tuple(
         token
         for token in tokens
-        if token not in _STOPWORDS
+        if token not in _STOPWORDS.difference({"a", "an"})
         and token not in _PASSIVE_MARKERS
         and token not in _PASSIVE_AGENT_MARKERS
         and token not in _ROLE_ADJUNCT_MARKERS
@@ -295,21 +364,76 @@ def _role_phrase(tokens: tuple[str, ...]) -> str | None:
     return " ".join(content) or None
 
 
-def extract_semantic_roles(value: str) -> SemanticRoleBinding:
+def _actor_tokens_before_action(
+    value: str,
+    tokens: tuple[str, ...],
+    action_index: int,
+) -> tuple[str, ...]:
+    normalized = _fold(value)
+    token_spans = tuple(_WORD_RE.finditer(normalized))
+    if len(token_spans) != len(tokens):
+        return tokens[:action_index]
+    action_start = token_spans[action_index].start()
+    prefix = normalized[:action_start]
+    hard_boundary = max(prefix.rfind(";"), prefix.rfind("."), prefix.rfind("!"), prefix.rfind("?"))
+    comma_boundary = prefix.rfind(",")
+    boundary = hard_boundary
+    if comma_boundary > hard_boundary:
+        comma_prefix = prefix[hard_boundary + 1 : comma_boundary]
+        if _LEADING_ROLE_ADJUNCT.search(comma_prefix):
+            boundary = comma_boundary
+    actor_start = 0
+    if boundary >= 0:
+        actor_start = next(
+            (
+                index
+                for index, match in enumerate(token_spans)
+                if match.start() > boundary
+            ),
+            action_index,
+        )
+    else:
+        temporal_prefix = _LEADING_TEMPORAL_ROLE_ADJUNCT.match(prefix)
+        if temporal_prefix is not None:
+            actor_start = sum(
+                1
+                for match in token_spans[:action_index]
+                if match.end() <= temporal_prefix.end()
+            )
+    reset_indexes = [
+        index
+        for index in range(actor_start, action_index)
+        if tokens[index] in _ROLE_ACTOR_RESET_MARKERS
+    ]
+    if reset_indexes and reset_indexes[-1] + 1 < action_index:
+        actor_start = reset_indexes[-1] + 1
+    return tokens[actor_start:action_index]
+
+
+def extract_semantic_roles(
+    value: str,
+    *,
+    allowed_actions: Iterable[str] | None = None,
+) -> SemanticRoleBinding:
     """Extract only roles that are safe enough for deterministic order checks."""
 
     tokens = _tokens(value)
-    action_index = next(
-        (index for index, token in enumerate(tokens) if token in _ROLE_ACTIONS),
-        None,
+    action_indexes = _role_action_indexes(
+        value,
+        allowed_actions=allowed_actions,
     )
+    action_index = action_indexes[0] if action_indexes else None
     if action_index is None:
         return SemanticRoleBinding()
 
     action = tokens[action_index]
-    before = tokens[:action_index]
+    before = _actor_tokens_before_action(value, tokens, action_index)
     after = tokens[action_index + 1 :]
-    passive = any(token in _PASSIVE_MARKERS for token in before)
+    passive = any(
+        token in _PASSIVE_MARKERS
+        and tuple(before[index : index + 4]) != ("được", "nhắc", "đến", "là")
+        for index, token in enumerate(before)
+    )
     if passive:
         agent_index = next(
             (
@@ -376,6 +500,170 @@ def extract_semantic_roles(value: str) -> SemanticRoleBinding:
         complete=bool(actor and action),
         ambiguous=ambiguous,
     )
+
+
+def extract_semantic_action_sequence(
+    value: str,
+    *,
+    allowed_actions: Iterable[str] | None = None,
+) -> tuple[str, ...]:
+    """Return source-order action tokens used by deterministic role checks."""
+
+    tokens = _tokens(value)
+    return tuple(
+        tokens[index]
+        for index in _role_action_indexes(
+            value,
+            allowed_actions=allowed_actions,
+        )
+    )
+
+
+def _is_quantitative_range_connector(
+    normalized: str,
+    token_spans: tuple[tuple[str, int, int], ...],
+    index: int,
+) -> bool:
+    """Distinguish range ``đến`` from the movement verb ``đến``."""
+
+    _, connector_start, connector_end = token_spans[index]
+    clause_start = 0
+    clause_end = len(normalized)
+    for boundary in _RANGE_CLAUSE_BOUNDARY.finditer(normalized):
+        if boundary.end() <= connector_start:
+            clause_start = boundary.end()
+            continue
+        if boundary.start() >= connector_end:
+            clause_end = boundary.start()
+            break
+    clause_indexes = tuple(
+        token_index
+        for token_index, (_, start, end) in enumerate(token_spans)
+        if start >= clause_start and end <= clause_end
+    )
+    left_indexes = tuple(item for item in clause_indexes if item < index)
+    right_indexes = tuple(item for item in clause_indexes if item > index)
+    left_numbers = tuple(
+        item
+        for item in left_indexes
+        if any(char.isdigit() for char in token_spans[item][0])
+    )
+    right_numbers = tuple(
+        item
+        for item in right_indexes
+        if any(char.isdigit() for char in token_spans[item][0])
+    )
+    if not left_numbers or not right_numbers:
+        return False
+
+    clause_first = clause_indexes[0]
+    clause_last = clause_indexes[-1] + 1
+    left_number = left_numbers[-1]
+    right_number = right_numbers[0]
+
+    def endpoint_units(number_index: int) -> set[str]:
+        units = {
+            token_spans[item][0]
+            for item in range(
+                max(clause_first, number_index - 2),
+                min(clause_last, number_index + 3),
+            )
+            if token_spans[item][0] in _RANGE_UNITS
+        }
+        _, number_start, number_end = token_spans[number_index]
+        if "%" in normalized[max(clause_start, number_start - 1) : min(clause_end, number_end + 2)]:
+            units.add("%")
+        return units
+
+    left_units = endpoint_units(left_number)
+    right_units = endpoint_units(right_number)
+    if left_units.intersection(right_units):
+        return True
+    clause_prefix = tuple(token_spans[item][0] for item in left_indexes)
+    has_range_cue = bool(_RANGE_CUES.intersection(clause_prefix)) or (
+        "số" in clause_prefix and "lượng" in clause_prefix
+    ) or ("dao" in clause_prefix and "động" in clause_prefix)
+    if has_range_cue:
+        return True
+    previous = token_spans[index - 1][0] if index else None
+    following = token_spans[index + 1][0] if index + 1 < len(token_spans) else None
+    if previous and following and previous.isdigit() and following.isdigit():
+        return True
+    has_from_cue = "từ" in tuple(
+        token_spans[item][0]
+        for item in left_indexes
+        if item <= left_number
+    )
+    return bool(
+        has_from_cue
+        and (
+            (not left_units and not right_units)
+            or not left_units
+            or not right_units
+        )
+    )
+
+
+def _role_action_indexes(
+    value: str,
+    *,
+    allowed_actions: Iterable[str] | None = None,
+) -> tuple[int, ...]:
+    normalized = _fold(value)
+    token_spans = tuple(
+        (match.group(0).casefold(), match.start(), match.end())
+        for match in _WORD_RE.finditer(normalized)
+    )
+    tokens = tuple(item[0] for item in token_spans)
+    actions = frozenset(allowed_actions) if allowed_actions is not None else _ROLE_ACTIONS
+    indexes: list[int] = []
+    for index, token in enumerate(tokens):
+        if token not in actions:
+            continue
+        previous = tokens[index - 1] if index else None
+        following = tokens[index + 1] if index + 1 < len(tokens) else None
+        if token == "bảo" and (previous == "đảm" or following in {"đảm", "vệ"}):
+            continue
+        if token == "báo" and following == "cáo":
+            continue
+        if token == "thông" and following in {"báo", "tin"}:
+            continue
+        if token == "nhận" and following == "thức":
+            continue
+        if token == "bắt" and previous == "nắm":
+            continue
+        if token == "trao" and following == "đổi":
+            continue
+        if token == "nói" and previous == "thể":
+            continue
+        if token == "gọi" and previous == "cuộc":
+            continue
+        if token == "yêu" and following == "đãi":
+            continue
+        if token == "trả" and (
+            previous in {"hủy", "quỷ"}
+            or (
+                "điều" in tokens[max(0, index - 6) : index]
+                and "khoản" in tokens[max(0, index - 6) : index]
+            )
+        ):
+            continue
+        if token == "đến":
+            preceding_scope = set(tokens[max(0, index - 6) : index])
+            if (
+                _is_quantitative_range_connector(normalized, token_spans, index)
+                or (
+                    previous == "nhắc"
+                    and following == "là"
+                    and "được" in tokens[max(0, index - 3) : index]
+                )
+                or (previous == "tế" and following == "xã")
+                or previous == "quan"
+                or preceding_scope.intersection({"khối", "lĩnh", "vực", "phụ", "trách"})
+            ):
+                continue
+        indexes.append(index)
+    return tuple(indexes)
 
 
 def _iter_attribute_values(
@@ -754,6 +1042,7 @@ __all__ = [
     "candidate_sha256",
     "classify_atomicity",
     "extract_exact_values",
+    "extract_semantic_action_sequence",
     "extract_semantic_roles",
     "infer_source_modality",
     "proposition_core",

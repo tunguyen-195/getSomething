@@ -17,7 +17,7 @@ def transcribe_audio(
     db,
     enable_diarization: bool = True,
     diarization_method: str = "pyannote",
-    fast_mode: bool = True
+    fast_mode: bool = False
 ) -> dict:
     """
     Transcribe audio file with optional speaker diarization.

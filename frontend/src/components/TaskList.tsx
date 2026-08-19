@@ -49,10 +49,9 @@ import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
 import {
   apiFetch,
-  DEFAULT_MULTI_SUMMARY_MAX_LENGTH,
-  DEFAULT_MULTI_SUMMARY_MIN_LENGTH,
   DEFAULT_SUMMARY_TYPE,
 } from '../api/client';
+import DateTimeText from './DateTimeText';
 import { projectInvestigationSummaryContext } from '../utils/investigationProjection';
 
 interface Task {
@@ -72,6 +71,8 @@ interface Case {
   case_code: string;
   title: string;
   description?: string;
+  created_at?: string;
+  updated_at?: string;
   tasks: Task[];
 }
 
@@ -91,6 +92,17 @@ function sanitizeTaskForDisplay(task: Task): Task {
 
 // Helper lấy API base URL
 const API_BASE_URL = typeof window !== 'undefined' && (window as any).API_BASE_URL ? (window as any).API_BASE_URL : '';
+
+async function readSummaryResponse(response: Response): Promise<string> {
+  const data = await response.json().catch(() => null);
+  const summary = data?.summary ?? data?.result;
+  if (!response.ok || typeof summary !== 'string' || !summary.trim()) {
+    const detail = data?.detail;
+    const message = typeof detail === 'string' ? detail : detail?.message;
+    throw new Error(message || 'Summarization failed');
+  }
+  return summary;
+}
 
 const TaskList = () => {
   const [cases, setCases] = useState<Case[]>([]);
@@ -180,7 +192,6 @@ const TaskList = () => {
       fetchCases();
       fetchTasks(date);
     }
-    // eslint-disable-next-line
   }, [processSuccess]);
 
   // Polling tự động cập nhật trạng thái task
@@ -277,11 +288,15 @@ const TaskList = () => {
     if (!editingTaskId) return;
     setResummarizing(true);
     try {
-      const res = await apiFetch(`${API_BASE_URL}/api/v1/audio/tasks/${editingTaskId}/resummarize`, { method: 'POST' });
-      const data = await res.json();
+      const res = await apiFetch(`${API_BASE_URL}/api/v1/audio/tasks/${editingTaskId}/resummarize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ summary_type: 'investigation', length_mode: 'auto' }),
+      });
+      const summary = await readSummaryResponse(res);
       setTasks(prevTasks => prevTasks.map(task =>
         task.id === editingTaskId
-          ? { ...task, result: { ...task.result, summary: data.summary } }
+          ? { ...task, result: { ...task.result, summary } }
           : task
       ));
       setSnackbar({ open: true, message: 'Tóm tắt lại thành công!', severity: 'success' });
@@ -305,14 +320,11 @@ const TaskList = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transcripts,
-          model_name: 'gemma2:9b',
           summary_type: DEFAULT_SUMMARY_TYPE,
-          min_length: DEFAULT_MULTI_SUMMARY_MIN_LENGTH,
-          max_length: DEFAULT_MULTI_SUMMARY_MAX_LENGTH,
+          length_mode: 'auto',
         }),
       });
-      const data = await res.json();
-      setMultiSummary(data.summary || data.result || '');
+      setMultiSummary(await readSummaryResponse(res));
       setSnackbar({ open: true, message: 'Tóm tắt nhiều file thành công!', severity: 'success' });
     } catch (e) {
       console.error('Error summarizing multi files:', e);
@@ -333,14 +345,11 @@ const TaskList = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           case_id: selectedCaseForSummary,
-          model_name: 'gemma2:9b',
           summary_type: DEFAULT_SUMMARY_TYPE,
-          min_length: DEFAULT_MULTI_SUMMARY_MIN_LENGTH,
-          max_length: DEFAULT_MULTI_SUMMARY_MAX_LENGTH,
+          length_mode: 'auto',
         }),
       });
-      const data = await res.json();
-      setCaseSummary(data.summary || data.result || '');
+      setCaseSummary(await readSummaryResponse(res));
       setSnackbar({ open: true, message: 'Tóm tắt theo vụ việc thành công!', severity: 'success' });
     } catch (e) {
       console.error('Error summarizing case:', e);
@@ -595,7 +604,7 @@ const TaskList = () => {
             {savedSummaries.map(summary => (
               <Paper key={summary.id} sx={{ p: 3, mb: 2, borderRadius: 3, background: '#fffde7' }}>
                 <Typography variant="subtitle1" fontWeight={700} color="primary">{summary.type === 'case' ? 'Tóm tắt vụ việc' : 'Tóm tắt nhiều file'}</Typography>
-                <Typography variant="caption" color="text.secondary">{new Date(summary.created_at).toLocaleString()}</Typography>
+                <DateTimeText value={summary.created_at} />
                 {summary.case && (
                   <Typography variant="body2" color="text.secondary">Vụ việc: {summary.case.title}</Typography>
                 )}

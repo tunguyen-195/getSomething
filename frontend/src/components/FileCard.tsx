@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   Card,
   CardContent,
-  Alert,
   Typography,
   Box,
   Button,
@@ -25,6 +24,7 @@ import {
 } from '@mui/icons-material';
 import DateTimeText from './DateTimeText';
 import { validateReleasedVisualizationArtifact } from '../utils/investigationProjection';
+import { sanitizeSummaryDisplayText } from '../utils/summaryDisplay';
 
 interface FileCardProps {
   file: {
@@ -33,7 +33,7 @@ interface FileCardProps {
     filename: string;
     duration?: number;
     size?: number;
-    status: 'uploaded' | 'transcribing' | 'transcribed' | 'summarizing' | 'summarized' | 'visualizing' | 'visualized' | 'needs_review' | 'failed';
+    status: 'uploaded' | 'transcribing' | 'transcribed' | 'summarizing' | 'summarized' | 'visualizing' | 'visualized' | 'failed';
     num_speakers?: number;
     has_diarization?: boolean;
     created_at?: string;
@@ -64,6 +64,7 @@ const FileCard: React.FC<FileCardProps> = ({
 
   const [copiedTranscript, setCopiedTranscript] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
+  const displaySummary = sanitizeSummaryDisplayText(file.summary);
 
   const handleCopyTranscript = () => {
     if (file.transcript) {
@@ -74,8 +75,8 @@ const FileCard: React.FC<FileCardProps> = ({
   };
 
   const handleCopySummary = () => {
-    if (file.summary) {
-      navigator.clipboard.writeText(file.summary);
+    if (displaySummary) {
+      navigator.clipboard.writeText(displaySummary);
       setCopiedSummary(true);
       setTimeout(() => setCopiedSummary(false), 2000);
     }
@@ -91,7 +92,6 @@ const FileCard: React.FC<FileCardProps> = ({
       case 'summarized': return '#9c27b0'; // Purple
       case 'visualizing': return '#673ab7'; // Deep Purple
       case 'visualized': return '#3f51b5'; // Indigo
-      case 'needs_review': return '#ed6c02'; // Evidence/release gate warning
       case 'failed': return '#d32f2f'; // Red
       default: return '#757575';
     }
@@ -106,7 +106,6 @@ const FileCard: React.FC<FileCardProps> = ({
       case 'summarized': return 'Summarized';
       case 'visualizing': return 'Visualizing...';
       case 'visualized': return 'Visualized';
-      case 'needs_review': return 'Needs human review';
       case 'failed': return 'Failed';
       default: return status;
     }
@@ -141,11 +140,11 @@ const FileCard: React.FC<FileCardProps> = ({
       .replace(/__([^_]+)__/g, '$1')
       .replace(/\*([^*]+)\*/g, '$1')          // Remove italic
       .replace(/_([^_]+)_/g, '$1')
-      .replace(/^[\-\*]\s+/gm, '• ')          // Convert bullets to •
+      .replace(/^[-*]\s+/gm, '• ')            // Convert bullets to •
       .replace(/^(\d+)\.\s+/gm, '$1. ')       // Keep numbered lists clean
       .replace(/```[\s\S]*?```/g, '')         // Remove code blocks
       .replace(/`([^`]+)`/g, '$1')
-      .replace(/^[\-\*_]{3,}$/gm, '')         // Remove horizontal rules
+      .replace(/^[-*_]{3,}$/gm, '')            // Remove horizontal rules
       .replace(/\n{3,}/g, '\n\n')             // Remove extra blank lines
       .trim();
   };
@@ -246,12 +245,6 @@ const FileCard: React.FC<FileCardProps> = ({
           <Typography variant="subtitle2" fontWeight={700} color="#d32f2f" mb={1.5}>
             ACTIONS
           </Typography>
-
-          {file.status === 'needs_review' && (
-            <Alert severity="warning" sx={{ mb: 2 }}>
-              Summary output was withheld because its evidence or release verification did not pass. Review the transcript before retrying.
-            </Alert>
-          )}
 
           {/* Transcribe Action */}
           <Box mb={2}>
@@ -386,7 +379,7 @@ const FileCard: React.FC<FileCardProps> = ({
         <Divider sx={{ my: 2, borderColor: 'rgba(255, 214, 0, 0.3)' }} />
 
         {/* VIEW RESULTS Section - Appears after completion */}
-        {(file.transcript || file.summary || releasedVisualization) && (
+        {(file.transcript || displaySummary || releasedVisualization) && (
           <Box mb={3}>
             <Typography
               variant="subtitle2"
@@ -431,7 +424,7 @@ const FileCard: React.FC<FileCardProps> = ({
                 </Button>
               )}
 
-              {file.summary && (
+              {displaySummary && (
                 <Button
                   variant="outlined"
                   startIcon={<ViewIcon />}
@@ -597,7 +590,7 @@ const FileCard: React.FC<FileCardProps> = ({
         )}
 
         {/* Summary Section - Inline Display */}
-        {file.summary && (
+        {displaySummary && (
           <Box mt={3}>
             <Box display="flex" alignItems="center" justifyContent="space-between" mb={1} px={1}>
               <Box display="flex" alignItems="center" gap={1}>
@@ -654,7 +647,7 @@ const FileCard: React.FC<FileCardProps> = ({
                     fontSize: '0.95rem',
                   }}
                 >
-                  {cleanMarkdown(file.summary || '')}
+                  {cleanMarkdown(displaySummary)}
                 </Typography>
               </Box>
             </Collapse>
@@ -672,7 +665,7 @@ const FileCard: React.FC<FileCardProps> = ({
                 }}
                 onClick={() => setSummaryExpanded(true)}
               >
-                👆 Click to expand summary... ({file.summary.length} chars)
+                👆 Click to expand summary... ({displaySummary.length} chars)
               </Typography>
             )}
           </Box>

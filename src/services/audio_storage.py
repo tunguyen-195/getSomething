@@ -1,4 +1,5 @@
 import os
+import hashlib
 import shutil
 import subprocess
 import uuid
@@ -22,6 +23,7 @@ class StoredAudio:
     absolute_path: Path
     size: int
     extension: str
+    sha256: str
 
     @property
     def download_url(self) -> str:
@@ -34,6 +36,7 @@ class StagedAudio:
     temp_path: Path
     size: int
     extension: str
+    sha256: str
 
 
 def audio_root() -> Path:
@@ -130,12 +133,21 @@ def validate_audio_content(path: Path) -> None:
         raise HTTPException(status_code=400, detail="Invalid audio content")
 
 
-def _copy_upload_to_temp(src: BinaryIO, ext: str) -> tuple[Path, int]:
+def compute_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(CHUNK_SIZE):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _copy_upload_to_temp(src: BinaryIO, ext: str) -> tuple[Path, int, str]:
     root = audio_root()
     temp_dir = root / "tmp"
     temp_dir.mkdir(parents=True, exist_ok=True)
     temp_path = temp_dir / f"{uuid.uuid4().hex}.{ext}"
     size = 0
+    digest = hashlib.sha256()
     try:
         with temp_path.open("wb") as out:
             while True:
@@ -149,10 +161,11 @@ def _copy_upload_to_temp(src: BinaryIO, ext: str) -> tuple[Path, int]:
                         detail="Upload exceeds MAX_UPLOAD_SIZE",
                     )
                 out.write(chunk)
+                digest.update(chunk)
         if size == 0:
             raise HTTPException(status_code=400, detail="Empty audio file")
         validate_audio_content(temp_path)
-        return temp_path, size
+        return temp_path, size, digest.hexdigest()
     except Exception:
         temp_path.unlink(missing_ok=True)
         raise
@@ -160,12 +173,13 @@ def _copy_upload_to_temp(src: BinaryIO, ext: str) -> tuple[Path, int]:
 
 def stage_upload(file: UploadFile) -> StagedAudio:
     original_filename, ext = sanitize_upload_filename(file.filename)
-    temp_path, size = _copy_upload_to_temp(file.file, ext)
+    temp_path, size, sha256 = _copy_upload_to_temp(file.file, ext)
     return StagedAudio(
         original_filename=original_filename,
         temp_path=temp_path,
         size=size,
         extension=ext,
+        sha256=sha256,
     )
 
 
@@ -186,6 +200,7 @@ def finalize_staged_upload(staged: StagedAudio, case_id: int) -> StoredAudio:
         absolute_path=final_path,
         size=staged.size,
         extension=staged.extension,
+        sha256=staged.sha256,
     )
 
 

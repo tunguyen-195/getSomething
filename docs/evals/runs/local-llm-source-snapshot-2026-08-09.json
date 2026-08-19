@@ -1,0 +1,88 @@
+{
+  "generated_at": "2026-08-09T13:30:33.2443747+07:00",
+  "purpose": "Source-backed candidate/runtime snapshot; not a task-specific quality benchmark.",
+  "hardware_target": {
+    "gpu": "NVIDIA GeForce RTX 4070 SUPER",
+    "vram_mib": 12282,
+    "cpu": "AMD Ryzen 7 9800X3D",
+    "system_ram_gib_approx": 62
+  },
+  "candidates": [
+    {
+      "id": "Qwen/Qwen3-8B-GGUF",
+      "revision": "7c41481f57cb95916b40956ab2f0b139b296d974",
+      "license": "Apache-2.0",
+      "official_q4_k_m_present": true,
+      "local_file_sha256": "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
+      "role": "measured production baseline candidate"
+    },
+    {
+      "id": "Qwen/Qwen3.5-9B",
+      "revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
+      "license": "Apache-2.0",
+      "official_qwen_gguf_present": false,
+      "model_card_claims": {
+        "parameters": "9B",
+        "native_context_tokens": 262144,
+        "languages_and_dialects": 201,
+        "thinking_default": true
+      },
+      "role": "strongest unpromoted quality challenger for this host"
+    },
+    {
+      "id": "openai/gpt-oss-20b",
+      "revision": "6cee5e81ee83917806bbde320786a8fb61efebee",
+      "license": "Apache-2.0",
+      "role": "comparison candidate; no Vietnamese noisy-ASR advantage established"
+    },
+    {
+      "id": "google/gemma-3-12b-it",
+      "revision": "96b6f1eccf38110c56df3a15bffe176da04bfd80",
+      "license": "Gemma",
+      "role": "comparison candidate; license and task-specific quality require separate gate"
+    }
+  ],
+  "runtime_evidence": {
+    "pinned_llama_cpp": {
+      "release": "b10331",
+      "commit": "7ba604f1c",
+      "platform": "windows-cuda-12.4-x64",
+      "local_help_confirmed_flags": [
+        "--offline",
+        "--api-key",
+        "--cache-reuse",
+        "--reasoning",
+        "--sleep-idle-seconds"
+      ]
+    },
+    "llama_server_docs": {
+      "commit": "dd2c7c44710e860a428b46a92e2a9e39c428628b",
+      "url": "https://github.com/ggml-org/llama.cpp/blob/dd2c7c44710e860a428b46a92e2a9e39c428628b/tools/server/README.md",
+      "relevant_features": [
+        "OpenAI-compatible chat completions",
+        "JSON-schema response_format",
+        "reasoning_effort=none",
+        "prompt cache reuse",
+        "idle sleeping"
+      ]
+    },
+    "vllm_docs": {
+      "commit": "cf0d2791420eefab4a3416551bb3f4a1288f0aea",
+      "url": "https://github.com/vllm-project/vllm/blob/cf0d2791420eefab4a3416551bb3f4a1288f0aea/docs/getting_started/installation/gpu.md",
+      "official_os_requirement": "Linux",
+      "native_windows_supported": false,
+      "windows_options": ["WSL", "community-maintained forks"]
+    }
+  },
+  "decision": {
+    "production_baseline": "Qwen3-8B Q4_K_M with pinned native Windows CUDA llama-server",
+    "challenger": "Qwen3.5-9B converted from official weights and benchmarked at Q4_K_M/Q5_K_M",
+    "not_selected_as_primary": ["vLLM", "SGLang", "TensorRT-LLM"],
+    "reason": "One Windows host, one 12 GB GPU, low concurrency, offline artifact provenance, and simple operations favor llama.cpp; quality promotion remains benchmark-gated."
+  },
+  "limitations": [
+    "Public model-card benchmarks are not Vietnamese noisy-ASR investigation benchmarks.",
+    "Qwen3.5-9B is not downloaded or locally benchmarked because the disk and VRAM gates failed.",
+    "No live llama-server CUDA generation was run while the existing worker occupied most VRAM."
+  ]
+}

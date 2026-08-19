@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "manifest_version": "1.0.0",
+  "model": {
+    "id": "example.vietnamese-task-model",
+    "version": "upstream-version-or-conversion-id",
+    "relative_path": "example/vietnamese-task-model",
+    "tasks": ["analysis"],
+    "profiles": ["production-gpu"],
+    "artifact_size_bytes": 13,
+    "source": {
+      "provider": "huggingface",
+      "repository": "organization/repository",
+      "revision": "immutable-source-commit"
+    },
+    "license": {
+      "spdx": "Apache-2.0",
+      "name": "Apache License 2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    "backend": {
+      "engine": "llama.cpp",
+      "format": "gguf",
+      "quantization": "Q4_K_M"
+    },
+    "files": [
+      {
+        "path": "model.gguf",
+        "size_bytes": 13,
+        "sha256": "669ee21518108786097759a9dd1bad06bda5e6cd38a6140ef74977333f9aa1a5",
+        "required": true
+      }
+    ]
+  }
+}

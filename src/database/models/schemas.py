@@ -109,8 +109,14 @@ class TaskResult(BaseModel):
     processing_time: float = 0.0  # Processing time in seconds
     # Optional fields for transcription
     filename: Optional[str] = None
-    has_diarization: Optional[bool] = False
-    num_speakers: Optional[int] = 1
+    has_diarization: bool = False
+    num_speakers: Optional[int] = None
+    diarization_status: Optional[str] = None
+    diarization_method_used: Optional[str] = None
+    diarization_fallback_reason: Optional[str] = None
+    diarization_degraded_reasons: list[str] = Field(default_factory=list)
+    degraded: bool = False
+    speaker_provenance: Dict[str, Any] = Field(default_factory=dict)
     segments: Optional[list] = []
     formatted_transcript: Optional[str] = None
     transcript_file: Optional[str] = None
@@ -118,7 +124,7 @@ class TaskResult(BaseModel):
     diarization_method: Optional[str] = "none"
     transcription_time: Optional[float] = 0.0
     diarization_time: Optional[float] = 0.0
-    fast_mode: Optional[bool] = True
+    fast_mode: Optional[bool] = False
     audio_url: Optional[str] = None
     caption: Optional[str] = None
     # Có thể mở rộng thêm các trường khác nếu cần

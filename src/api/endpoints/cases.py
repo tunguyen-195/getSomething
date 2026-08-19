@@ -12,7 +12,10 @@ from src.services.audit_service import log_activity
 import uuid
 import logging
 from src.core.time import LEGACY_DATABASE_TIMEZONE, utc_isoformat
-from src.database.models.schemas import CaseUpdate, TaskResult
+from src.database.models.schemas import CaseUpdate
+from src.services.summarization.public_projection import (
+    public_task_result_payload,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -40,7 +43,7 @@ def get_cases(
     sort_by: str = "created_at",
     order: str = "desc",
     include_archived: bool = False,
-    compact: bool = False,
+    compact: bool = True,
     limit: int | None = Query(None, ge=1, le=200),
     offset: int = Query(0, ge=0),
     search: str | None = Query(None, max_length=200),
@@ -110,20 +113,10 @@ def get_cases(
         contexts = []
         for f in audio_by_case.get(c.id, []):
             task = f.task
-            task_result = task.result if task and task.result else None
+            task_result = public_task_result_payload(
+                task.result if task and task.result else None
+            )
             if task_result:
-                try:
-                    task_result = TaskResult(**task_result).dict()
-                except Exception:
-                    task_result = TaskResult(
-                        transcription="",
-                        summary="",
-                        context_analysis={},
-                        confidence=0.0,
-                        duration=0.0,
-                        language="vi",
-                        processing_time=0.0
-                    ).dict()
                 if task_result.get("transcription"):
                     transcripts.append(task_result["transcription"])
                 if task_result.get("summary"):
@@ -168,10 +161,12 @@ def create_case(
         db.refresh(case)
         logger.info(f"Created case: {case.id} - {case.title}")
         return _case_to_dict(case)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating case: {e}")
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to create case") from None
 
 @router.get("/{case_id}", response_model=Dict[str, Any])
 def get_case(
@@ -276,31 +271,9 @@ def get_case_files(
     result = []
     for f in files:
         task = f.task
-        task_result = task.result if task and task.result else None
-        # Validate schema
-        if task_result:
-            try:
-                task_result = TaskResult(**task_result).dict()
-            except Exception:
-                task_result = TaskResult(
-                    transcription="",
-                    summary="",
-                    context_analysis={},
-                    confidence=0.0,
-                    duration=0.0,
-                    language="vi",
-                    processing_time=0.0
-                ).dict()
-        else:
-            task_result = TaskResult(
-                transcription="",
-                summary="",
-                context_analysis={},
-                confidence=0.0,
-                duration=0.0,
-                language="vi",
-                processing_time=0.0
-            ).dict()
+        task_result = public_task_result_payload(
+            task.result if task and task.result else None
+        )
         # Đảm bảo luôn trả về task_id đúng
         result.append({
             "id": f.id,

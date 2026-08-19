@@ -1,0 +1,66 @@
+{
+  "verdict": "BLOCKED",
+  "blocking_finding_count": 1,
+  "finding_count": 7,
+  "severity_counts": {
+    "critical": 1,
+    "review": 6
+  },
+  "scanned_file_count": 470,
+  "skipped_binary_count": 10,
+  "skipped_large_count": 0,
+  "skipped_symlink_count": 0,
+  "max_file_size_bytes": 2097152,
+  "findings": [
+    {
+      "path": "docs/reviews/artifacts/s2-r0-summary-recovery.json",
+      "line": 127,
+      "category": "case_data",
+      "rule": "investigation_record_identifier",
+      "severity": "review"
+    },
+    {
+      "path": "docs/reviews/artifacts/s2-r0-summary-recovery.json",
+      "line": 150,
+      "category": "case_data",
+      "rule": "investigation_record_identifier",
+      "severity": "review"
+    },
+    {
+      "path": "docs/reviews/artifacts/s2-r0-summary-recovery.json",
+      "line": 173,
+      "category": "case_data",
+      "rule": "investigation_record_identifier",
+      "severity": "review"
+    },
+    {
+      "path": "tests/eval/context_cases.jsonl",
+      "line": null,
+      "category": "case_data",
+      "rule": "structured_transcript_payload",
+      "severity": "review"
+    },
+    {
+      "path": "tests/test_release_candidate_rehearsal.py",
+      "line": 106,
+      "category": "secret",
+      "rule": "github_token",
+      "severity": "critical"
+    },
+    {
+      "path": "tests/test_summary_fail_closed.py",
+      "line": 201,
+      "category": "secret",
+      "rule": "high_entropy_credential_assignment",
+      "severity": "review"
+    },
+    {
+      "path": "tests/test_summary_fail_closed.py",
+      "line": 242,
+      "category": "secret",
+      "rule": "high_entropy_credential_assignment",
+      "severity": "review"
+    }
+  ],
+  "matched_values_recorded": false
+}

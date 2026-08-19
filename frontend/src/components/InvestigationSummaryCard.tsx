@@ -15,12 +15,14 @@ import {
   selectKeyPoints,
   selectReleasedInsightStatements,
 } from '../utils/investigationProjection';
+import { sanitizeSummaryDisplayText } from '../utils/summaryDisplay';
 
 // Kiểu dữ liệu cho props
 interface InvestigationSummaryCardProps {
   summary: string | object | null;
   contextAnalysis?: object | string | null;
   taskId?: string;
+  summaryState?: string | null;
 }
 
 function verificationPresentation(status: InvestigationVerificationStatus): {
@@ -55,7 +57,7 @@ function parseJsonOrText(data: any) {
   return null;
 }
 
-const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ summary, contextAnalysis }) => {
+const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ summary, contextAnalysis, summaryState }) => {
   const [showSensitive, setShowSensitive] = useState(false);
   const [tab, setTab] = useState(0);
   const [copied, setCopied] = useState<string | false>(false);
@@ -68,9 +70,37 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
       parsedAnalysis = { ...parsedAnalysis, ...inner };
     }
   }
+  const plainSummaryText = typeof summary === 'string'
+    ? sanitizeSummaryDisplayText(summary)
+    : '';
+
+  if (plainSummaryText && !parsedAnalysis) {
+    return (
+      <Card sx={{ mb: 3, borderRadius: 2, boxShadow: '0 2px 8px #b388ff11', background: '#fff', border: '1px solid #e0e7ef' }}>
+        <CardContent>
+          <Box display="flex" justifyContent="flex-end" mb={1}>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<ContentCopyIcon />}
+              onClick={() => navigator.clipboard.writeText(plainSummaryText)}
+            >
+              Copy
+            </Button>
+          </Box>
+          <Typography sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.8 }}>
+            {plainSummaryText}
+          </Typography>
+        </CardContent>
+      </Card>
+    );
+  }
+
   const knowledge = parsedAnalysis?.investigation_knowledge;
-  const summaryText = formatAnalysisValue(parsedAnalysis?.summary)
-    || (typeof summary === 'string' ? summary.trim() : '');
+  const summaryText = sanitizeSummaryDisplayText(
+    formatAnalysisValue(parsedAnalysis?.summary)
+      || plainSummaryText,
+  );
   // Mapping lại các trường tổng quan từ parsedAnalysis
   const mappedOverview = {
     title: summaryText || formatAnalysisValue(parsedAnalysis?.context?.topic) || formatAnalysisValue(parsedAnalysis?.context?.purpose),
@@ -120,6 +150,11 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
   return (
     <Card sx={{ mb: 3, borderRadius: 2, boxShadow: '0 2px 8px #b388ff11', background: '#fff', border: '1px solid #e0e7ef' }}>
       <CardContent>
+        {summaryState === 'source_grounded_narrative' && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Bản tin điều tra cần được cán bộ kiểm tra trước khi sử dụng nghiệp vụ.
+          </Alert>
+        )}
         <Tabs value={activeTab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
           <Tab value={0} label="Tổng quan" />
           {insight.length > 0 && <Tab value={1} label="Insight" />}
@@ -210,14 +245,12 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
                         <Box sx={{ flex: 1 }}>
                           <Typography>{item.statement}</Typography>
                           <Box sx={{ display: 'flex', gap: 0.5, mt: 0.5, flexWrap: 'wrap' }}>
-                            <Tooltip title={item.evidence_ids.length > 0 ? `Evidence: ${item.evidence_ids.join(', ')}` : 'Chưa có evidence reference'}>
-                              <Chip
-                                size="small"
-                                variant="outlined"
-                                color={verification.color}
-                                label={verification.label}
-                              />
-                            </Tooltip>
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              color={verification.color}
+                              label={verification.label}
+                            />
                             {item.model_generated && (
                               <Chip size="small" variant="outlined" label="AI trích xuất" />
                             )}
@@ -308,9 +341,9 @@ const InvestigationSummaryCard: React.FC<InvestigationSummaryCardProps> = ({ sum
           </Box>
         )}
         {/* Nếu dữ liệu trống hoặc không parse được */}
-        {!parsedAnalysis && (
+        {!summaryText && (
           <Box mt={2}>
-            <Alert severity="warning">Không có dữ liệu phân tích hoặc dữ liệu trả về không hợp lệ từ backend.</Alert>
+            <Alert severity="warning">Không có nội dung tóm tắt.</Alert>
           </Box>
         )}
       </CardContent>

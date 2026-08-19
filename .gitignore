@@ -41,6 +41,9 @@ app.log
 backend.log
 celery.log
 web_interface.log
+output/
+.planning/
+.playwright-cli/
 
 # Environment
 .env

@@ -1,0 +1,83 @@
+
+> speech-to-information-frontend@2.0.0 build
+> tsc && vite build
+
+The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.
+[36mvite v5.4.19 [32mbuilding for production...[36m[39m
+transforming...
+[32m✓[39m 12063 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mindex.html                                            [39m[1m[2m  0.89 kB[22m[1m[22m[2m │ gzip:   0.45 kB[22m
+[2mdist/[22m[32massets/roboto-vietnamese-400-normal-BYP5tVVv.woff     [39m[1m[2m  5.44 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-vietnamese-700-normal-7YosmkaU.woff     [39m[1m[2m  5.44 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-vietnamese-300-normal-CBwYb71Q.woff     [39m[1m[2m  5.48 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-vietnamese-500-normal-CUzdRVXb.woff     [39m[1m[2m  5.48 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-greek-400-normal-DwVopRQH.woff          [39m[1m[2m  7.47 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-greek-300-normal-BMtCIBFp.woff          [39m[1m[2m  7.48 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-greek-700-normal-DXrPs8of.woff          [39m[1m[2m  7.49 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-greek-500-normal-B0wzjI_J.woff          [39m[1m[2m  7.51 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-vietnamese-300-normal-CNeuLW5X.woff2    [39m[1m[2m  7.84 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-vietnamese-500-normal-HYpufUYk.woff2    [39m[1m[2m  7.84 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-vietnamese-400-normal-CDDxGrUb.woff2    [39m[1m[2m  7.86 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-vietnamese-700-normal-BFWtvCOj.woff2    [39m[1m[2m  7.88 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-symbols-500-normal-B3xPS0M7.woff        [39m[1m[2m  8.64 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-symbols-400-normal-B2LMqLB2.woff        [39m[1m[2m  8.66 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-symbols-700-normal-D_8z4JZ9.woff        [39m[1m[2m  8.68 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-symbols-300-normal-zmF1mPr_.woff        [39m[1m[2m  8.74 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-greek-300-normal-Cnub06j7.woff2         [39m[1m[2m  9.56 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-greek-500-normal-BJMS0heP.woff2         [39m[1m[2m  9.64 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-greek-400-normal-jFM2czAU.woff2         [39m[1m[2m  9.64 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-greek-700-normal-DpKAje7q.woff2         [39m[1m[2m  9.68 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-cyrillic-400-normal-C5q4FMUG.woff       [39m[1m[2m  9.73 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-cyrillic-300-normal-Cb01H779.woff       [39m[1m[2m  9.78 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-cyrillic-500-normal-DhPqGoNQ.woff       [39m[1m[2m  9.90 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-cyrillic-700-normal-BmXeMSnZ.woff       [39m[1m[2m  9.90 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-symbols-400-normal-fF1SLJBj.woff2       [39m[1m[2m 10.58 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-symbols-300-normal-BtHl5mYl.woff2       [39m[1m[2m 10.62 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-symbols-500-normal-BXFTxrNR.woff2       [39m[1m[2m 10.73 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-symbols-700-normal-DKkQdRpM.woff2       [39m[1m[2m 10.80 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-cyrillic-300-normal-BoeCr7ev.woff2      [39m[1m[2m 11.83 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-cyrillic-400-normal-DAIM1_dR.woff2      [39m[1m[2m 11.84 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-cyrillic-700-normal-CzEIZVQR.woff2      [39m[1m[2m 11.97 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-cyrillic-500-normal-hCeO1jFL.woff2      [39m[1m[2m 11.98 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-latin-ext-400-normal-BG57dRWO.woff      [39m[1m[2m 12.47 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-latin-ext-700-normal-DGcaX69F.woff      [39m[1m[2m 12.48 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-latin-ext-500-normal-EUd9mLnZ.woff      [39m[1m[2m 12.52 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-latin-ext-300-normal-9Myisv2Z.woff      [39m[1m[2m 12.58 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-latin-ext-300-normal-BOz0oSmX.woff2     [39m[1m[2m 13.74 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-latin-ext-400-normal-ZYmyxeOy.woff2     [39m[1m[2m 13.74 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-latin-ext-700-normal-BNPgmEQS.woff2     [39m[1m[2m 13.96 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-latin-ext-500-normal-C_ARlJGk.woff2     [39m[1m[2m 13.98 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-cyrillic-ext-300-normal-D2-2MTar.woff   [39m[1m[2m 15.38 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-cyrillic-ext-400-normal-5IDvadIC.woff   [39m[1m[2m 15.40 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-cyrillic-ext-700-normal-y_8Eg3F3.woff   [39m[1m[2m 15.51 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-cyrillic-ext-500-normal-aAFKCR76.woff   [39m[1m[2m 15.52 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-cyrillic-ext-400-normal-DzMWdK87.woff2  [39m[1m[2m 16.85 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-cyrillic-ext-300-normal-CUPJdUZp.woff2  [39m[1m[2m 16.91 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-cyrillic-ext-700-normal-D_fA0fHY.woff2  [39m[1m[2m 17.11 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-cyrillic-ext-500-normal-B7rQpwPu.woff2  [39m[1m[2m 17.16 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-math-400-normal-BRMeFL5Z.woff           [39m[1m[2m 18.28 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-math-500-normal-nGmytUgK.woff           [39m[1m[2m 18.36 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-math-700-normal-yuY-ZMbs.woff           [39m[1m[2m 18.42 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-math-300-normal-9fozW1Ii.woff           [39m[1m[2m 18.44 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-latin-400-normal-BX2H0A0_.woff          [39m[1m[2m 19.57 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-math-400-normal-B3wgz80t.woff2          [39m[1m[2m 19.66 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-latin-500-normal-CoDN7ZW2.woff          [39m[1m[2m 19.67 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-math-300-normal-BMxwzQmU.woff2          [39m[1m[2m 19.68 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-latin-700-normal-D74k8Kh_.woff          [39m[1m[2m 19.72 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-latin-300-normal--FIRE8Jd.woff          [39m[1m[2m 19.79 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-math-500-normal-CFNaIMFC.woff2          [39m[1m[2m 19.98 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-math-700-normal-xbpggnJp.woff2          [39m[1m[2m 19.98 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-latin-400-normal-CNwBRw8h.woff2         [39m[1m[2m 20.61 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-latin-300-normal-CztWkFGs.woff2         [39m[1m[2m 20.71 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-latin-500-normal-CkrA1NAy.woff2         [39m[1m[2m 20.93 kB[22m[1m[22m
+[2mdist/[22m[32massets/roboto-latin-700-normal-DZr4b_KL.woff2         [39m[1m[2m 21.00 kB[22m[1m[22m
+[2mdist/[22m[35massets/index-B9hGFApn.css                             [39m[1m[2m 47.21 kB[22m[1m[22m[2m │ gzip:  21.54 kB[22m
+[2mdist/[22m[36massets/index-BulDXGoI.js                              [39m[1m[33m713.61 kB[39m[22m[2m │ gzip: 218.79 kB[22m[2m │ map: 3,002.38 kB[22m
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+[32m✓ built in 24.70s[39m

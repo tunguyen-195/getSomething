@@ -1,0 +1,192 @@
+time="2026-08-14T03:12:40+07:00" level=warning msg="The \"SECRET_KEY\" variable is not set. Defaulting to a blank string."
+time="2026-08-14T03:12:40+07:00" level=warning msg="The \"POSTGRES_USER\" variable is not set. Defaulting to a blank string."
+time="2026-08-14T03:12:40+07:00" level=warning msg="The \"POSTGRES_PASSWORD\" variable is not set. Defaulting to a blank string."
+time="2026-08-14T03:12:40+07:00" level=warning msg="The \"POSTGRES_DB\" variable is not set. Defaulting to a blank string."
+time="2026-08-14T03:12:40+07:00" level=warning msg="The \"POSTGRES_USER\" variable is not set. Defaulting to a blank string."
+time="2026-08-14T03:12:40+07:00" level=warning msg="The \"POSTGRES_PASSWORD\" variable is not set. Defaulting to a blank string."
+time="2026-08-14T03:12:40+07:00" level=warning msg="The \"POSTGRES_DB\" variable is not set. Defaulting to a blank string."
+time="2026-08-14T03:12:40+07:00" level=warning msg="The \"SECRET_KEY\" variable is not set. Defaulting to a blank string."
+time="2026-08-14T03:12:40+07:00" level=warning msg="The \"POSTGRES_PASSWORD\" variable is not set. Defaulting to a blank string."
+time="2026-08-14T03:12:40+07:00" level=warning msg="The \"POSTGRES_DB\" variable is not set. Defaulting to a blank string."
+time="2026-08-14T03:12:40+07:00" level=warning msg="The \"POSTGRES_USER\" variable is not set. Defaulting to a blank string."
+name: stt-release-candidate-provisional-v2b-20260814
+services:
+  backend:
+    build:
+      context: E:\research\STT-release-candidate-provisional-v2b-20260814
+      dockerfile: Dockerfile.backend
+    depends_on:
+      db:
+        condition: service_started
+        required: true
+      redis:
+        condition: service_started
+        required: true
+    environment:
+      AI_CONTEXT_RETENTION_DAYS: "90"
+      AUTH_ENABLED: "true"
+      BACKEND_HOST: 0.0.0.0
+      BACKEND_PORT: "8000"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      COOKIE_SAMESITE: lax
+      COOKIE_SECURE: "false"
+      CORS_ORIGINS: http://localhost:3000,http://localhost:8000
+      DATABASE_URL: postgresql://:@db:5432/
+      DEBUG: "true"
+      DEV_AUTH_BYPASS: "false"
+      DEV_USER_ID: "0"
+      ENABLE_API_DOCS: "true"
+      ENABLE_HIGH_RISK_AI_FIELDS: "false"
+      ENVIRONMENT: development
+      INIT_DB_ON_STARTUP: "true"
+      INITIAL_ADMIN_PASSWORD: ""
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      SECRET_KEY: ""
+      STORE_RAW_LLM_RESPONSES: "false"
+      TRANSCRIPTION_ENGINE: auto
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 8000
+        published: "8000"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: E:\research\STT-release-candidate-provisional-v2b-20260814
+        target: /app
+        bind:
+          create_host_path: true
+      - type: bind
+        source: E:\research\STT-release-candidate-provisional-v2b-20260814\models
+        target: /app/models
+        bind:
+          create_host_path: true
+      - type: bind
+        source: E:\research\STT-release-candidate-provisional-v2b-20260814\uploads
+        target: /app/uploads
+        bind:
+          create_host_path: true
+      - type: bind
+        source: E:\research\STT-release-candidate-provisional-v2b-20260814\storage\audio
+        target: /app/storage/audio
+        bind:
+          create_host_path: true
+  celery_worker:
+    build:
+      context: E:\research\STT-release-candidate-provisional-v2b-20260814
+      dockerfile: Dockerfile.backend
+    command:
+      - celery
+      - -A
+      - src.worker
+      - worker
+      - --loglevel=info
+    depends_on:
+      db:
+        condition: service_started
+        required: true
+      redis:
+        condition: service_started
+        required: true
+    environment:
+      AI_CONTEXT_RETENTION_DAYS: "90"
+      AUTH_ENABLED: "true"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      DATABASE_URL: postgresql://:@db:5432/
+      DEBUG: "true"
+      DEV_AUTH_BYPASS: "false"
+      DEV_USER_ID: "0"
+      ENABLE_HIGH_RISK_AI_FIELDS: "false"
+      ENVIRONMENT: development
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      SECRET_KEY: ""
+      STORE_RAW_LLM_RESPONSES: "false"
+      TRANSCRIPTION_ENGINE: auto
+    networks:
+      default: null
+    volumes:
+      - type: bind
+        source: E:\research\STT-release-candidate-provisional-v2b-20260814
+        target: /app
+        bind:
+          create_host_path: true
+      - type: bind
+        source: E:\research\STT-release-candidate-provisional-v2b-20260814\models
+        target: /app/models
+        bind:
+          create_host_path: true
+      - type: bind
+        source: E:\research\STT-release-candidate-provisional-v2b-20260814\uploads
+        target: /app/uploads
+        bind:
+          create_host_path: true
+      - type: bind
+        source: E:\research\STT-release-candidate-provisional-v2b-20260814\storage\audio
+        target: /app/storage/audio
+        bind:
+          create_host_path: true
+  db:
+    environment:
+      POSTGRES_DB: ""
+      POSTGRES_PASSWORD: ""
+      POSTGRES_USER: ""
+    image: postgres:15
+    networks:
+      default: null
+    volumes:
+      - type: volume
+        source: postgres_data
+        target: /var/lib/postgresql/data
+        volume: {}
+  frontend:
+    build:
+      context: E:\research\STT-release-candidate-provisional-v2b-20260814\frontend
+      dockerfile: Dockerfile
+    depends_on:
+      backend:
+        condition: service_started
+        required: true
+    environment:
+      VITE_API_URL: http://localhost:8000
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 3000
+        published: "3000"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: E:\research\STT-release-candidate-provisional-v2b-20260814\frontend
+        target: /app
+        bind:
+          create_host_path: true
+      - type: volume
+        target: /app/node_modules
+        volume: {}
+  redis:
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+    image: redis:7
+    networks:
+      default: null
+    volumes:
+      - type: volume
+        source: redis_data
+        target: /data
+        volume: {}
+networks:
+  default:
+    name: stt-release-candidate-provisional-v2b-20260814_default
+volumes:
+  postgres_data:
+    name: stt-release-candidate-provisional-v2b-20260814_postgres_data
+  redis_data:
+    name: stt-release-candidate-provisional-v2b-20260814_redis_data

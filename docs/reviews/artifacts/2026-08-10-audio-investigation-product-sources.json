@@ -1,0 +1,92 @@
+{
+  "schema_version": "rtk-product-source-manifest-v1",
+  "observed_at": "2026-08-10T00:00:00+07:00",
+  "workspace": "E:\\research\\STT",
+  "purpose": "Primary-source product pattern review for audio investigation development",
+  "sources": [
+    {
+      "repo": "m-bain/whisperX",
+      "url": "https://github.com/m-bain/whisperX",
+      "pushed_at": "2026-07-13T08:30:07Z",
+      "adopt": ["word_alignment", "word_speaker_assignment", "speaker_count_hints"],
+      "caveat": "overlap and diarization are explicitly imperfect"
+    },
+    {
+      "repo": "pyannote/pyannote-audio",
+      "url": "https://github.com/pyannote/pyannote-audio",
+      "pushed_at": "2026-08-04T17:30:45Z",
+      "adopt": ["community_1", "speaker_count_controls", "local_runtime"],
+      "caveat": "STT currently lacks the compatible runtime and complete gated snapshot"
+    },
+    {
+      "repo": "NVIDIA-NeMo/Speech",
+      "url": "https://github.com/NVIDIA-NeMo/Speech",
+      "pushed_at": "2026-08-10T06:58:12Z",
+      "adopt": ["sortformer_profile", "cascaded_vad_embedding_clustering"],
+      "caveat": "secondary product profile after default diarization is stable"
+    },
+    {
+      "repo": "linto-ai/linto-studio",
+      "url": "https://github.com/linto-ai/linto-studio",
+      "pushed_at": "2026-07-31T15:28:25Z",
+      "adopt": ["transcript_annotation_workspace", "speaker_editing"],
+      "caveat": "transcription workflow reference, not investigation authority"
+    },
+    {
+      "repo": "Vexa-ai/vexa",
+      "url": "https://github.com/Vexa-ai/vexa",
+      "pushed_at": "2026-08-10T03:00:49Z",
+      "adopt": ["draft_confirmed_states", "propose_only_updates", "structured_workspace"],
+      "caveat": "meeting collaboration workflow must be hardened for investigation use"
+    },
+    {
+      "repo": "screenpipe/screenpipe",
+      "url": "https://github.com/screenpipe/screenpipe",
+      "pushed_at": "2026-08-10T05:00:36Z",
+      "adopt": ["local_first", "search", "deterministic_permissions", "timeline_views"],
+      "caveat": "source-available licensing and occurrence-time timeline differ from STT needs"
+    },
+    {
+      "repo": "alephdata/aleph",
+      "url": "https://github.com/alephdata/aleph",
+      "pushed_at": "2026-02-20T22:43:51Z",
+      "adopt": ["mention_extraction", "false_positive_filter", "cross_reference", "editable_network"],
+      "caveat": "legacy OSS maintenance ended after December 2025"
+    },
+    {
+      "repo": "alephdata/followthemoney",
+      "url": "https://github.com/alephdata/followthemoney",
+      "pushed_at": "2026-02-28T04:02:34Z",
+      "adopt": ["pragmatic_investigation_schema"],
+      "caveat": "reuse design approach, not a mandatory dependency"
+    },
+    {
+      "repo": "opensemanticsearch/open-semantic-search",
+      "url": "https://github.com/opensemanticsearch/open-semantic-search",
+      "pushed_at": "2025-04-19T14:57:11Z",
+      "adopt": ["etl_ner_search_facets", "knowledge_graph_search"],
+      "caveat": "document-search architecture, not an audio pipeline"
+    },
+    {
+      "repo": "microsoft/graphrag",
+      "url": "https://github.com/microsoft/graphrag",
+      "pushed_at": "2026-08-09T06:24:25Z",
+      "adopt": ["text_unit_entity_relationship_tables", "multi_level_reports"],
+      "reject": ["llm_true_false_suspected_authority"]
+    },
+    {
+      "repo": "OpenCTI-Platform/opencti",
+      "url": "https://github.com/OpenCTI-Platform/opencti",
+      "pushed_at": "2026-08-10T06:51:42Z",
+      "adopt": ["single_schema_multiple_views", "analyst_graph_workflow"],
+      "caveat": "cyber threat domain differs from criminal audio investigation"
+    },
+    {
+      "repo": "sonic-visualiser/sonic-visualiser",
+      "url": "https://github.com/sonic-visualiser/sonic-visualiser",
+      "pushed_at": "2025-12-07T16:09:55Z",
+      "adopt": ["separate_signal_annotation_workspace"],
+      "caveat": "audio signal inspection only; no semantic investigation model"
+    }
+  ]
+}

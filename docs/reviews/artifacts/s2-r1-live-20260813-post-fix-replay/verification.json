@@ -1,0 +1,165 @@
+{
+  "artifact_type": "summary_replay_verification",
+  "checks": [
+    {
+      "expected": "d59205bd-7955-4143-a721-3cb40ca4ba7c",
+      "name": "task_id_unchanged",
+      "observed": "d59205bd-7955-4143-a721-3cb40ca4ba7c",
+      "scope": "eligibility",
+      "status": "PASS"
+    },
+    {
+      "expected": "804454479b9bf3bd5f8ab383cdda248a67675c6570bd94df1dd8581089cd5c1a",
+      "name": "transcription_hash_unchanged",
+      "observed": "804454479b9bf3bd5f8ab383cdda248a67675c6570bd94df1dd8581089cd5c1a",
+      "scope": "eligibility",
+      "status": "PASS"
+    },
+    {
+      "expected": 3517,
+      "name": "transcription_length_unchanged",
+      "observed": 3517,
+      "scope": "eligibility",
+      "status": "PASS"
+    },
+    {
+      "expected": "d6cea5143f750df89fd81664a8ec682f471d144c657bf5d17720beaab660ca13",
+      "name": "segments_hash_unchanged",
+      "observed": "d6cea5143f750df89fd81664a8ec682f471d144c657bf5d17720beaab660ca13",
+      "scope": "eligibility",
+      "status": "PASS"
+    },
+    {
+      "expected": 65,
+      "name": "segment_count_unchanged",
+      "observed": 65,
+      "scope": "eligibility",
+      "status": "PASS"
+    },
+    {
+      "expected": true,
+      "name": "context_analysis_is_object",
+      "observed": true,
+      "scope": "eligibility",
+      "status": "PASS"
+    },
+    {
+      "expected": [
+        "INVESTIGATION_COVERAGE_FAILED",
+        "INVESTIGATION_LENGTH_CONFLICT",
+        "INVESTIGATION_WRITER_REJECTED"
+      ],
+      "name": "typed_failure_code",
+      "observed": "INVESTIGATION_WRITER_REJECTED",
+      "scope": "recovery",
+      "status": "PASS"
+    },
+    {
+      "expected": false,
+      "name": "generic_failure_not_used",
+      "observed": false,
+      "scope": "recovery",
+      "status": "PASS"
+    },
+    {
+      "expected": "empty",
+      "name": "summary_absent",
+      "observed": 0,
+      "scope": "recovery",
+      "status": "PASS"
+    },
+    {
+      "expected": "unavailable",
+      "name": "summary_state",
+      "observed": "unavailable",
+      "scope": "recovery",
+      "status": "PASS"
+    },
+    {
+      "expected": "rejected",
+      "name": "writer_status",
+      "observed": "rejected",
+      "scope": "recovery",
+      "status": "PASS"
+    },
+    {
+      "expected": "three-call delta exhaustion for writer rejection or exactly two calls (initial, repair) for a typed non-delta rejection",
+      "name": "bounded_recovery_path",
+      "observed": {
+        "code": "INVESTIGATION_WRITER_REJECTED",
+        "llm_call_count": 3,
+        "token_budget_kinds": [
+          "initial",
+          "repair",
+          "delta_repair"
+        ]
+      },
+      "scope": "recovery",
+      "status": "PASS"
+    }
+  ],
+  "current": {
+    "captured_at": "2026-08-13T07:43:57.862829+00:00",
+    "context_analysis_is_object": true,
+    "context_analysis_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "error_is_generic_failure": false,
+    "error_present": true,
+    "error_sha256": "669e9692ec461ea8ea68dec6c8fc38761c420e12b2a74cceea7acf9382c6c148",
+    "llm_call_count": 3,
+    "schema_version": "stt-summary-replay-v1",
+    "segment_count": 65,
+    "segments_sha256": "d6cea5143f750df89fd81664a8ec682f471d144c657bf5d17720beaab660ca13",
+    "summary_error_code": "INVESTIGATION_WRITER_REJECTED",
+    "summary_length": 0,
+    "summary_sha256": null,
+    "summary_state": "unavailable",
+    "summary_word_count": 0,
+    "task_id": "d59205bd-7955-4143-a721-3cb40ca4ba7c",
+    "task_status": "failed",
+    "token_budget_kinds": [
+      "initial",
+      "repair",
+      "delta_repair"
+    ],
+    "transcription_length": 3517,
+    "transcription_sha256": "804454479b9bf3bd5f8ab383cdda248a67675c6570bd94df1dd8581089cd5c1a",
+    "writer_status": "rejected"
+  },
+  "eligibility": {
+    "failed_checks": [],
+    "status": "PASS"
+  },
+  "failed_checks": [],
+  "operational_status": "PASS",
+  "outcome": "typed_writer_rejection",
+  "product_status": "BLOCKED",
+  "quality_included_in_exit_code": false,
+  "quality_included_in_status": false,
+  "recovery": {
+    "failed_checks": [],
+    "generation_path": "all_attempts_rejected",
+    "status": "PASS"
+  },
+  "report_availability": {
+    "reason_code": "NO_REPORT_BODY",
+    "status": "UNAVAILABLE"
+  },
+  "report_quality": {
+    "checks": [],
+    "failed_checks": [],
+    "reason_code": "NO_REPORT_BODY",
+    "status": "BLOCKED",
+    "subject_sha256": null,
+    "validator": {
+      "available": false,
+      "name": "validate_investigative_report_body",
+      "required_phase": "S2-R5",
+      "version": null
+    }
+  },
+  "schema_version": "stt-summary-replay-v2",
+  "status": "PASS",
+  "status_scope": "availability_and_recovery_only",
+  "task_id": "d59205bd-7955-4143-a721-3cb40ca4ba7c",
+  "verified_at": "2026-08-13T07:43:57.862829+00:00"
+}

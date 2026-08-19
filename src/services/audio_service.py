@@ -1,25 +1,11 @@
 import os
 import json
-import uuid
 from fastapi import UploadFile, HTTPException
 from pathlib import Path
 from src.core.logging import logger
 from src.core.config import settings
 from src.database.models.models import AudioFile
-from src.services.task_service import (
-    SummaryResultRejected,
-    begin_summary_attempt,
-    build_summary_attempt_binding,
-    build_summary_result_patch,
-    create_task,
-    fail_summary_attempt,
-    get_task,
-    safe_summary_message,
-    succeed_summary_attempt,
-    update_task,
-    validate_persisted_terminal_summary,
-    validate_summary_service_result,
-)
+from src.services.task_service import create_task, update_task, get_task
 from src.speech_to_text.transcriber import Transcriber, OllamaProcessor
 from src.audio_processing.processor import AudioProcessor
 from src.services.audio_storage import (
@@ -50,13 +36,16 @@ def _validate_legacy_summary_request(
     summary_type: SummaryType,
     min_length: int,
     max_length: int,
+    allow_investigation: bool = False,
 ):
     options = validate_summary_request_options(
         summary_type=summary_type,
         min_length=min_length,
         max_length=max_length,
     )
-    if options.summary_type in {"investigation", "forensic"}:
+    if options.summary_type == "forensic" or (
+        options.summary_type == "investigation" and not allow_investigation
+    ):
         raise SummaryRequestContractError(
             "LEGACY_EVIDENCE_SUMMARY_DISABLED",
             "Legacy generic summarization cannot release investigation or forensic "
@@ -115,7 +104,12 @@ def save_audio_and_create_task(file: UploadFile, db, case_id: int = None, user_i
             archive_reason=None,
             storage_type='local',
             storage_config={},
-            extra_metadata={"original_filename": stored.original_filename}
+            extra_metadata={
+                "original_filename": stored.original_filename,
+                "sha256": stored.sha256,
+                "integrity_status": "verified_at_upload",
+                "evidence_source": "user_upload",
+            }
         )
         db.add(audio_file)
         db.flush()
@@ -124,6 +118,8 @@ def save_audio_and_create_task(file: UploadFile, db, case_id: int = None, user_i
                 "audio_id": audio_file.id,
                 "download_url": f"/api/v1/audio/{audio_file.id}/download",
                 "filename": stored.original_filename,
+                "audio_sha256": stored.sha256,
+                "audio_integrity_status": "verified_at_upload",
             }
         }, db=db)
         db.commit()
@@ -140,6 +136,8 @@ def save_audio_and_create_task(file: UploadFile, db, case_id: int = None, user_i
             "status": "uploaded",
             "file_size": audio_file.file_size,
             "download_url": f"/api/v1/audio/{audio_file.id}/download",
+            "audio_sha256": stored.sha256,
+            "audio_integrity_status": "verified_at_upload",
         }
     except Exception as e:
         db.rollback()
@@ -154,313 +152,122 @@ def save_audio_and_create_task(file: UploadFile, db, case_id: int = None, user_i
 
 
 
-def _safe_process_failure(code: str, *, status: str = "failed") -> dict:
-    return {
-        "status": status,
-        "error": {
-            "code": code,
-            "message": safe_summary_message(code),
-        },
-    }
-
-
-def _summary_transition_failure_code(outcome, requested_code: str) -> str:
-    if outcome.accepted:
-        return requested_code
-    if outcome.outcome == "conflict":
-        return outcome.code
-    return "SUMMARY_PERSISTENCE_FAILED"
-
-
-def _summarize_processed_transcript(
-    task_id: str,
-    transcript: str,
-    *,
-    model_name: str | None,
-    attempt_id: str | None = None,
-) -> dict:
-    from src.services.summarization.summary_service_v2 import summarize_transcript_v2
-
-    request_fingerprint, source_revision_id = build_summary_attempt_binding(
-        transcript,
-        model_name=model_name,
-        summary_type=DEFAULT_SUMMARY_TYPE,
-        include_context=True,
-        min_length=DEFAULT_SUMMARY_MIN_WORDS,
-        max_length=DEFAULT_SUMMARY_MAX_WORDS,
-    )
-    attempt_id = str(attempt_id or uuid.uuid4())
-    begun = begin_summary_attempt(
-        task_id,
-        attempt_id,
-        request_fingerprint=request_fingerprint,
-        source_revision_id=source_revision_id,
-        stage="execution",
-    )
-    if not begun.accepted:
-        return _safe_process_failure(
-            begun.code if begun.outcome == "conflict" else "SUMMARY_PERSISTENCE_FAILED"
-        )
-    if begun.outcome == "duplicate" and begun.state in {
-        "succeeded",
-        "failed",
-        "needs_review",
-    }:
-        if begun.state != "succeeded":
-            return _safe_process_failure(begun.code, status=begun.state)
-        stored_task = get_task(task_id) or {}
-        stored_result = stored_task.get("result")
-        try:
-            validated = validate_persisted_terminal_summary(
-                stored_result,
-                expected_attempt_id=attempt_id,
-            )
-        except SummaryResultRejected as rejection:
-            return _safe_process_failure(rejection.code)
-        return {
-            "status": "summarized",
-            "attempt_id": attempt_id,
-            "summary": validated.summary,
-            "model_name": validated.model,
-            "summary_type": validated.summary_type,
-            "context_analysis": validated.context,
-            "result": validated.safe_result,
-        }
-
-    try:
-        raw_result = summarize_transcript_v2(
-            transcript=transcript,
-            model_name=model_name,
-            summary_type=DEFAULT_SUMMARY_TYPE,
-            include_context=True,
-            min_length=DEFAULT_SUMMARY_MIN_WORDS,
-            max_length=DEFAULT_SUMMARY_MAX_WORDS,
-            source_metadata={
-                "summary_source_revision_id": source_revision_id,
-                "request_fingerprint": request_fingerprint,
-            },
-        )
-        validated = validate_summary_service_result(
-            raw_result,
-            expected_summary_type=DEFAULT_SUMMARY_TYPE,
-            expected_source_revision_id=source_revision_id,
-            expected_request_fingerprint=request_fingerprint,
-        )
-    except SummaryResultRejected as rejection:
-        persisted = fail_summary_attempt(
-            task_id,
-            attempt_id,
-            code=rejection.code,
-            stage=rejection.stage,
-            retryable=rejection.retryable,
-            needs_review=rejection.needs_review,
-        )
-        code = _summary_transition_failure_code(persisted, rejection.code)
-        status = persisted.state if persisted.accepted else "failed"
-        return _safe_process_failure(code, status=status)
-    except Exception as exc:
-        logger.error(
-            "[AUDIO_SERVICE] Summary provider failed | task_id=%s | error_type=%s",
-            task_id,
-            type(exc).__name__,
-        )
-        rejection = SummaryResultRejected(
-            "SUMMARY_GENERATION_FAILED",
-            stage="execution",
-            retryable=True,
-            needs_review=False,
-        )
-        persisted = fail_summary_attempt(
-            task_id,
-            attempt_id,
-            code=rejection.code,
-            stage=rejection.stage,
-            retryable=rejection.retryable,
-            needs_review=False,
-        )
-        code = _summary_transition_failure_code(persisted, rejection.code)
-        return _safe_process_failure(code)
-
-    result_patch = build_summary_result_patch(
-        validated,
-        summary_type=DEFAULT_SUMMARY_TYPE,
-    )
-    persisted = succeed_summary_attempt(task_id, attempt_id, result_patch)
-    if not persisted.accepted:
-        return _safe_process_failure(
-            persisted.code
-            if persisted.outcome == "conflict"
-            else "SUMMARY_PERSISTENCE_FAILED"
-        )
-    return {
-        "status": "summarized",
-        "attempt_id": attempt_id,
-        "summary": validated.summary,
-        "model_name": validated.model,
-        "summary_type": DEFAULT_SUMMARY_TYPE,
-        "context_analysis": validated.context,
-        "result": validated.safe_result,
-    }
-
-
-def process_task_with_diarization(
-    task_id: str,
-    model_name: str,
-    db,
-    diarization_method: str = "none",
-    summary_attempt_id: str | None = None,
-) -> dict:
-    """Transcribe first, then run the shared typed summary state machine."""
+def process_task_with_diarization(task_id: str, model_name: str, db, diarization_method: str = "none") -> dict:
+    """Xử lý task: transcribe, summarize, speaker diarization nếu có. Trả về kết quả gọn."""
     from src.audio_processing.diarization.manager import get_pipeline
-
     logger.info(
-        "[AUDIO_SERVICE] Process task | task_id=%s | model=%s | diarization=%s",
-        task_id,
-        model_name,
-        diarization_method,
+        f"[AUDIO_SERVICE] Bắt đầu process_task_with_diarization | "
+        f"task_id={task_id} | model_name={model_name} | "
+        f"diarization_method={diarization_method}"
     )
     try:
         task = get_task(task_id)
         if not task:
-            return _safe_process_failure("SUMMARY_RESULT_INVALID")
-        task_result = task.get("result")
-        task_result = task_result if isinstance(task_result, dict) else {}
-        current_summary_state = task_result.get("summary_state")
-        if (
-            summary_attempt_id
-            and isinstance(current_summary_state, dict)
-            and current_summary_state.get("attempt_id") == summary_attempt_id
-            and current_summary_state.get("status")
-            in {"running", "succeeded", "failed", "needs_review"}
-        ):
-            current_transcript = task_result.get("transcription")
-            if not isinstance(current_transcript, str) or not current_transcript.strip():
-                return _safe_process_failure("SUMMARY_RESULT_INVALID")
-            return _summarize_processed_transcript(
-                task_id,
-                current_transcript,
-                model_name=model_name,
-                attempt_id=summary_attempt_id,
-            )
+            raise HTTPException(status_code=404, detail="Task not found")
         audio_file = db.query(AudioFile).filter(AudioFile.task_id == task_id).first()
         if not audio_file:
-            return _safe_process_failure("SUMMARY_RESULT_INVALID")
+            raise HTTPException(status_code=404, detail="Audio file not found")
         audio_path_str = str(resolve_audio_path(audio_file.file_path))
         audio_processor = AudioProcessor()
-        audio, _sample_rate = audio_processor.load_audio(audio_path_str)
-        audio_processor.enhance_speech_llase(audio)
+        audio, sr = audio_processor.load_audio(audio_path_str)
+        audio = audio_processor.enhance_speech_llase(audio)
         pipeline = get_pipeline(diarization_method)
-
         if pipeline:
             segments = pipeline.run(audio_path_str)
-            transcript = " ".join(
-                segment.get("text", "")
-                for segment in segments
-                if isinstance(segment, dict)
-            ).strip()
-            transcription_result = {
+            transcript = " ".join([seg["text"] for seg in segments])
+            summary = summarize_transcript(transcript, context=None, model_name=model_name)
+            result = {
+                "status": "summarized",
                 "filename": audio_file.filename,
-                "transcription": transcript,
                 "segments": segments,
+                "summary": summary,
                 "diarization_method": diarization_method,
-                "download_url": f"/api/v1/audio/{audio_file.id}/download",
+                "download_url": f"/api/v1/audio/{audio_file.id}/download"
             }
-        else:
-            transcriber = Transcriber()
-            options = {}
-            if hasattr(audio_file, "options") and audio_file.options:
-                options = (
-                    json.loads(audio_file.options)
-                    if isinstance(audio_file.options, str)
-                    else audio_file.options
-                )
-            fast_mode = options.get(
-                "fast_mode", getattr(settings, "WHISPER_FAST_MODE", True)
-            )
-            enable_diarization = options.get(
-                "enable_diarization", diarization_method != "none"
-            )
-            if enable_diarization and diarization_method != "none":
-                raw_transcription = transcriber.transcribe_with_diarization(
-                    audio_path_str,
-                    fast_mode=fast_mode,
-                    enable_diarization=True,
-                )
-            else:
-                raw_transcription = transcriber.transcribe(
-                    audio_path_str,
-                    fast_mode=fast_mode,
-                )
-            transcript = str(raw_transcription.get("transcription") or "").strip()
-            wer, cer, noise_score = benchmark_asr(transcript, audio_path_str)
-            logger.info(
-                "[AUDIO_SERVICE] ASR benchmark | WER=%s | CER=%s | noise=%s",
-                wer,
-                cer,
-                noise_score,
-            )
-            transcription_result = {
-                "filename": audio_file.filename,
-                "duration": raw_transcription.get("duration"),
-                "transcription": transcript,
-                "caption": raw_transcription.get("caption"),
-                "segments": raw_transcription.get("segments", []),
-                "language": raw_transcription.get("language"),
-                "confidence": raw_transcription.get("confidence"),
-                "processing_time": raw_transcription.get("processing_time"),
-                "diarization_method": diarization_method,
-                "download_url": f"/api/v1/audio/{audio_file.id}/download",
-            }
-
-        if not transcript:
-            update_task(
-                task_id,
-                {
-                    "status": "failed",
-                    "error": safe_summary_message("SUMMARY_RESULT_INVALID"),
-                },
-                db=db,
-            )
-            audio_file.status = "failed"
+            update_task(task_id, {"status": "summarized", "result": result})
+            audio_file.status = "summarized"
             db.commit()
-            return _safe_process_failure("SUMMARY_RESULT_INVALID")
+            return result
+        else:
+            # Enhanced transcription với diarization support
+            transcriber = Transcriber()
 
-        if not update_task(
-            task_id,
-            {
-                "status": "transcribed",
-                "result": transcription_result,
-                "transcript": transcript,
-            },
-            db=db,
-        ):
-            db.rollback()
-            return _safe_process_failure("SUMMARY_PERSISTENCE_FAILED")
-        audio_file.status = "transcribed"
-        if transcription_result.get("duration") is not None:
-            audio_file.duration = transcription_result["duration"]
-        db.commit()
+            # Get options from task or use defaults
+            options = {}
+            if hasattr(audio_file, 'options') and audio_file.options:
+                import json
+                options = json.loads(audio_file.options) if isinstance(audio_file.options, str) else audio_file.options
 
-        summary_result = _summarize_processed_transcript(
-            task_id,
-            transcript,
-            model_name=model_name,
-            attempt_id=summary_attempt_id,
-        )
-        if summary_result["status"] != "summarized":
-            return summary_result
-        return {
-            **transcription_result,
-            **summary_result,
-        }
-    except Exception as exc:
-        db.rollback()
-        logger.error(
-            "[AUDIO_SERVICE] Process task failed | task_id=%s | error_type=%s",
-            task_id,
-            type(exc).__name__,
-        )
-        return _safe_process_failure("SUMMARY_GENERATION_FAILED")
+            fast_mode = options.get('fast_mode', getattr(settings, 'WHISPER_FAST_MODE', False))
+            enable_diarization = options.get('enable_diarization', diarization_method != "none")
+
+            # Use new diarization method if enabled
+            if enable_diarization and diarization_method != "none":
+                logger.info(f"[AUDIO_SERVICE] Using transcribe_with_diarization | fast_mode={fast_mode} | diarization={diarization_method}")
+                result = transcriber.transcribe_with_diarization(
+                    audio_path_str,
+                    fast_mode=fast_mode,
+                    enable_diarization=True
+                )
+                # Save formatted transcript to file
+                logger.info("[AUDIO_SERVICE] Formatted transcript retained in Task.result")
+            else:
+                # Use old method without diarization
+                result = transcriber.transcribe(audio_path_str, fast_mode=fast_mode)
+
+            logger.info(f"[AUDIO_SERVICE] Kết quả transcribe | task_id={task_id} | fast_mode={fast_mode} | diarization={enable_diarization} | result_keys={list(result.keys())}")
+            wer, cer, noise_score = benchmark_asr(result.get("transcription"), audio_path_str)
+            logger.info(f"[AUDIO_SERVICE] Benchmark | WER={wer}, CER={cer}, noise_score={noise_score}")
+            transcript = result.get("transcription")
+            caption = result.get("caption")
+            if not transcript or not transcript.strip():
+                logger.warning(f"[AUDIO_SERVICE] Không nhận diện được nội dung từ file âm thanh | task_id={task_id}")
+                update_task(task_id, {"status": "failed", "error": "Không nhận diện được nội dung từ file âm thanh."})
+                audio_file.status = "failed"
+                db.commit()
+                return {"status": "failed", "error": "Không nhận diện được nội dung từ file âm thanh."}
+            context_analysis = result.get("context_analysis") or result.get("analysis")
+            if not isinstance(context_analysis, dict):
+                context_analysis = {}
+            if caption:
+                context_analysis["caption"] = caption
+            summary = summarize_transcript(transcript, context=context_analysis, model_name=model_name)
+            logger.info(f"[AUDIO_SERVICE] Kết quả summarize | task_id={task_id} | summary_len={len(summary) if summary else 0}")
+            update_task(task_id, {
+                "status": "summarized",
+                "result": {
+                    "filename": audio_file.filename,
+                    "duration": result.get("duration"),
+                    "transcription": transcript,
+                    "caption": caption,
+                    "summary": summary,
+                    "language": result.get("language"),
+                    "confidence": result.get("confidence"),
+                    "processing_time": result.get("processing_time"),
+                    "context_analysis": context_analysis,
+                    "download_url": f"/api/v1/audio/{audio_file.id}/download"
+                }
+            })
+            audio_file.status = "summarized"
+            db.commit()
+            return {
+                "status": "summarized",
+                "filename": audio_file.filename,
+                "duration": result.get("duration", 0),
+                "transcription": transcript if transcript else "",
+                "caption": caption if caption else "",
+                "summary": summary if summary else "",
+                "language": result.get("language", "vi"),
+                "confidence": result.get("confidence", 0),
+                "processing_time": result.get("processing_time", 0),
+                "context_analysis": context_analysis,
+                "download_url": f"/api/v1/audio/{audio_file.id}/download"
+            }
+    except Exception as e:
+        logger.error(f"Error processing task {task_id}: {str(e)}", exc_info=True)
+        with open('logs/error_benchmark.log', 'a', encoding='utf-8') as f:
+            f.write(f"Task {task_id} error: {str(e)}\n")
+        return {"status": "failed", "error": str(e)}
 
 
 def translate_line_to_vietnamese(text: str) -> str:
@@ -913,6 +720,7 @@ def summarize_transcript(
         summary_type=summary_type,
         min_length=min_length,
         max_length=max_length,
+        allow_investigation=True,
     )
     summary_type = options.summary_type
     min_length = options.min_length
@@ -924,6 +732,37 @@ def summarize_transcript(
             min_length=min_length,
             max_length=max_length,
         )
+
+    if summary_type == "investigation":
+        from src.services.summarization.summary_service_v2 import (
+            summarize_transcript_v2,
+        )
+
+        result = summarize_transcript_v2(
+            transcript=transcript,
+            model_name=model_name,
+            summary_type="investigation",
+            include_context=True,
+            user_prompt=user_context_prompt,
+            min_length=min_length,
+            max_length=max_length,
+            grounded_context=context if isinstance(context, dict) else None,
+            allow_evidence_preview=True,
+        )
+        summary = result.get("summary") if isinstance(result, dict) else None
+        if (
+            not isinstance(result, dict)
+            or result.get("available") is not True
+            or not isinstance(summary, str)
+            or not summary.strip()
+        ):
+            error = (
+                result.get("error")
+                if isinstance(result, dict) and isinstance(result.get("error"), dict)
+                else {}
+            )
+            raise RuntimeError(str(error.get("code") or "INVESTIGATION_SUMMARY_UNAVAILABLE"))
+        return summary.strip()
 
     # Sử dụng model mặc định từ config nếu không chỉ định
     if model_name is None:
@@ -1110,109 +949,36 @@ def summarize_multi_transcripts(
     summary_type: SummaryType = DEFAULT_SUMMARY_TYPE,
     max_length: int = DEFAULT_MULTI_SUMMARY_MAX_WORDS,
     min_length: int = DEFAULT_MULTI_SUMMARY_MIN_WORDS,
+    length_mode: str = "auto",
 ) -> str:
-    options = _validate_legacy_summary_request(
+    """Compatibility wrapper over the canonical LLM-first multi-summary service."""
+
+    options = validate_summary_request_options(
         summary_type=summary_type,
         min_length=min_length,
         max_length=max_length,
+        length_mode=length_mode,
     )
-    summary_type = options.summary_type
-    min_length = options.min_length
-    max_length = options.max_length
+    from src.services.summarization.summary_service_v2 import (
+        summarize_multi_transcripts_v2,
+    )
 
-    if not transcripts:
-        return _finalize_legacy_summary(
-            "Không có transcript nào để tóm tắt.",
-            min_length=min_length,
-            max_length=max_length,
-        )
-    # Sử dụng model mặc định từ config nếu không chỉ định
-    if model_name is None:
-        model_name = settings.DEFAULT_AI_MODEL
-
-    if context is None and transcripts:
-        context = OllamaProcessor(model_name=model_name).analyze_context('\n'.join(transcripts))
-    if context is None:
-        context = {}
-    if model_name.startswith("ollama:"):
-        model = model_name.split(":", 1)[1]
-    else:
-        model = model_name
-    joined = '\n'.join(transcripts)
-    if model in ["gpt-oss", "qwen2.5:7b", "gemma2:9b", "deepseek-r1:7b", "mistral:7b-instruct", "llama3.2:3b"]:
-        vi_requirement = """YÊU CẦU BẮT BUỘC:
-1. TRẢ LỜI 100% BẰNG TIẾNG VIỆT
-2. KHÔNG ĐƯỢC DÙNG TIẾNG ANH
-3. NẾU VIẾT TIẾNG ANH SẼ BỊ TỪ CHỐI
-4. CHỈ ĐƯỢC VIẾT TIẾNG VIỆT
-5. KHÔNG CÓ NGOẠI LỆ
-
-"""
-        prompt = (
-            vi_requirement +
-            (
-                "Tóm tắt ngắn gọn các hội thoại dưới đây, chỉ nêu các điểm cốt lõi.\n"
-                if summary_type == "brief"
-                else "Tóm tắt tổng hợp các hội thoại dưới đây, tập trung vào các thông tin quan trọng, "
-            ) +
-            "các thực thể, mối quan hệ, mức độ nhạy cảm, quyết định, hành động, cảm xúc, ngữ cảnh.\n"
-        )
-        if 'summary' in context:
-            prompt += f"\nTóm tắt ngữ cảnh: {context['summary']}"
-        key_points = project_legacy_key_points(context)
-        if key_points:
-            prompt += f"\nCác điểm chính: {', '.join(key_points)}"
-        if 'entities' in context and context['entities']:
-            prompt += f"\nThực thể: {json.dumps(context['entities'], ensure_ascii=False)}"
-        if 'privacy_summary' in context:
-            prompt += f"\nThông tin nhạy cảm: {context['privacy_summary']}"
-        prompt += f"\nNội dung hội thoại: {joined}"
-        import requests
-        try:
-            response = requests.post(
-                "http://localhost:11434/api/generate",
-                json={
-                    "model": model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.3, "top_p": 0.9, "top_k": 40, "num_ctx": 4096}
-                }
-            )
-            if response.status_code == 200:
-                result = response.json()
-                return _finalize_legacy_summary(
-                    result.get("response", ""),
-                    min_length=min_length,
-                    max_length=max_length,
-                )
-            else:
-                return _finalize_legacy_summary(
-                    f"[Ollama error {response.status_code}]",
-                    min_length=min_length,
-                    max_length=max_length,
-                )
-        except SummaryMaximumExceeded:
-            raise
-        except Exception as e:
-            return _finalize_legacy_summary(
-                f"[Ollama error: {e}]",
-                min_length=min_length,
-                max_length=max_length,
-            )
-    else:
-        from src.summarization.summarizer import Summarizer
-        summarizer = Summarizer(model_name=model_name)
-        summary = summarizer.summarize(
-            joined,
-            context=context,
-            max_length=max_length,
-            min_length=0,
-        )
-        return _finalize_legacy_summary(
-            summary,
-            min_length=min_length,
-            max_length=max_length,
-        )
+    result = summarize_multi_transcripts_v2(
+        transcripts=transcripts,
+        model_name=model_name,
+        summary_type=options.summary_type,
+        min_length=options.min_length,
+        max_length=options.max_length,
+        length_mode=options.length_mode,
+    )
+    if result.get("available") is not True:
+        error = result.get("error") if isinstance(result.get("error"), dict) else {}
+        code = str(error.get("code") or "SUMMARY_UNAVAILABLE")
+        raise RuntimeError(code)
+    summary = result.get("summary")
+    if not isinstance(summary, str) or not summary.strip():
+        raise RuntimeError("SUMMARY_EMPTY")
+    return summary.strip()
 
 
 

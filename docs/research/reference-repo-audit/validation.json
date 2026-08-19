@@ -1,8 +1,8 @@
 {
   "schema_version": "reference-reuse-validation-v1",
-  "generated_at_utc": "2026-08-09T03:40:05.207377+00:00",
+  "generated_at_utc": "2026-08-09T06:46:04.259172+00:00",
   "valid": true,
-  "checks_total": 103,
+  "checks_total": 105,
   "checks_failed": [],
   "checks": [
     {
@@ -35,6 +35,10 @@
     },
     {
       "id": "artifact:plan_audit:exists",
+      "passed": true
+    },
+    {
+      "id": "artifact:port_register:exists",
       "passed": true
     },
     {
@@ -416,6 +420,10 @@
     {
       "id": "plan_audit:forbids:TBD",
       "passed": true
+    },
+    {
+      "id": "port_register:locked_and_fail_closed",
+      "passed": true
     }
   ],
   "artifacts": {
@@ -458,6 +466,11 @@
       "path": "docs/reviews/reference-repository-reuse-plan-audit-2026-08-09.md",
       "bytes": 3249,
       "sha256": "fe179e286c2ad8c06818a2c02dd17a446a8adecda0f0120f0a654f0c6dff7d03"
+    },
+    "port_register": {
+      "path": "docs/provenance/reference-port-register.yaml",
+      "bytes": 51110,
+      "sha256": "a0db76c8b7a7527d2a822d252f56a4599aa5e8fb46dc9b3222349e1099f98adb"
     }
   }
 }

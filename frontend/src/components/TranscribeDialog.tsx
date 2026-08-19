@@ -38,7 +38,7 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
 }) => {
   const [enableDiarization, setEnableDiarization] = useState(true);
   const [diarizationMethod, setDiarizationMethod] = useState('pyannote');
-  const [fastMode, setFastMode] = useState(true);
+  const [fastMode, setFastMode] = useState(false);
 
   const handleConfirm = () => {
     onConfirm({
@@ -221,10 +221,10 @@ const TranscribeDialog: React.FC<TranscribeDialogProps> = ({
             label={
               <Box>
                 <Typography variant="body2" fontWeight={600}>
-                  Fast Mode
+                  Fast Mode (optional)
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  ~10x faster, skip heavy post-processing
+                  Tắt mặc định để ưu tiên độ chính xác và giữ đủ nội dung điều tra
                 </Typography>
               </Box>
             }

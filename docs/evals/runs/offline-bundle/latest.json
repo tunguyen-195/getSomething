@@ -1,0 +1,116 @@
+{
+  "protocol_version": "offline-bundle-verification-v1",
+  "offline": true,
+  "bundle_id": "speechintel.offline-benchmark-candidate",
+  "bundle_version": "0.1.0",
+  "bundle_state": "benchmark_candidate",
+  "target_profile": "cand-dev-win4070s-12g-v1",
+  "bundle_manifest_sha256": "e304fbf5ad16c15498a383c60d52c9749d712fc0737a250047b20cf047d62f03",
+  "required_roles": [
+    "app-source-bundle",
+    "asr-model",
+    "database-runtime",
+    "diarization-model",
+    "ffmpeg-runtime",
+    "frontend-package-cache",
+    "license-bundle",
+    "llm-model",
+    "llm-runtime",
+    "node-runtime",
+    "os-prerequisites",
+    "prompt-schema-bundle",
+    "python-runtime",
+    "python-wheelhouse",
+    "queue-runtime",
+    "startup-profile"
+  ],
+  "role_contract_issues": [],
+  "satisfied_roles": [],
+  "missing_roles": [
+    "app-source-bundle",
+    "asr-model",
+    "database-runtime",
+    "diarization-model",
+    "ffmpeg-runtime",
+    "frontend-package-cache",
+    "license-bundle",
+    "llm-model",
+    "llm-runtime",
+    "node-runtime",
+    "os-prerequisites",
+    "prompt-schema-bundle",
+    "python-runtime",
+    "python-wheelhouse",
+    "queue-runtime",
+    "startup-profile"
+  ],
+  "components": [
+    {
+      "id": "qwen3-8b-q4-k-m-manifest",
+      "role": "llm-model",
+      "kind": "model_manifest",
+      "subject_id": "qwen.qwen3-8b-q4_k_m",
+      "valid": false,
+      "files": [
+        {
+          "path": "config/models/qwen3-8b-q4_k_m.manifest.json",
+          "size_bytes": 1573,
+          "sha256": "c1171c88e0089278e347a2a4c2d17e762e45b08ec7c28457b46c07395837e7dc",
+          "resolved_path": "D:\\Workspace\\SpeechToInfomation\\config\\models\\qwen3-8b-q4_k_m.manifest.json",
+          "valid": true,
+          "observed_size_bytes": 1573,
+          "observed_sha256": "c1171c88e0089278e347a2a4c2d17e762e45b08ec7c28457b46c07395837e7dc"
+        }
+      ],
+      "file_issues": [],
+      "nested_verification": {
+        "valid": false,
+        "model_id": "qwen.qwen3-8b-q4_k_m",
+        "version": "7c41481f57cb95916b40956ab2f0b139b296d974",
+        "model_path": "D:\\Workspace\\SpeechToInfomation\\models\\qwen3",
+        "expected_size_bytes": 5027802879,
+        "verified_size_bytes": 5027802879,
+        "issues": [
+          "unexpected_model_file:.cache/huggingface/.gitignore",
+          "unexpected_model_file:.cache/huggingface/download/LICENSE.metadata",
+          "unexpected_model_file:.cache/huggingface/download/Qwen3-8B-Q4_K_M.gguf.metadata",
+          "unexpected_model_file:.cache/huggingface/download/README.md.metadata",
+          "unexpected_model_file:.cache/huggingface/download/params.metadata"
+        ]
+      }
+    },
+    {
+      "id": "llama-cpp-b10331-win-cuda-runtime-manifest",
+      "role": "llm-runtime",
+      "kind": "runtime_manifest",
+      "subject_id": "llama.cpp.windows-cuda-12.4-x64",
+      "valid": false,
+      "files": [
+        {
+          "path": "config/runtimes/llama.cpp-b10331-windows-cuda-12.4.runtime.json",
+          "size_bytes": 2786,
+          "sha256": "9f1998f8ea4a3dafd6b5d6d9d4918045ba41a572a726871d24b62f4202580d41",
+          "resolved_path": "D:\\Workspace\\SpeechToInfomation\\config\\runtimes\\llama.cpp-b10331-windows-cuda-12.4.runtime.json",
+          "valid": true,
+          "observed_size_bytes": 2786,
+          "observed_sha256": "9f1998f8ea4a3dafd6b5d6d9d4918045ba41a572a726871d24b62f4202580d41"
+        }
+      ],
+      "file_issues": [],
+      "nested_verification": {
+        "valid": false,
+        "issues": [
+          "runtime_manifest_invalid:runtime.commit must be a full lowercase 40-hex Git commit"
+        ]
+      }
+    }
+  ],
+  "candidate_complete": false,
+  "release_ready": false,
+  "status": "BLOCKED",
+  "valid": false,
+  "limitations": [
+    "Production release requires the signed R9 release manifest and authority.",
+    "A complete candidate bundle does not establish model quality."
+  ]
+}

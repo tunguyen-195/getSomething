@@ -1,0 +1,145 @@
+{
+  "schema_version": "stt-release-test-profile-v1",
+  "profile_id": "backend-source-clean-clone-v1",
+  "scope": "backend source and clean-clone behavior before external model acquisition",
+  "test_root": "tests",
+  "pytest_args": [
+    "-q"
+  ],
+  "selection": {
+    "release_blocking_rule": "all_collected_tests_except_declared_non_release",
+    "non_release_tests": [
+      {
+        "nodeid": "tests/test_assert_summary_replay.py::test_s2_r0_evidence_artifact_preserves_historical_sources_and_replays",
+        "category": "historical_evidence",
+        "reason_code": "HISTORICAL_REPLAY_ARTIFACT",
+        "rationale": "Attests an earlier replay snapshot and raw replay output that is intentionally absent from the release candidate.",
+        "required_paths": [
+          "docs/reviews/artifacts/s2-r0-summary-recovery.json",
+          "output/summary-replay"
+        ],
+        "separate_gate": "source-workspace historical evidence audit"
+      },
+      {
+        "nodeid": "tests/test_audit_reference_repos.py::test_reference_reuse_artifact_bundle_passes_locked_validator",
+        "category": "historical_evidence",
+        "reason_code": "REFERENCE_RESEARCH_BUNDLE",
+        "rationale": "Validates the research reference-repository evidence bundle, not shipped runtime behavior.",
+        "required_paths": [
+          "docs/research/reference-repo-audit",
+          "docs/reviews/reference-repository-reuse-audit-2026-08-09.md"
+        ],
+        "separate_gate": "source-workspace research evidence audit"
+      },
+      {
+        "nodeid": "tests/test_audit_reference_repos.py::test_reference_port_register_covers_every_decision_and_forbids_copying",
+        "category": "historical_evidence",
+        "reason_code": "REFERENCE_RESEARCH_REGISTER",
+        "rationale": "Requires the non-release research decision register and its source evidence.",
+        "required_paths": [
+          "docs/research/reference-repo-audit",
+          "docs/reviews/reference-repository-reuse-audit-2026-08-09.md"
+        ],
+        "separate_gate": "source-workspace research evidence audit"
+      },
+      {
+        "nodeid": "tests/test_audit_reference_repos.py::test_reference_port_register_rejects_permissive_copy_policy",
+        "category": "historical_evidence",
+        "reason_code": "REFERENCE_RESEARCH_REGISTER",
+        "rationale": "Requires the non-release research decision register and its source evidence.",
+        "required_paths": [
+          "docs/research/reference-repo-audit",
+          "docs/reviews/reference-repository-reuse-audit-2026-08-09.md"
+        ],
+        "separate_gate": "source-workspace research evidence audit"
+      },
+      {
+        "nodeid": "tests/test_audit_reference_repos.py::test_reference_port_register_rejects_incomplete_source_evidence",
+        "category": "historical_evidence",
+        "reason_code": "REFERENCE_RESEARCH_REGISTER",
+        "rationale": "Builds a negative fixture from research evidence that is intentionally not shipped.",
+        "required_paths": [
+          "docs/research/reference-repo-audit",
+          "docs/reviews/reference-repository-reuse-audit-2026-08-09.md"
+        ],
+        "separate_gate": "source-workspace research evidence audit"
+      },
+      {
+        "nodeid": "tests/test_audit_reference_repos.py::test_reference_port_register_rejects_forged_source_identity",
+        "category": "historical_evidence",
+        "reason_code": "REFERENCE_RESEARCH_REGISTER",
+        "rationale": "Builds a negative fixture from research evidence that is intentionally not shipped.",
+        "required_paths": [
+          "docs/research/reference-repo-audit",
+          "docs/reviews/reference-repository-reuse-audit-2026-08-09.md"
+        ],
+        "separate_gate": "source-workspace research evidence audit"
+      },
+      {
+        "nodeid": "tests/test_context_eval_harness.py::test_s1_evidence_mode_uses_exact_closed_contract_checks",
+        "category": "historical_evidence",
+        "reason_code": "S1_SCHEMA_EVIDENCE",
+        "rationale": "Checks a prior-phase S1 evidence artifact rather than current runtime behavior.",
+        "required_paths": [
+          "docs/reviews/artifacts/s1-summary-schema.json"
+        ],
+        "separate_gate": "source-workspace historical evidence audit"
+      },
+      {
+        "nodeid": "tests/test_investigation_knowledge.py::test_committed_schema_artifact_matches_current_models",
+        "category": "historical_evidence",
+        "reason_code": "S1_SCHEMA_EVIDENCE",
+        "rationale": "Checks a curated prior-phase schema artifact that is excluded from the runtime release.",
+        "required_paths": [
+          "docs/reviews/artifacts/s1-summary-schema.json"
+        ],
+        "separate_gate": "source-workspace historical evidence audit"
+      },
+      {
+        "nodeid": "tests/test_summary_diarization_audit_harness.py::test_pyannote_migration_audit_is_current_and_source_bound",
+        "category": "historical_evidence",
+        "reason_code": "PYANNOTE_RESEARCH_EVIDENCE",
+        "rationale": "Binds a dated research capture and migration audit that is not part of the runtime candidate.",
+        "required_paths": [
+          "docs/reviews/artifacts/2026-08-09-pyannote-migration-config-audit.json",
+          "docs/reviews/artifacts/2026-08-09-diarization-primary-source-verification.json"
+        ],
+        "separate_gate": "source-workspace diarization evidence audit"
+      },
+      {
+        "nodeid": "tests/test_pyannote_offline_manifest.py::test_pyannote_offline_manifest_matches_local_artifacts",
+        "category": "external_artifact",
+        "reason_code": "GATED_MODEL_NOT_IN_GIT",
+        "rationale": "Requires operator-acquired gated Pyannote model files that must not be committed to Git.",
+        "required_paths": [
+          "models/pyannote"
+        ],
+        "separate_gate": "post-acquisition model manifest and preflight gate"
+      },
+      {
+        "nodeid": "tests/test_startup_runtime_profile.py::test_primary_startup_uses_single_gpu_safe_worker_without_runtime_install",
+        "category": "legacy_noncanonical",
+        "reason_code": "OBSOLETE_STARTUP_LAUNCHER",
+        "rationale": "The canonical new-machine runbook explicitly rejects START_ALL_SERVICES.bat for the pinned LLM staging profile.",
+        "required_paths": [
+          "START_ALL_SERVICES.bat"
+        ],
+        "separate_gate": "legacy launcher retirement review"
+      }
+    ]
+  },
+  "candidate_binding": {
+    "required": true,
+    "accepted_rehearsal_schema_versions": [
+      "stt-release-candidate-rehearsal-v4"
+    ],
+    "fingerprint_field": "candidate.workspace_content_fingerprint_sha256",
+    "manifest_verdict_required": "PASS",
+    "content_scan_blocked_forbidden": true
+  },
+  "limitations": [
+    "A passing backend source profile is not an overall production release verdict.",
+    "External model acquisition, frontend, Docker, migrations, security, preflight, and real Summary/Analysis replay remain separate mandatory gates.",
+    "Historical evidence tests remain required in the source workspace but do not justify shipping raw research or replay artifacts."
+  ]
+}

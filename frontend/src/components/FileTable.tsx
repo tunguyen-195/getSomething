@@ -24,6 +24,7 @@ import {
     Transcribe as TranscribeIcon,
     Summarize as SummarizeIcon,
     Analytics as VisualizeIcon,
+    Insights as AnalysisIcon,
     PlayArrow as PlayIcon,
     Delete as DeleteIcon,
     CheckCircle as CheckIcon,
@@ -32,7 +33,6 @@ import {
 } from '@mui/icons-material';
 import DateTimeText from './DateTimeText';
 import { apiDateTimeToEpoch } from '../utils/dateTime';
-import { validateReleasedVisualizationArtifact } from '../utils/investigationProjection';
 
 interface FileData {
     task_id: string;
@@ -55,6 +55,7 @@ interface FileTableProps {
     files: FileData[];
     onTranscribe: (taskId: string) => void;
     onSummarize: (taskId: string) => void;
+    onAnalyze: (taskId: string) => void;
     onVisualize: (taskId: string) => void;
     onDelete: (taskId: string) => void;
     processingTaskId?: string;
@@ -87,6 +88,7 @@ const FileTable: React.FC<FileTableProps> = ({
     files,
     onTranscribe,
     onSummarize,
+    onAnalyze,
     onVisualize,
     onDelete,
     processingTaskId,
@@ -183,8 +185,6 @@ const FileTable: React.FC<FileTableProps> = ({
                     {sortedFiles.map((file) => {
                         const isExpanded = expandedRows.has(file.task_id);
                         const isProcessing = processingTaskId === file.task_id;
-                        const hasReleasedVisualization = file.has_visualization === true
-                            && validateReleasedVisualizationArtifact(file.visualization_data).ok;
 
                         return (
                             <React.Fragment key={file.task_id}>
@@ -285,39 +285,27 @@ const FileTable: React.FC<FileTableProps> = ({
                                                     <Button
                                                         variant="outlined"
                                                         size="small"
+                                                        startIcon={<AnalysisIcon />}
+                                                        onClick={(e) => { e.stopPropagation(); onAnalyze(file.task_id); }}
+                                                        disabled={isProcessing || !file.transcript}
+                                                        sx={{ textTransform: 'none' }}
+                                                        color="primary"
+                                                    >
+                                                        Analysis
+                                                    </Button>
+
+                                                    <Button
+                                                        variant="outlined"
+                                                        size="small"
                                                         startIcon={<VisualizeIcon />}
                                                         onClick={(e) => { e.stopPropagation(); onVisualize(file.task_id); }}
-                                                        disabled={isProcessing || !hasReleasedVisualization}
+                                                        disabled={isProcessing || !file.transcript}
                                                         sx={{ textTransform: 'none' }}
                                                         color="secondary"
                                                     >
-                                                        View visualization
+                                                        Visualization
                                                     </Button>
                                                 </Box>
-
-                                                {/* Quick Preview */}
-                                                {file.transcript && (
-                                                    <Box mt={2}>
-                                                        <Typography variant="caption" color="text.secondary" fontWeight={600}>
-                                                            Transcript Preview:
-                                                        </Typography>
-                                                        <Typography
-                                                            variant="body2"
-                                                            color="text.secondary"
-                                                            sx={{
-                                                                mt: 0.5,
-                                                                maxHeight: 60,
-                                                                overflow: 'hidden',
-                                                                textOverflow: 'ellipsis',
-                                                                display: '-webkit-box',
-                                                                WebkitLineClamp: 2,
-                                                                WebkitBoxOrient: 'vertical',
-                                                            }}
-                                                        >
-                                                            {file.transcript.substring(0, 200)}...
-                                                        </Typography>
-                                                    </Box>
-                                                )}
                                             </Box>
                                         </Collapse>
                                     </TableCell>

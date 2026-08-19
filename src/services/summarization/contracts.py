@@ -7,6 +7,13 @@ from typing import Any, Final, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .investigation_scenarios import (
+    DEFAULT_INVESTIGATION_SCENARIO,
+    InvestigationScenario,
+    require_investigation_scenario,
+)
+from .adaptive_length import SummaryLengthMode
+
 
 SummaryType = Literal["brief", "detailed", "investigation", "forensic"]
 SUMMARY_TYPE_VALUES: Final[tuple[SummaryType, ...]] = (
@@ -22,6 +29,7 @@ DEFAULT_SUMMARY_MIN_WORDS: Final[int] = 50
 DEFAULT_SUMMARY_MAX_WORDS: Final[int] = 200
 DEFAULT_MULTI_SUMMARY_MIN_WORDS: Final[int] = 100
 DEFAULT_MULTI_SUMMARY_MAX_WORDS: Final[int] = 400
+MIN_INVESTIGATION_SUMMARY_MAX_WORDS: Final[int] = 20
 
 # Compatibility aliases for callers that used the first contract draft.
 DEFAULT_SUMMARY_MIN_LENGTH = DEFAULT_SUMMARY_MIN_WORDS
@@ -63,6 +71,17 @@ class InvalidSummaryLengthBounds(SummaryRequestContractError):
         )
 
 
+class InvestigationSummaryMaxTooSmall(SummaryRequestContractError):
+    """Raised before model work when no complete investigation sentence can fit."""
+
+    def __init__(self, maximum: int) -> None:
+        super().__init__(
+            "INVESTIGATION_MAX_LENGTH_TOO_SMALL",
+            "Investigation summary max_length must be at least "
+            f"{MIN_INVESTIGATION_SUMMARY_MAX_WORDS} words; received {maximum}.",
+        )
+
+
 class SummaryMaximumExceeded(ValueError):
     """Raised when final post-processed summary text exceeds the hard maximum."""
 
@@ -85,6 +104,7 @@ class SummaryRequestOptions(BaseModel):
     )
 
     summary_type: SummaryType = DEFAULT_SUMMARY_TYPE
+    length_mode: SummaryLengthMode = "auto"
     min_length: int = Field(default=DEFAULT_SUMMARY_MIN_WORDS, ge=0)
     max_length: int = Field(default=DEFAULT_SUMMARY_MAX_WORDS, ge=1)
 
@@ -92,6 +112,15 @@ class SummaryRequestOptions(BaseModel):
     def validate_length_order(self) -> "SummaryRequestOptions":
         if self.min_length > self.max_length:
             raise ValueError("min_length must be less than or equal to max_length")
+        if (
+            self.summary_type == "investigation"
+            and self.length_mode == "manual"
+            and self.max_length < MIN_INVESTIGATION_SUMMARY_MAX_WORDS
+        ):
+            raise ValueError(
+                "investigation max_length must be at least "
+                f"{MIN_INVESTIGATION_SUMMARY_MAX_WORDS}"
+            )
         return self
 
 
@@ -99,9 +128,10 @@ class SummaryRequest(SummaryRequestOptions):
     """HTTP request shared by v2 and compatibility single-summary routes."""
 
     model_name: str | None = None
-    include_context: bool = True
+    include_context: bool = False
     async_mode: bool = True
     user_prompt: str | None = None
+    investigation_scenario: InvestigationScenario = DEFAULT_INVESTIGATION_SCENARIO
 
     @model_validator(mode="before")
     @classmethod
@@ -132,6 +162,11 @@ class SummaryRequest(SummaryRequestOptions):
     def normalize_user_prompt(cls, value: str | None) -> str | None:
         return value or None
 
+    @field_validator("investigation_scenario", mode="before")
+    @classmethod
+    def validate_investigation_scenario(cls, value: Any) -> InvestigationScenario:
+        return require_investigation_scenario(value)
+
 
 class MultiSummaryRequest(SummaryRequestOptions):
     """Compatibility request for a transcript collection or an authorized case."""
@@ -140,6 +175,13 @@ class MultiSummaryRequest(SummaryRequestOptions):
     case_id: str | None = None
     model_name: str | None = None
     context_analysis: dict[str, Any] | None = None
+
+    @field_validator("model_name", mode="before")
+    @classmethod
+    def normalize_model_name(cls, value: Any) -> Any:
+        if isinstance(value, str) and value.strip().casefold() == "auto":
+            return None
+        return value
 
     @field_validator("transcripts")
     @classmethod
@@ -165,6 +207,13 @@ class CaseSummaryRequest(SummaryRequestOptions):
     case_id: str
     model_name: str | None = None
     context_analysis: dict[str, Any] | None = None
+
+    @field_validator("model_name", mode="before")
+    @classmethod
+    def normalize_model_name(cls, value: Any) -> Any:
+        if isinstance(value, str) and value.strip().casefold() == "auto":
+            return None
+        return value
 
     @model_validator(mode="after")
     def reject_unreleased_investigation_mode(self) -> "CaseSummaryRequest":
@@ -203,13 +252,28 @@ def validate_summary_request_options(
     summary_type: object,
     min_length: int,
     max_length: int,
+    length_mode: object = "manual",
 ) -> SummaryRequestOptions:
     """Validate direct calls before task lookup, GPU acquisition, or model work."""
 
     typed_summary_type = require_summary_type(summary_type)
+    if type(length_mode) is not str and hasattr(length_mode, "default"):
+        length_mode = getattr(length_mode, "default")
+    if type(length_mode) is not str or length_mode not in {"auto", "manual"}:
+        raise SummaryRequestContractError(
+            "UNSUPPORTED_LENGTH_MODE",
+            "length_mode must be 'auto' or 'manual'",
+        )
     validate_summary_length_bounds(min_length, max_length)
+    if (
+        typed_summary_type == "investigation"
+        and length_mode == "manual"
+        and max_length < MIN_INVESTIGATION_SUMMARY_MAX_WORDS
+    ):
+        raise InvestigationSummaryMaxTooSmall(max_length)
     return SummaryRequestOptions(
         summary_type=typed_summary_type,
+        length_mode=cast(SummaryLengthMode, length_mode),
         min_length=min_length,
         max_length=max_length,
     )
@@ -279,10 +343,13 @@ __all__ = [
     "DEFAULT_SUMMARY_MIN_WORDS",
     "DEFAULT_SUMMARY_TYPE",
     "InvalidSummaryLengthBounds",
+    "InvestigationSummaryMaxTooSmall",
+    "MIN_INVESTIGATION_SUMMARY_MAX_WORDS",
     "MultiSummaryRequest",
     "SUMMARY_TYPES",
     "SUMMARY_TYPE_VALUES",
     "SummaryMaximumExceeded",
+    "SummaryLengthMode",
     "SummaryRequest",
     "SummaryRequestContractError",
     "SummaryRequestOptions",

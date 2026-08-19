@@ -1,0 +1,398 @@
+{
+  "benchmark": {
+    "candidate_count": 1000,
+    "claim_count": 1,
+    "deterministic_replay": true,
+    "latency_budget_ms": 30000.0,
+    "latency_ms": 106302.4049999658,
+    "merge_count": 1,
+    "network_attempt_count": 0,
+    "passed": false,
+    "peak_memory_budget_mib": 512.0,
+    "peak_memory_mib": 288.81264781951904,
+    "record_count": 1000
+  },
+  "cases": [
+    {
+      "actual": {
+        "checker_outcomes": [],
+        "claim_count": 1,
+        "claim_polarities": [
+          "affirmed"
+        ],
+        "contradiction_count": 0,
+        "dispositions": [
+          "supported"
+        ],
+        "failure_codes": [],
+        "merge_count": 1,
+        "network_required": false,
+        "projection_eligibilities": [
+          "factual"
+        ],
+        "record_count": 1,
+        "release_authority": false,
+        "status": "success"
+      },
+      "batch_id": "t4batchv1:9ffdc640ed58bd8e63c6c69fbf50211eca313b481bcb619e7011fa57426b28c9",
+      "batch_sha256": "9ffdc640ed58bd8e63c6c69fbf50211eca313b481bcb619e7011fa57426b28c9",
+      "description": "Atomic Vietnamese transfer assertion remains evidence-bound with exact value and time.",
+      "deterministic_replay": true,
+      "failures": [],
+      "id": "supported-atomic-exact-values",
+      "latency_ms": 253.99450003169477,
+      "network_attempt_count": 0,
+      "network_attempts": [],
+      "passed": true
+    },
+    {
+      "actual": {
+        "checker_outcomes": [],
+        "claim_count": 0,
+        "claim_polarities": [],
+        "contradiction_count": 0,
+        "dispositions": [
+          "contradicted"
+        ],
+        "failure_codes": [
+          "exact_values",
+          "statement_alignment"
+        ],
+        "merge_count": 0,
+        "network_required": false,
+        "projection_eligibilities": [
+          "withheld"
+        ],
+        "record_count": 1,
+        "release_authority": false,
+        "status": "needs_review"
+      },
+      "batch_id": "t4batchv1:f0773df96e819ccae0ae45bddf035c244ff461cb28c96d86d3fbccaa27cc6fb3",
+      "batch_sha256": "f0773df96e819ccae0ae45bddf035c244ff461cb28c96d86d3fbccaa27cc6fb3",
+      "description": "An unrelated money allegation cannot be promoted from weather evidence.",
+      "deterministic_replay": true,
+      "failures": [],
+      "id": "unrelated-semantic-forgery",
+      "latency_ms": 213.10899988748133,
+      "network_attempt_count": 0,
+      "network_attempts": [],
+      "passed": true
+    },
+    {
+      "actual": {
+        "checker_outcomes": [],
+        "claim_count": 0,
+        "claim_polarities": [],
+        "contradiction_count": 0,
+        "dispositions": [
+          "contradicted"
+        ],
+        "failure_codes": [
+          "polarity_modality"
+        ],
+        "merge_count": 0,
+        "network_required": false,
+        "projection_eligibilities": [
+          "withheld"
+        ],
+        "record_count": 1,
+        "release_authority": false,
+        "status": "needs_review"
+      },
+      "batch_id": "t4batchv1:9db68c7bd92a79636d9bfe6399cce5b2b7d0f0b6e08232093a75c123b271460f",
+      "batch_sha256": "9db68c7bd92a79636d9bfe6399cce5b2b7d0f0b6e08232093a75c123b271460f",
+      "description": "Affirmed arrival cannot be extracted from an explicitly negated source assertion.",
+      "deterministic_replay": true,
+      "failures": [],
+      "id": "polarity-inversion",
+      "latency_ms": 209.06950009521097,
+      "network_attempt_count": 0,
+      "network_attempts": [],
+      "passed": true
+    },
+    {
+      "actual": {
+        "checker_outcomes": [],
+        "claim_count": 1,
+        "claim_polarities": [
+          "reported"
+        ],
+        "contradiction_count": 0,
+        "dispositions": [
+          "supported"
+        ],
+        "failure_codes": [],
+        "merge_count": 1,
+        "network_required": false,
+        "projection_eligibilities": [
+          "factual"
+        ],
+        "record_count": 1,
+        "release_authority": false,
+        "status": "success"
+      },
+      "batch_id": "t4batchv1:1030ac4ec3bcec0b698ea99c641d4e3bc7fcc63433d8d6757586f568ee04279e",
+      "batch_sha256": "1030ac4ec3bcec0b698ea99c641d4e3bc7fcc63433d8d6757586f568ee04279e",
+      "description": "Reported speech remains reported and cannot become an affirmed source fact.",
+      "deterministic_replay": true,
+      "failures": [],
+      "id": "reported-speech-preserved",
+      "latency_ms": 209.56360001582652,
+      "network_attempt_count": 0,
+      "network_attempts": [],
+      "passed": true
+    },
+    {
+      "actual": {
+        "checker_outcomes": [],
+        "claim_count": 0,
+        "claim_polarities": [],
+        "contradiction_count": 0,
+        "dispositions": [
+          "unverifiable"
+        ],
+        "failure_codes": [
+          "atomicity"
+        ],
+        "merge_count": 0,
+        "network_required": false,
+        "projection_eligibilities": [
+          "withheld"
+        ],
+        "record_count": 1,
+        "release_authority": false,
+        "status": "needs_review"
+      },
+      "batch_id": "t4batchv1:fcf6eaa6f1b0c99e439d7f437b2566f81a5323a9c7dc1927a1b5da65a8e57dbd",
+      "batch_sha256": "fcf6eaa6f1b0c99e439d7f437b2566f81a5323a9c7dc1927a1b5da65a8e57dbd",
+      "description": "Two independent clauses are split for diagnosis but the composite candidate is withheld.",
+      "deterministic_replay": true,
+      "failures": [],
+      "id": "compound-assertion-withheld",
+      "latency_ms": 231.26279993448406,
+      "network_attempt_count": 0,
+      "network_attempts": [],
+      "passed": true
+    },
+    {
+      "actual": {
+        "checker_outcomes": [],
+        "claim_count": 0,
+        "claim_polarities": [],
+        "contradiction_count": 0,
+        "dispositions": [
+          "contradicted"
+        ],
+        "failure_codes": [
+          "exact_values",
+          "owner_unit_binding",
+          "statement_alignment"
+        ],
+        "merge_count": 0,
+        "network_required": false,
+        "projection_eligibilities": [
+          "withheld"
+        ],
+        "record_count": 1,
+        "release_authority": false,
+        "status": "needs_review"
+      },
+      "batch_id": "t4batchv1:70b1999dde4725cb0333ea257adc4237df10a779b3ea91bf42ff93ca5fb56b63",
+      "batch_sha256": "70b1999dde4725cb0333ea257adc4237df10a779b3ea91bf42ff93ca5fb56b63",
+      "description": "A 15 million source value cannot be mutated into 50 billion with a forged owner binding.",
+      "deterministic_replay": true,
+      "failures": [],
+      "id": "exact-value-owner-unit-mutation",
+      "latency_ms": 216.3678000215441,
+      "network_attempt_count": 0,
+      "network_attempts": [],
+      "passed": true
+    },
+    {
+      "actual": {
+        "checker_outcomes": [
+          "contradicts"
+        ],
+        "claim_count": 0,
+        "claim_polarities": [],
+        "contradiction_count": 0,
+        "dispositions": [
+          "partially_supported"
+        ],
+        "failure_codes": [
+          "checker_disagreement"
+        ],
+        "merge_count": 0,
+        "network_required": false,
+        "projection_eligibilities": [
+          "withheld"
+        ],
+        "record_count": 1,
+        "release_authority": false,
+        "status": "needs_review"
+      },
+      "batch_id": "t4batchv1:47d914385b64e668661658fc3b6838f1694c99da6ac0352ce1ef9cd3d5a3e38e",
+      "batch_sha256": "47d914385b64e668661658fc3b6838f1694c99da6ac0352ce1ef9cd3d5a3e38e",
+      "description": "A signal-only checker disagreement is recorded but cannot promote or release a claim.",
+      "deterministic_replay": true,
+      "failures": [],
+      "id": "checker-disagreement-withheld",
+      "latency_ms": 221.41780005767941,
+      "network_attempt_count": 0,
+      "network_attempts": [],
+      "passed": true
+    },
+    {
+      "actual": {
+        "checker_outcomes": [
+          "entails"
+        ],
+        "claim_count": 0,
+        "claim_polarities": [],
+        "contradiction_count": 0,
+        "dispositions": [
+          "contradicted"
+        ],
+        "failure_codes": [
+          "exact_values",
+          "statement_alignment"
+        ],
+        "merge_count": 0,
+        "network_required": false,
+        "projection_eligibilities": [
+          "withheld"
+        ],
+        "record_count": 1,
+        "release_authority": false,
+        "status": "needs_review"
+      },
+      "batch_id": "t4batchv1:ea2f5ac265a9bb8a57dc0012c4c7748dc1b0a7d138f9a878884e25be81d2d14e",
+      "batch_sha256": "ea2f5ac265a9bb8a57dc0012c4c7748dc1b0a7d138f9a878884e25be81d2d14e",
+      "description": "Checker entailment cannot override deterministic semantic and exact-value failures.",
+      "deterministic_replay": true,
+      "failures": [],
+      "id": "checker-entailment-cannot-override",
+      "latency_ms": 227.41669998504221,
+      "network_attempt_count": 0,
+      "network_attempts": [],
+      "passed": true
+    },
+    {
+      "actual": {
+        "checker_outcomes": [],
+        "claim_count": 2,
+        "claim_polarities": [
+          "affirmed",
+          "negated"
+        ],
+        "contradiction_count": 1,
+        "dispositions": [
+          "supported",
+          "supported"
+        ],
+        "failure_codes": [],
+        "merge_count": 2,
+        "network_required": false,
+        "projection_eligibilities": [
+          "factual",
+          "factual"
+        ],
+        "record_count": 2,
+        "release_authority": false,
+        "status": "needs_review"
+      },
+      "batch_id": "t4batchv1:a54cc97e798db0d5237fff557b34bac6f3732d1a9e22d5e4e1ad0870f38d59c7",
+      "batch_sha256": "a54cc97e798db0d5237fff557b34bac6f3732d1a9e22d5e4e1ad0870f38d59c7",
+      "description": "Affirmed and negated assertions remain separate and create an explicit contradiction record.",
+      "deterministic_replay": true,
+      "failures": [],
+      "id": "opposite-source-assertions-preserved",
+      "latency_ms": 243.87220002245158,
+      "network_attempt_count": 0,
+      "network_attempts": [],
+      "passed": true
+    },
+    {
+      "actual": {
+        "checker_outcomes": [],
+        "claim_count": 2,
+        "claim_polarities": [
+          "affirmed",
+          "affirmed"
+        ],
+        "contradiction_count": 0,
+        "dispositions": [
+          "supported",
+          "supported"
+        ],
+        "failure_codes": [],
+        "merge_count": 2,
+        "network_required": false,
+        "projection_eligibilities": [
+          "factual",
+          "factual"
+        ],
+        "record_count": 2,
+        "release_authority": false,
+        "status": "success"
+      },
+      "batch_id": "t4batchv1:abc5ee9de69be885c1dbc15fb2490a2119005085d9612e17fd79fc09c73b8f37",
+      "batch_sha256": "abc5ee9de69be885c1dbc15fb2490a2119005085d9612e17fd79fc09c73b8f37",
+      "description": "The same surface at two source spans remains two provenance-preserving claims.",
+      "deterministic_replay": true,
+      "failures": [],
+      "id": "same-surface-different-spans",
+      "latency_ms": 234.02170010376722,
+      "network_attempt_count": 0,
+      "network_attempts": [],
+      "passed": true
+    }
+  ],
+  "duration_seconds": 110.139019,
+  "environment": {
+    "platform": "Windows-10-10.0.26200-SP0",
+    "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]"
+  },
+  "finished_at": "2026-08-09T02:17:17.973715+00:00",
+  "gates": {
+    "all_fixture_cases_passed": true,
+    "all_replays_deterministic": true,
+    "benchmark_passed": false,
+    "case_count": 10,
+    "case_pass_count": 10,
+    "network_attempt_count": 0,
+    "passed": false
+  },
+  "git": {
+    "branch": "feature/architecture-refactor",
+    "dirty": true,
+    "revision": "5f7f2ac92598a30ba796b7a4ae793251ac7d5eea",
+    "untracked": true
+  },
+  "limitations": [
+    "Synthetic structural fixtures are not a labelled quality corpus.",
+    "No factual precision, recall, calibration, or legal-admissibility claim is made.",
+    "A locked Vietnamese noisy-ASR corpus is still required before model promotion."
+  ],
+  "manifest_path": "D:\\Workspace\\SpeechToInfomation\\tests\\eval\\investigation_verification_cases.jsonl",
+  "manifest_sha256": "d5f076dd3a976ebe7bdf554569176491f1d33d3ae11806c434d203df4243b203",
+  "protocol_version": "investigation-verification-eval-v1.0",
+  "quality_claim": "STRUCTURAL_SYNTHETIC_ONLY_NO_HUMAN_GROUND_TRUTH",
+  "source_module_hashes": {
+    "discovery": {
+      "chunk_planner.py": "c1380efb1657ea1f6dc502963fe32f16c67b13eb003479795ed21e4018662745",
+      "discovery.py": "b22849ee2ef501f1a2164efe9933713d7599918c8439a274bb5be1c483ae14e1",
+      "discovery_common.py": "79cd79a0d465be0f92cb8112d5e698519e564c52faf9240bfb5a24edc3dd78e8",
+      "discovery_contracts.py": "7bacf0adc05089a93802fcf9317a350e5df0536ffb75636790477935ade9f75f",
+      "exact_detectors.py": "71d86eb3dd951083815b58a66fbd1b7ea8e0815339d364873f97a328a9adb9b8"
+    },
+    "verification": {
+      "canonicalization.py": "1afc9c96f3daa0ded374e835d1bc9aaefbba016a6f844419b80145f93d6d5f2d",
+      "claim_semantics.py": "b6426db5845c96179ece8f9782f9b8b469b8261606242bb3fe08c577d6f26cfe",
+      "contradictions.py": "c67239fcc07033e308629179b5577cda8619fa0180028cb0657270cb06f73537",
+      "verification.py": "20549cc0d132febf1889514aa08708fd8642a95a56029dd9560989ba05eb6582",
+      "verification_contracts.py": "5cb8c180f1a3ac2d8a9e46c910508a56744f0d1bb1f2071ef7224fa70b6bec9b"
+    }
+  },
+  "started_at": "2026-08-09T02:15:27.834696+00:00"
+}

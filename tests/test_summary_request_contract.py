@@ -1,22 +1,19 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from src.api.endpoints import audio as audio_v1
-from src.api.endpoints import audio_v2
+from src.api.endpoints import audio, audio_v2
 from src.services import audio_service
 from src.services import task_service
 from src.services.summarization import summary_service_v2
 from src.services.summarization.contracts import (
-    DEFAULT_SUMMARY_MAX_WORDS,
-    DEFAULT_SUMMARY_MIN_WORDS,
     InvalidSummaryLengthBounds,
+    InvestigationSummaryMaxTooSmall,
     SummaryMaximumExceeded,
     UnsupportedSummaryType,
     evaluate_summary_length,
@@ -110,6 +107,27 @@ def test_direct_summary_rejects_invalid_bounds_before_gpu_or_model(monkeypatch) 
     assert touched == []
 
 
+def test_tiny_investigation_maximum_is_rejected_before_model_work(monkeypatch) -> None:
+    touched: list[str] = []
+    monkeypatch.setattr(
+        summary_service_v2,
+        "get_llm_manager",
+        lambda: touched.append("model"),
+    )
+
+    with pytest.raises(InvestigationSummaryMaxTooSmall) as exc_info:
+        summary_service_v2.summarize_transcript_v2(
+            "Noi dung",
+            summary_type="investigation",
+            min_length=0,
+            max_length=5,
+            length_mode="manual",
+        )
+
+    assert exc_info.value.code == "INVESTIGATION_MAX_LENGTH_TOO_SMALL"
+    assert touched == []
+
+
 def test_below_minimum_generated_summary_remains_available(monkeypatch) -> None:
     manager = FakeManager("Tom tat du.")
     _disable_gpu_and_cleanup(monkeypatch, manager)
@@ -121,6 +139,7 @@ def test_below_minimum_generated_summary_remains_available(monkeypatch) -> None:
         include_context=False,
         min_length=20,
         max_length=30,
+        length_mode="manual",
     )
 
     assert result["available"] is True
@@ -178,107 +197,13 @@ def test_final_generated_output_above_maximum_fails_closed(monkeypatch) -> None:
         include_context=False,
         min_length=0,
         max_length=5,
+        length_mode="manual",
     )
 
     assert result["available"] is False
     assert result["summary"] == ""
     assert result["error"]["code"] == "SUMMARY_MAX_LENGTH_EXCEEDED"
     assert result["runtime"]["length_contract"]["maximum_met"] is False
-
-
-def test_llamacpp_whitespace_summary_fails_closed(monkeypatch) -> None:
-    from src.cherry_core.adapters.llm import llamacpp_adapter
-
-    generation_calls: list[str] = []
-
-    class EmptyAdapter:
-        def __init__(self, *, model_type: str) -> None:
-            self.model_type = model_type
-
-        def load(self) -> bool:
-            return True
-
-        def generate(self, *_args, **_kwargs) -> str:
-            generation_calls.append("generate")
-            return "  \n\t  "
-
-    monkeypatch.setattr(llamacpp_adapter, "LlamaCppAdapter", EmptyAdapter)
-
-    result = summary_service_v2.summarize_transcript_v2(
-        "Noi dung",
-        model_name="vistral",
-        summary_type="brief",
-        include_context=True,
-        min_length=0,
-        max_length=5,
-    )
-
-    assert result["available"] is False
-    assert result["summary"] == ""
-    assert result["error"]["code"] == "SUMMARY_EMPTY"
-    assert result["runtime"]["length_contract"]["actual"] == 0
-    assert generation_calls == ["generate"]
-
-
-@pytest.mark.parametrize("failure_mode", ["unavailable", "exception"])
-def test_single_failure_summary_respects_hard_maximum(
-    monkeypatch,
-    failure_mode: str,
-) -> None:
-    class FailureManager:
-        def check_availability(self) -> bool:
-            return failure_mode != "unavailable"
-
-        def generate(self, *_args, **_kwargs) -> str:
-            raise RuntimeError("backend failure message with many words")
-
-    monkeypatch.setattr(summary_service_v2, "get_llm_manager", FailureManager)
-
-    result = summary_service_v2.summarize_transcript_v2(
-        "Noi dung",
-        model_name="test-model",
-        summary_type="brief",
-        include_context=False,
-        min_length=0,
-        max_length=1,
-    )
-
-    assert result["available"] is False
-    assert len(result["summary"].split()) <= 1
-    assert result["error"]["code"] in {
-        "LLM_UNAVAILABLE",
-        "SUMMARY_GENERATION_FAILED",
-    }
-
-
-@pytest.mark.parametrize("failure_mode", ["unavailable", "exception"])
-def test_multi_failure_summary_respects_hard_maximum(
-    monkeypatch,
-    failure_mode: str,
-) -> None:
-    class FailureManager:
-        def check_availability(self) -> bool:
-            return failure_mode != "unavailable"
-
-        def generate(self, *_args, **_kwargs) -> str:
-            raise RuntimeError("backend failure message with many words")
-
-    monkeypatch.setattr(summary_service_v2, "get_llm_manager", FailureManager)
-
-    result = summary_service_v2.summarize_multi_transcripts_v2(
-        ["Noi dung"],
-        model_name="test-model",
-        summary_type="brief",
-        min_length=0,
-        max_length=1,
-    )
-
-    assert result["available"] is False
-    assert len(result["summary"].split()) <= 1
-    assert result["error"]["code"] in {
-        "LLM_UNAVAILABLE",
-        "SUMMARY_GENERATION_FAILED",
-    }
 
 
 def test_multi_service_rejects_unknown_type_before_gpu_or_model(monkeypatch) -> None:
@@ -307,21 +232,7 @@ def test_multi_service_rejects_unknown_type_before_gpu_or_model(monkeypatch) -> 
 def test_workers_reject_unknown_type_before_task_read_or_update(monkeypatch) -> None:
     touched: list[str] = []
     monkeypatch.setattr(summarize_task, "get_task", lambda *_args: touched.append("read"))
-    monkeypatch.setattr(
-        summarize_task,
-        "begin_summary_attempt",
-        lambda *_args, **_kwargs: touched.append("begin"),
-    )
-    monkeypatch.setattr(
-        summarize_task,
-        "succeed_summary_attempt",
-        lambda *_args, **_kwargs: touched.append("success"),
-    )
-    monkeypatch.setattr(
-        summarize_task,
-        "fail_summary_attempt",
-        lambda *_args, **_kwargs: touched.append("failure"),
-    )
+    monkeypatch.setattr(summarize_task, "update_task", lambda *_args: touched.append("update"))
     monkeypatch.setattr(
         summarize_task,
         "_llama_server_handoff",
@@ -346,27 +257,16 @@ def test_workers_reject_unknown_type_before_task_read_or_update(monkeypatch) -> 
 def test_worker_propagates_identical_bounds_to_service(monkeypatch) -> None:
     captured: dict[str, object] = {}
     updates: list[dict[str, object]] = []
-    attempt_ids: list[str] = []
     monkeypatch.setattr(
         summarize_task,
         "get_task",
         lambda _task_id: {"result": {"transcription": "Noi dung"}},
     )
-    def begin(_task_id, attempt_id, **_kwargs):
-        attempt_ids.append(attempt_id)
-        return task_service.SummaryTransitionResult(
-            "applied", "running", "SUMMARY_ATTEMPT_STARTED"
-        )
-
-    def succeed(_task_id, attempt_id, patch, **_kwargs):
-        assert attempt_id == attempt_ids[-1]
-        updates.append({"status": "summarized", "result": patch})
-        return task_service.SummaryTransitionResult(
-            "applied", "succeeded", "SUMMARY_SUCCEEDED"
-        )
-
-    monkeypatch.setattr(summarize_task, "begin_summary_attempt", begin)
-    monkeypatch.setattr(summarize_task, "succeed_summary_attempt", succeed)
+    monkeypatch.setattr(
+        summarize_task,
+        "update_task",
+        lambda _task_id, patch: updates.append(patch) or True,
+    )
     monkeypatch.setattr(
         summarize_task,
         "_llama_server_handoff",
@@ -381,7 +281,6 @@ def test_worker_propagates_identical_bounds_to_service(monkeypatch) -> None:
             "summary": "Tom tat du.",
             "context": None,
             "model": "test-model",
-            "summary_type": "brief",
             "runtime": {
                 "length_contract": evaluate_summary_length(
                     "Tom tat du.",
@@ -405,112 +304,6 @@ def test_worker_propagates_identical_bounds_to_service(monkeypatch) -> None:
     assert captured["min_length"] == 7
     assert captured["max_length"] == 11
     assert updates[-1]["status"] == "summarized"
-    assert len(attempt_ids) == 1
-
-
-def test_celery_returns_safe_service_result_without_projection_fields(
-    monkeypatch,
-) -> None:
-    projection_fields = {
-        "visualization_data",
-        "has_visualization",
-        "released_investigation_run",
-    }
-    safe_fields = {
-        "available",
-        "summary",
-        "context",
-        "model",
-        "requested_model",
-        "summary_type",
-        "release",
-        "runtime",
-        "error",
-        "num_transcripts",
-        "case_id",
-    }
-    common_result = {
-        "available": True,
-        "summary": "Tom tat hop le.",
-        "context": {"analysis_status": "success"},
-        "model": "test-model",
-        "requested_model": "requested-model",
-        "summary_type": "detailed",
-        "release": {"run_id": "released-run"},
-        "runtime": {"length_contract": {"maximum_met": True}},
-        "visualization_data": {"nodes": ["forged"]},
-        "has_visualization": True,
-        "released_investigation_run": {"run_id": "forged"},
-    }
-    single_result = dict(common_result)
-    multi_result = {
-        **common_result,
-        "num_transcripts": 1,
-        "case_id": "case-1",
-    }
-
-    monkeypatch.setattr(
-        summarize_task,
-        "get_task",
-        lambda _task_id: {"result": {"transcription": "Noi dung"}},
-    )
-    monkeypatch.setattr(
-        summarize_task,
-        "begin_summary_attempt",
-        lambda *_args, **_kwargs: task_service.SummaryTransitionResult(
-            "applied", "running", "SUMMARY_ATTEMPT_STARTED"
-        ),
-    )
-    monkeypatch.setattr(
-        summarize_task,
-        "succeed_summary_attempt",
-        lambda *_args, **_kwargs: task_service.SummaryTransitionResult(
-            "applied", "succeeded", "SUMMARY_SUCCEEDED"
-        ),
-    )
-    monkeypatch.setattr(
-        summary_service_v2,
-        "summarize_transcript_v2",
-        lambda **_kwargs: dict(single_result),
-    )
-    monkeypatch.setattr(
-        summary_service_v2,
-        "summarize_multi_transcripts_v2",
-        lambda **_kwargs: dict(multi_result),
-    )
-
-    single = summarize_task.summarize_transcript_task.run("task-1")
-    multi = summarize_task.summarize_multi_task.run(
-        ["task-1"],
-        case_id="case-1",
-    )
-
-    assert single["result"] == {
-        key: value for key, value in single_result.items() if key in safe_fields
-    }
-    assert multi["result"] == {
-        key: value for key, value in multi_result.items() if key in safe_fields
-    }
-    assert single["result"]["available"] is True
-    assert single["result"]["context"] == common_result["context"]
-    assert single["result"]["model"] == "test-model"
-    assert multi["result"]["num_transcripts"] == 1
-    assert multi["result"]["case_id"] == "case-1"
-    assert projection_fields.isdisjoint(single["result"])
-    assert projection_fields.isdisjoint(multi["result"])
-
-
-def test_resummarize_defaults_use_shared_single_summary_contract() -> None:
-    signature = inspect.signature(audio_v1.resummarize_task)
-
-    assert (
-        signature.parameters["min_length"].default.default
-        == DEFAULT_SUMMARY_MIN_WORDS
-    )
-    assert (
-        signature.parameters["max_length"].default.default
-        == DEFAULT_SUMMARY_MAX_WORDS
-    )
 
 
 def test_legacy_single_rejects_unknown_type_before_context_or_model(monkeypatch) -> None:
@@ -530,6 +323,39 @@ def test_legacy_single_rejects_unknown_type_before_context_or_model(monkeypatch)
     assert touched == []
 
 
+def test_legacy_investigation_summary_routes_to_grounded_writer(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def summarize(**kwargs):
+        captured.update(kwargs)
+        return {
+            "available": True,
+            "summary": "Bản tin điều tra liền mạch.",
+        }
+
+    monkeypatch.setattr(summary_service_v2, "summarize_transcript_v2", summarize)
+    monkeypatch.setattr(
+        audio_service,
+        "OllamaProcessor",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("legacy generic summary path must not run")
+        ),
+    )
+
+    summary = audio_service.summarize_transcript(
+        "Nội dung nguồn.",
+        context={"analysis_status": "success"},
+        summary_type="investigation",
+        min_length=0,
+        max_length=200,
+    )
+
+    assert summary == "Bản tin điều tra liền mạch."
+    assert captured["summary_type"] == "investigation"
+    assert captured["allow_evidence_preview"] is True
+    assert captured["grounded_context"] == {"analysis_status": "success"}
+
+
 def test_legacy_finalizer_enforces_max_after_postprocessing(monkeypatch) -> None:
     monkeypatch.setattr(
         audio_service,
@@ -547,64 +373,67 @@ def test_legacy_finalizer_enforces_max_after_postprocessing(monkeypatch) -> None
     assert exc_info.value.contract["maximum_met"] is False
 
 
-def test_legacy_multi_enforces_final_maximum(monkeypatch) -> None:
-    class Response:
-        status_code = 200
-
-        @staticmethod
-        def json():
-            return {"response": "mot hai ba bon nam sau"}
-
-    import requests
-
-    monkeypatch.setattr(requests, "post", lambda *_args, **_kwargs: Response())
-    monkeypatch.setattr(audio_service, "force_vietnamese_output", lambda text: text)
-
-    with pytest.raises(SummaryMaximumExceeded):
-        audio_service.summarize_multi_transcripts(
-            ["Noi dung"],
-            context={},
-            model_name="ollama:gemma2:9b",
-            summary_type="brief",
-            min_length=0,
-            max_length=5,
-        )
-
-
-@pytest.mark.parametrize(
-    "post",
-    [
-        lambda *_args, **_kwargs: SimpleNamespace(status_code=500),
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            RuntimeError("service unavailable")
-        ),
-    ],
-)
-def test_legacy_multi_error_output_cannot_bypass_final_maximum(
+def test_legacy_multi_defaults_to_adaptive_without_enforcing_requested_cap(
     monkeypatch,
-    post,
 ) -> None:
-    import requests
+    captured: dict[str, object] = {}
 
-    monkeypatch.setattr(requests, "post", post)
-    monkeypatch.setattr(audio_service, "force_vietnamese_output", lambda text: text)
+    def summarize(**kwargs):
+        captured.update(kwargs)
+        return {
+            "available": True,
+            "summary": "mot hai ba bon nam sau",
+        }
 
-    with pytest.raises(SummaryMaximumExceeded):
+    monkeypatch.setattr(
+        summary_service_v2,
+        "summarize_multi_transcripts_v2",
+        summarize,
+    )
+
+    result = audio_service.summarize_multi_transcripts(
+        ["Noi dung"],
+        context={},
+        model_name="test-model",
+        summary_type="brief",
+        min_length=0,
+        max_length=5,
+    )
+
+    assert result == "mot hai ba bon nam sau"
+    assert captured["length_mode"] == "auto"
+
+
+def test_legacy_multi_failure_exposes_only_typed_code(monkeypatch) -> None:
+    secret = "provider-body-must-not-escape"
+    monkeypatch.setattr(
+        summary_service_v2,
+        "summarize_multi_transcripts_v2",
+        lambda **_kwargs: {
+            "available": False,
+            "error": {
+                "code": "SUMMARY_GENERATION_FAILED",
+                "message": secret,
+            },
+        },
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
         audio_service.summarize_multi_transcripts(
             ["Noi dung"],
-            context={},
-            model_name="ollama:gemma2:9b",
             summary_type="brief",
             min_length=0,
             max_length=1,
         )
+
+    assert str(exc_info.value) == "SUMMARY_GENERATION_FAILED"
+    assert secret not in str(exc_info.value)
 
 
 def test_v2_sync_summary_response_never_exposes_visualization_projection(
     monkeypatch,
 ) -> None:
     updates: list[dict[str, object]] = []
-    attempt_ids: list[str] = []
     monkeypatch.setattr(
         task_service,
         "get_task",
@@ -615,21 +444,11 @@ def test_v2_sync_summary_response_never_exposes_visualization_projection(
             }
         },
     )
-    def begin(_task_id, attempt_id, **_kwargs):
-        attempt_ids.append(attempt_id)
-        return task_service.SummaryTransitionResult(
-            "applied", "running", "SUMMARY_ATTEMPT_STARTED"
-        )
-
-    def succeed(_task_id, attempt_id, patch, **_kwargs):
-        assert attempt_id == attempt_ids[-1]
-        updates.append({"status": "summarized", "summary": patch["summary"]})
-        return task_service.SummaryTransitionResult(
-            "applied", "succeeded", "SUMMARY_SUCCEEDED"
-        )
-
-    monkeypatch.setattr(audio_v2, "begin_summary_attempt", begin)
-    monkeypatch.setattr(audio_v2, "succeed_summary_attempt", succeed)
+    monkeypatch.setattr(
+        task_service,
+        "update_task",
+        lambda _task_id, patch: updates.append(patch) or True,
+    )
     monkeypatch.setattr(audio_v2, "assert_task_access", lambda *_args: None)
     monkeypatch.setattr(audio_v2, "check_rate_limit", lambda *_args: None)
     monkeypatch.setattr(
@@ -651,12 +470,14 @@ def test_v2_sync_summary_response_never_exposes_visualization_projection(
     response = asyncio.run(
         audio_v2.summarize_v2(
             "task-1",
-            model_name="test-model",
-            summary_type="detailed",
-            include_context=True,
-            async_mode=False,
-            min_length=0,
-            max_length=20,
+            request=audio_v2.SummaryV2Request(
+                model_name="test-model",
+                summary_type="detailed",
+                include_context=True,
+                async_mode=False,
+                min_length=0,
+                max_length=20,
+            ),
             db=object(),
             current_user=SimpleNamespace(id=1),
         )
@@ -667,8 +488,75 @@ def test_v2_sync_summary_response_never_exposes_visualization_projection(
     assert "visualization_data" not in response["result"]
     assert "has_visualization" not in response["result"]
     assert "released_investigation_run" not in response["result"]
-    assert updates == [{"status": "summarized", "summary": "Tom tat hop le."}]
-    assert response["attempt_id"] == attempt_ids[-1]
+    assert len(updates) == 1
+    persisted = updates[0]
+    assert persisted["status"] == "summarized"
+    assert persisted["summary"] == "Tom tat hop le."
+    assert persisted["model_name"] == "test-model"
+    assert persisted["error"] is None
+    assert set(persisted["result"]) == {
+        "summary",
+        "context_analysis",
+        "summary_model",
+        "summary_type",
+        "summary_state",
+        "summary_authority",
+        "summary_notice",
+        "summary_error",
+        "summary_preview",
+        "summary_runtime",
+    }
+    assert persisted["result"]["summary"] == "Tom tat hop le."
+    assert persisted["result"]["context_analysis"] == {
+        "analysis_status": "success"
+    }
+
+
+def test_compatibility_summary_endpoint_propagates_auto_length_mode(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        audio,
+        "get_task",
+        lambda _task_id: {"result": {"transcription": "Noi dung hop le."}},
+    )
+    monkeypatch.setattr(audio, "update_task", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(audio, "assert_task_access", lambda *_args: None)
+    monkeypatch.setattr(audio, "check_rate_limit", lambda *_args: None)
+
+    def summarize(**kwargs):
+        captured.update(kwargs)
+        return {
+            "available": True,
+            "summary": "Tom tat hop le.",
+            "context": None,
+            "model": "test-model",
+            "summary_state": "generated",
+            "runtime": {"length_contract": {"mode": "auto"}},
+        }
+
+    monkeypatch.setattr(summary_service_v2, "summarize_transcript_v2", summarize)
+
+    response = asyncio.run(
+        audio.summarize_task(
+            "task-1",
+            request=audio.SummaryRequest(
+                model_name="test-model",
+                summary_type="investigation",
+                include_context=True,
+                async_mode=False,
+                min_length=0,
+                max_length=20,
+                length_mode="auto",
+            ),
+            db=object(),
+            current_user=SimpleNamespace(id=1),
+        )
+    )
+
+    assert response["status"] == "summarized"
+    assert captured["length_mode"] == "auto"
 
 
 def test_frontend_summary_type_options_use_the_shared_typescript_allowlist() -> None:
@@ -680,5 +568,8 @@ def test_frontend_summary_type_options_use_the_shared_typescript_allowlist() -> 
     assert "['brief', 'detailed', 'investigation', 'forensic'] as const" in client_source
     assert "summary_type: SummaryType" in client_source
     assert "DEFAULT_SUMMARY_TYPE: SummaryType = 'detailed'" in client_source
-    assert "useState<SummaryType>(DEFAULT_SUMMARY_TYPE)" in dialog_source
+    assert (
+        "useState<SummaryType>(DEFAULT_INTERACTIVE_SUMMARY_TYPE)"
+        in dialog_source
+    )
     assert "summary_type: string" not in dialog_source

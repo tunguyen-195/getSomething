@@ -41,6 +41,28 @@ _SELECTOR_EXPORTS = frozenset(
     }
 )
 _RUN_EXPORTS = frozenset()
+_ANALYSIS_PROJECTION_EXPORTS = frozenset(
+    {
+        "ANALYSIS_PROJECTION_VERSION",
+        "RELEASED_ANALYSIS_AUTHORITY",
+        "RELEASED_ANALYSIS_VERSION",
+        "AnalysisProjectionRegistry",
+        "AnalysisProjectionV1_1",
+        "AnalysisQualityArtifact",
+        "ExactValueRecord",
+        "GroundedEventRecord",
+        "GroundedFlowRecord",
+        "HypothesisSetRecord",
+        "ReleasedAnalysisArtifact",
+        "ReleasedContradictionRecord",
+        "SourceSetProvenance",
+        "SpeakerAssignmentRecord",
+        "analysis_projection_json_schema",
+        "analysis_projection_schema_sha256",
+        "build_released_analysis_artifact",
+        "validate_analysis_projection_refs",
+    }
+)
 
 
 def __getattr__(name: str) -> Any:
@@ -50,6 +72,8 @@ def __getattr__(name: str) -> Any:
         module = importlib.import_module(".evidence_selector", __name__)
     elif name in _RUN_EXPORTS:
         module = importlib.import_module(".run_contracts", __name__)
+    elif name in _ANALYSIS_PROJECTION_EXPORTS:
+        module = importlib.import_module(".analysis_projection", __name__)
     else:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     value = getattr(module, name)
@@ -58,7 +82,18 @@ def __getattr__(name: str) -> Any:
 
 
 def __dir__() -> list[str]:
-    return sorted(set(globals()) | _SOURCE_EXPORTS | _SELECTOR_EXPORTS | _RUN_EXPORTS)
+    return sorted(
+        set(globals())
+        | _SOURCE_EXPORTS
+        | _SELECTOR_EXPORTS
+        | _RUN_EXPORTS
+        | _ANALYSIS_PROJECTION_EXPORTS
+    )
 
 
-__all__ = sorted(_SOURCE_EXPORTS | _SELECTOR_EXPORTS | _RUN_EXPORTS)
+__all__ = sorted(
+    _SOURCE_EXPORTS
+    | _SELECTOR_EXPORTS
+    | _RUN_EXPORTS
+    | _ANALYSIS_PROJECTION_EXPORTS
+)

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List
-from core.domain.entities import SpeakerSegment
+from src.cherry_core.domain.entities import SpeakerSegment
 
 
 class ISpeakerDiarizer(ABC):

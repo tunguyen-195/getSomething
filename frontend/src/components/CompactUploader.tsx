@@ -43,8 +43,8 @@ const CompactUploader: React.FC<CompactUploaderProps> = ({ caseId, onUploadCompl
 
     // Settings
     const [settingsAnchor, setSettingsAnchor] = useState<null | HTMLElement>(null);
-    const [diarizationMethod, setDiarizationMethod] = useState('whisperx');
-    const [fastMode, setFastMode] = useState(true);
+    const [diarizationMethod, setDiarizationMethod] = useState('pyannote');
+    const [fastMode, setFastMode] = useState(false);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) {

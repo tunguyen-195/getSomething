@@ -171,3 +171,11 @@ class WhisperV2Adapter(ITranscriber):
                 "post_processing": "repetition_filter"
             }
         )
+
+    def unload(self) -> None:
+        if self.model is not None:
+            del self.model
+            self.model = None
+        self._vad = None
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()

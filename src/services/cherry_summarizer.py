@@ -173,8 +173,20 @@ def _fallback_summarize(transcript: str) -> Dict:
         result = summarize_transcript_v2(
             transcript=transcript,
             summary_type="investigation",
-            include_context=True
+            include_context=True,
+            allow_evidence_preview=True,
         )
+        if (
+            not isinstance(result, dict)
+            or result.get("available") is not True
+            or not str(result.get("summary") or "").strip()
+        ):
+            error = (
+                result.get("error")
+                if isinstance(result, dict) and isinstance(result.get("error"), dict)
+                else {}
+            )
+            raise RuntimeError(str(error.get("code") or "INVESTIGATION_SUMMARY_UNAVAILABLE"))
         return {
             "summary": result.get("summary", ""),
             "scenario": "fallback",

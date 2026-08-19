@@ -1,0 +1,238 @@
+@startuml SpeechToInformation Component Diagram
+
+title SpeechToInformation - Component Architecture
+
+!define RECTANGLE
+
+skinparam component {
+  BackgroundColor<<Frontend>> #E1F5FE
+  BackgroundColor<<API>> #FFF9C4
+  BackgroundColor<<Task>> #F3E5F5
+  BackgroundColor<<AI>> #FCE4EC
+  BackgroundColor<<Data>> #FFF3E0
+  BackgroundColor<<External>> #E8F5E9
+  BorderColor Black
+  ArrowColor #333333
+}
+
+' Frontend Layer
+package "Frontend Layer" <<Frontend>> {
+  component [React UI] as ReactUI {
+    component [FileCard] as FileCard
+    component [TranscriptPanel] as TranscriptPanel
+    component [SummarizeDialog] as SummarizeDialog
+    component [VisualizationView] as VizView
+  }
+
+  component [Material-UI\nCherry2 Theme] as MUI
+  component [Vite\nBuild Tool] as Vite
+}
+
+' API Gateway Layer
+package "API Gateway Layer" <<API>> {
+  component [FastAPI\nREST API] as FastAPI {
+    component [Audio Endpoints] as AudioAPI
+    component [Case Endpoints] as CaseAPI
+    component [Auth Endpoints] as AuthAPI
+  }
+
+  component [Middleware] as Middleware {
+    component [CORS] as CORS
+    component [Auth] as Auth
+    component [Logging] as Logging
+  }
+}
+
+' Task Orchestration Layer
+package "Task Orchestration Layer" <<Task>> {
+  component [Celery\nTask Queue] as Celery
+  component [Redis\nMessage Broker] as Redis
+  component [Worker Pool\nGevent] as Workers {
+    component [Worker 1] as W1
+    component [Worker 2] as W2
+    component [Worker N] as WN
+  }
+}
+
+' AI Processing Layer
+package "AI Services Layer" <<AI>> {
+  component [Transcription Service] as TransService {
+    component [Whisper Manager] as WhisperMgr
+    component [Pyannote Manager] as PyannoteMgr
+    component [Overlap Matcher] as OverlapMatch
+    component [Garbage Filter] as GarbageFilter
+  }
+
+  component [Summarization Service] as SumService {
+    component [LLM Manager] as LLMMgr
+    component [Context Service] as ContextService
+    component [Prompt Builder] as PromptBuilder
+  }
+
+  component [Visualization Service] as VizService {
+    component [Knowledge Graph Builder] as KGBuilder
+    component [Timeline Generator] as TimelineGen
+    component [Entity Extractor] as EntityExtract
+  }
+
+  component [Task Service] as TaskService {
+    component [Task Manager] as TaskMgr
+    component [Status Tracker] as StatusTracker
+  }
+}
+
+' Data Layer
+package "Data Layer" <<Data>> {
+  database "PostgreSQL" as PG {
+    component [Users, Roles] as UserDB
+    component [Cases, Files] as CaseDB
+    component [Tasks, Results] as TaskDB
+    component [Transcriptions] as TransDB
+    component [Analysis, Logs] as AnalysisDB
+  }
+
+  component [File Storage] as FileStorage {
+    folder "Audio Files" as AudioFiles
+    folder "Transcripts" as TransFiles
+    folder "Archives" as Archives
+  }
+
+  component [Redis Cache] as RedisCache
+}
+
+' External Services
+package "External Services" <<External>> {
+  component [Ollama API\nLLM Server] as Ollama
+  component [AI Models] as Models {
+    component [Whisper Model] as WhisperModel
+    component [Pyannote Model] as PyannoteModel
+    component [LLM Models] as LLMModels
+  }
+}
+
+' Connections - Frontend to API
+ReactUI --> FastAPI : HTTP/REST
+FileCard ..> AudioAPI : POST /upload\nPOST /transcribe\nPOST /summarize
+TranscriptPanel ..> AudioAPI : GET /tasks/{id}/status
+SummarizeDialog ..> AudioAPI : POST /summarize
+VizView ..> AudioAPI : POST /visualize
+
+ReactUI --> MUI : Uses
+ReactUI --> Vite : Build with
+
+' Connections - API to Middleware
+FastAPI --> Middleware : Uses
+AudioAPI ..> Auth : Authenticate
+AudioAPI ..> CORS : Enable CORS
+AudioAPI ..> Logging : Log requests
+
+' Connections - API to Task Queue
+FastAPI --> Celery : Enqueue tasks
+Celery --> Redis : Message broker
+Redis --> Workers : Assign tasks
+
+' Connections - Workers to AI Services
+W1 --> TransService : Call
+W1 --> SumService : Call
+W1 --> VizService : Call
+W1 --> TaskService : Update status
+
+W2 --> TransService : Call
+W2 --> SumService : Call
+
+WN --> TransService : Call
+
+' Connections - AI Services Internal
+TransService --> WhisperMgr : Use
+TransService --> PyannoteMgr : Use
+TransService --> OverlapMatch : Use
+TransService --> GarbageFilter : Use
+
+SumService --> LLMMgr : Use
+SumService --> ContextService : Use
+SumService --> PromptBuilder : Use
+
+VizService --> KGBuilder : Use
+VizService --> TimelineGen : Use
+VizService --> EntityExtract : Use
+
+' Connections - AI Services to External
+WhisperMgr --> WhisperModel : Load & infer
+PyannoteMgr --> PyannoteModel : Load & infer
+LLMMgr --> Ollama : Call API
+Ollama --> LLMModels : Use models
+
+' Connections - API/Workers to Data
+FastAPI --> PG : Read/Write
+Workers --> PG : Read/Write
+TaskService --> TaskDB : CRUD operations
+TransService --> TransDB : Save transcripts
+SumService --> AnalysisDB : Save analysis
+
+AudioAPI --> FileStorage : Upload/Download
+Workers --> FileStorage : Read audio files
+TransService --> TransFiles : Save transcripts
+
+FastAPI --> RedisCache : Cache
+Workers --> RedisCache : Cache
+
+note right of ReactUI
+  **Modern React UI**
+  - TypeScript for type safety
+  - Material-UI Cherry2 theme
+  - Real-time status updates
+  - Responsive design
+end note
+
+note right of Celery
+  **Async Task Processing**
+  - Gevent pool (lightweight)
+  - 10 concurrent greenlets
+  - Auto-restart on error
+  - Task timeout: 2 hours
+  - Retry mechanism
+end note
+
+note right of TransService
+  **Transcription Pipeline**
+  1. Load audio → Preprocess
+  2. Whisper inference (beam=5)
+  3. Garbage text filtering
+  4. Pyannote diarization
+  5. Overlap-based matching
+  6. Format & save results
+
+  Accuracy: 91-95%
+  Speed: 10x realtime
+end note
+
+note right of SumService
+  **Multi-Layer Analysis**
+  1. Entity extraction
+  2. Relationship mining
+  3. Action tracking
+  4. Anomaly detection
+  5. Deep insights
+
+  3 modes: Brief, Detailed, Investigation
+  Zero information loss
+end note
+
+note bottom of PG
+  **PostgreSQL Database**
+  - JSONB for flexible storage
+  - GIN indexes on JSON fields
+  - Connection pooling (20+10)
+  - Transaction isolation
+  - Daily backups
+end note
+
+note bottom of FileStorage
+  **File Storage**
+  - Local filesystem (default)
+  - S3/GCS support (future)
+  - Archive/restore functionality
+  - Lifecycle policies
+end note
+
+@enduml

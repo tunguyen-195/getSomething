@@ -4,7 +4,7 @@ Handles: Upload → Transcribe (with optional diarization)
 """
 import logging
 from src.worker.worker import celery_app
-from src.database.config.database import get_db
+from src.database.config.database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ def transcribe_audio_task(
     enable_diarization: bool = True,
     diarization_method: str = "pyannote",
     language: str = "vi",
-    fast_mode: bool = True
+    fast_mode: bool = False
 ):
     """
     Celery task for audio transcription
@@ -36,30 +36,23 @@ def transcribe_audio_task(
         f"celery_id={self.request.id} | diarization={enable_diarization}"
     )
 
-    db = None
     try:
         # Import here to avoid circular dependencies
         from src.services.transcription.transcribe_service_v2 import transcribe_audio_v2
 
-        # Get DB session
-        db = next(get_db())
-
-        # Execute transcription
-        result = transcribe_audio_v2(
-            task_id=task_id,
-            db=db,
-            enable_diarization=enable_diarization,
-            diarization_method=diarization_method,
-            language=language,
-            fast_mode=fast_mode
-        )
-
-        # Ensure DB session is closed
-        if db:
+        with SessionLocal() as db:
             try:
-                db.close()
-            except:
-                pass
+                result = transcribe_audio_v2(
+                    task_id=task_id,
+                    db=db,
+                    enable_diarization=enable_diarization,
+                    diarization_method=diarization_method,
+                    language=language,
+                    fast_mode=fast_mode,
+                )
+            except Exception:
+                db.rollback()
+                raise
 
         logger.info(
             f"[CELERY_TRANSCRIBE] Task complete | task_id={task_id} | "
@@ -75,13 +68,6 @@ def transcribe_audio_task(
     except Exception as e:
         logger.error(f"[CELERY_TRANSCRIBE] Task failed | task_id={task_id} | error={e}", exc_info=True)
 
-        # Ensure DB session is closed even on error
-        if db:
-            try:
-                db.close()
-            except:
-                pass
-
         # Update task status
         try:
             from src.services.task_service import update_task
@@ -94,8 +80,4 @@ def transcribe_audio_task(
             logger.info(f"[CELERY_TRANSCRIBE] Retrying task {task_id}...")
             raise self.retry(exc=e, countdown=10, max_retries=2)
 
-        return {
-            "status": "error",
-            "task_id": task_id,
-            "error": str(e)
-        }
+        raise

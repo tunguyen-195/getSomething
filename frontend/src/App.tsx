@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ThemeProvider, CssBaseline, Box, AppBar, Toolbar, Typography, Paper, Drawer, List, ListItem, ListItemText, Divider, IconButton, InputBase, Button, CircularProgress, Tabs, Tab, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Accordion, AccordionSummary, AccordionDetails, Snackbar, Alert, Tooltip, Chip, Menu, MenuItem } from '@mui/material';
+import { ThemeProvider, CssBaseline, Box, AppBar, Toolbar, Typography, Paper, Drawer, List, ListItem, ListItemText, Divider, IconButton, InputBase, Button, CircularProgress, Tabs, Tab, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Accordion, AccordionSummary, AccordionDetails, Snackbar, Alert, Tooltip, Chip, Menu, MenuItem, Pagination, useMediaQuery } from '@mui/material';
 import { lightTheme, darkTheme } from './theme';
 import DarkModeToggle from './components/DarkModeToggle';
 import SearchIcon from '@mui/icons-material/Search';
@@ -9,7 +9,6 @@ import MenuIcon from '@mui/icons-material/Menu';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import DeleteIcon from '@mui/icons-material/Delete';
 import SortIcon from '@mui/icons-material/Sort';
-import TranscriptPanel from './components/TranscriptPanel';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import FolderIcon from '@mui/icons-material/Folder';
 import FileCard from './components/FileCard';
@@ -23,7 +22,8 @@ import DiarizationPanel from './components/DiarizationPanel';
 import DateTimeText from './components/DateTimeText';
 import { apiFetch, getCurrentUser, login, logout } from './api/client';
 import type { SummaryDialogOptions } from './api/client';
-import { validateReleasedVisualizationArtifact } from './utils/investigationProjection';
+import { countTranscriptWords } from './utils/transcriptText';
+import { summaryDisplayText } from './utils/summaryDisplay';
 
 interface Case {
   id: string;
@@ -34,16 +34,19 @@ interface Case {
   priority_id?: string;
   created_by?: string;
   created_at?: string;
+  updated_at?: string;
   summaries?: string[];
   transcripts?: string[];
 }
 
 const drawerWidth = 320;
+const CASE_PAGE_SIZE = 50;
 
 function SummaryAccordionItem({ summary, idx, highlightSummary }: { summary: string, idx: number, highlightSummary: (s: string) => React.ReactNode }) {
   const [copied, setCopied] = useState(false);
+  const displaySummary = summaryDisplayText({ summary });
   const handleCopy = () => {
-    navigator.clipboard.writeText(summary);
+    navigator.clipboard.writeText(displaySummary);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -66,23 +69,26 @@ function SummaryAccordionItem({ summary, idx, highlightSummary }: { summary: str
           </Button>
           <Typography variant="body2" color="text.secondary">{copied ? 'Đã copy vào clipboard!' : ''}</Typography>
         </Box>
-        {highlightSummary(summary)}
+        {highlightSummary(displaySummary)}
       </AccordionDetails>
     </Accordion>
   );
 }
 
 function App() {
+  const isDesktopViewport = useMediaQuery('(min-width:900px)');
   const [mode, setMode] = useState<'light' | 'dark'>('light');
   const [cases, setCases] = useState<Case[]>([]);
+  const [casePage, setCasePage] = useState(1);
+  const [caseTotal, setCaseTotal] = useState(0);
   const [loadingCases, setLoadingCases] = useState(false);
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(isDesktopViewport);
   const [search, setSearch] = useState('');
   const [searchActive, setSearchActive] = useState(false);
   const [searchFocus, setSearchFocus] = useState(false);
   const [tab, setTab] = useState(0);
-  const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const [analysisTaskId, setAnalysisTaskId] = useState<string | null>(null);
   const [createCaseOpen, setCreateCaseOpen] = useState(false);
   const [newCaseTitle, setNewCaseTitle] = useState('');
   const [newCaseDesc, setNewCaseDesc] = useState('');
@@ -95,6 +101,7 @@ function App() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [visualizeTaskId, setVisualizeTaskId] = useState<string | null>(null);
   const pollingIntervalsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const pollingRequestsRef = useRef<Set<string>>(new Set());
   const [files, setFiles] = useState<any[]>([]);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' as 'success' | 'error' | 'info' | 'warning' });
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -107,6 +114,10 @@ function App() {
   const [caseSortBy, setCaseSortBy] = useState<'created_at' | 'title'>('created_at');
   const [caseOrder, setCaseOrder] = useState<'asc' | 'desc'>('desc');
   const [sortMenuAnchor, setSortMenuAnchor] = useState<null | HTMLElement>(null);
+
+  useEffect(() => {
+    setSidebarOpen(isDesktopViewport);
+  }, [isDesktopViewport]);
 
   const API_V2_BASE = '/api/v1/audio/v2';
 
@@ -122,6 +133,11 @@ function App() {
     visualization_data: f.visualization_data,
     transcript: f.transcript,
     summary: f.summary,
+    summary_state: f.summary_state,
+    summary_authority: f.summary_authority,
+    summary_notice: f.summary_notice,
+    summary_preview: f.summary_preview,
+    summary_runtime: f.summary_runtime,
     formatted_transcript: f.formatted_transcript,
     segments: f.segments,
     context_analysis: f.context_analysis,
@@ -147,16 +163,27 @@ function App() {
   }, []);
 
   // Centralized fetch function
-  const fetchCases = async () => {
+  const fetchCases = async (page = casePage, searchTerm = search) => {
     if (!currentUser) {
       setCases([]);
+      setCaseTotal(0);
       setSelectedCase(null);
       setLoadingCases(false);
       return;
     }
     setLoadingCases(true);
     try {
-      const res = await apiFetch(`/api/v1/cases?sort_by=${caseSortBy}&order=${caseOrder}`, {
+      const params = new URLSearchParams({
+        sort_by: caseSortBy,
+        order: caseOrder,
+        compact: 'true',
+        limit: String(CASE_PAGE_SIZE),
+        offset: String((page - 1) * CASE_PAGE_SIZE),
+      });
+      if (searchTerm.trim()) {
+        params.set('search', searchTerm.trim());
+      }
+      const res = await apiFetch(`/api/v1/cases/?${params.toString()}`, {
         cache: 'no-store',
         headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' }
       });
@@ -171,12 +198,14 @@ function App() {
       }
       const data = await res.json();
       const nextCases = Array.isArray(data) ? data : [];
+      const totalHeader = Number(res.headers.get('x-total-count'));
+      setCaseTotal(Number.isFinite(totalHeader) ? totalHeader : nextCases.length);
       setCases(nextCases);
-      if (!selectedCase && nextCases.length > 0) {
-        setSelectedCase(nextCases[0]);
-      } else if (selectedCase && !nextCases.some((c: Case) => c.id === selectedCase.id)) {
-        setSelectedCase(nextCases[0] || null);
-      }
+      setSelectedCase(current => {
+        if (!current && nextCases.length > 0) return nextCases[0];
+        if (current && !nextCases.some((c: Case) => c.id === current.id)) return nextCases[0] || null;
+        return current;
+      });
     } catch (err) {
       console.error('Failed to fetch cases:', err);
       setCases([]);
@@ -186,20 +215,25 @@ function App() {
   };
 
   useEffect(() => {
+    let timer: number | undefined;
     if (authChecked && currentUser) {
-      fetchCases();
+      timer = window.setTimeout(() => void fetchCases(), search.trim() ? 250 : 0);
     } else if (authChecked && !currentUser) {
       setCases([]);
+      setCaseTotal(0);
       setFiles([]);
       setSelectedCase(null);
     }
-  }, [authChecked, currentUser, caseSortBy, caseOrder]);
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [authChecked, currentUser, caseSortBy, caseOrder, casePage, search]);
 
   // Load files when case selected
   const fetchFiles = async () => {
     if (selectedCase && currentUser) {
       try {
-        const res = await apiFetch(`/api/v1/audio?case_id=${selectedCase.id}`);
+        const res = await apiFetch(`/api/v1/audio/?case_id=${selectedCase.id}`);
         if (!res.ok) {
           setFiles([]);
           return;
@@ -221,10 +255,7 @@ function App() {
     fetchFiles();
   }, [selectedCase]);
 
-  const filteredCases = (Array.isArray(cases) ? cases : []).filter(c =>
-    c.title.toLowerCase().includes(search.toLowerCase()) ||
-    c.case_code.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredCases = Array.isArray(cases) ? cases : [];
 
   const toggleMode = () => setMode(prev => (prev === 'light' ? 'dark' : 'light'));
 
@@ -257,7 +288,9 @@ function App() {
       const data = await response.json();
 
       // Update UI by refetching to respect sort order
-      await fetchCases();
+      setSearch('');
+      setCasePage(1);
+      await fetchCases(1, '');
       setSelectedCase(data); // Select the new case
 
       // Close dialog and reset form
@@ -302,7 +335,7 @@ function App() {
       }
 
       // Update UI by refetching
-      await fetchCases();
+      await fetchCases(casePage, search);
 
       // If deleted case was selected, select first remaining case logic handled by fetchCases effect if needed?
       // Actually fetchCases might not reset selection.
@@ -361,12 +394,14 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model_name: options.model_name,
+          model_name: options.model_name === 'auto' ? null : options.model_name,
           summary_type: options.summary_type,
           include_context: options.include_context_analysis !== false,
           async_mode: true,
           min_length: options.min_length,
           max_length: options.max_length,
+          length_mode: options.length_mode,
+          investigation_scenario: options.investigation_scenario,
         })
       });
       if (!response.ok) throw new Error('Failed');
@@ -390,9 +425,10 @@ function App() {
     }
 
     const pollInterval = setInterval(async () => {
+      if (pollingRequestsRef.current.has(taskId)) return;
+      pollingRequestsRef.current.add(taskId);
       try {
-        // Use v2 status endpoint for better data
-        const response = await apiFetch(`${API_V2_BASE}/tasks/${taskId}/status`);
+        const response = await apiFetch(`${API_V2_BASE}/tasks/${taskId}/status?include_result=false`);
         if (!response.ok) {
           clearInterval(pollInterval);
           pollingIntervalsRef.current.delete(taskId);
@@ -402,50 +438,14 @@ function App() {
         const statusData = await response.json();
         const currentStatus = statusData.status;
 
-        // Update file status and data
-        setFiles(prev => prev.map(f => {
-          if (f.task_id === taskId) {
-            const updated = { ...f, status: currentStatus };
-            // Update transcript if available
-            if (statusData.transcript) {
-              updated.transcript = statusData.transcript;
-            }
-            // Update summary if available
-            if (statusData.summary) {
-              updated.summary = statusData.summary;
-            }
-            // Update other fields
-            if (statusData.num_speakers !== undefined) {
-              updated.num_speakers = statusData.num_speakers;
-            }
-            if (statusData.duration !== undefined) {
-              updated.duration = statusData.duration;
-            }
-            if (statusData.has_visualization !== undefined) {
-              updated.has_visualization = statusData.has_visualization;
-            }
-            if (statusData.visualization_data) {
-              updated.visualization_data = statusData.visualization_data;
-            }
-            if (statusData.segments) {
-              updated.segments = statusData.segments;
-            }
-            if (statusData.context_analysis) {
-              updated.context_analysis = statusData.context_analysis;
-            }
-            if (statusData.audio_id) {
-              updated.audio_id = statusData.audio_id;
-            }
-            if (statusData.download_url) {
-              updated.download_url = statusData.download_url;
-            }
-            return updated;
-          }
-          return f;
-        }));
+        setFiles(prev => {
+          const target = prev.find(f => f.task_id === taskId);
+          if (!target || target.status === currentStatus) return prev;
+          return prev.map(f => f.task_id === taskId ? { ...f, status: currentStatus } : f);
+        });
 
-        // needs_review is terminal: the release gate withheld the summary.
-        if (currentStatus === 'transcribed' || currentStatus === 'summarized' || currentStatus === 'visualized' || currentStatus === 'needs_review' || currentStatus === 'failed') {
+        // Stop polling if task is complete or failed
+        if (currentStatus === 'transcribed' || currentStatus === 'summarized' || currentStatus === 'visualized' || currentStatus === 'failed') {
           clearInterval(pollInterval);
           pollingIntervalsRef.current.delete(taskId);
 
@@ -453,17 +453,14 @@ function App() {
             setSnackbar({ open: true, message: '✅ Transcription completed!', severity: 'success' });
             void fetchFiles();
           } else if (currentStatus === 'summarized') {
-            setSnackbar({ open: true, message: '✅ Summarization completed!', severity: 'success' });
+            setSnackbar({
+              open: true,
+              message: '✅ Summarization completed!',
+              severity: 'success',
+            });
             void fetchFiles();
           } else if (currentStatus === 'visualized') {
             setSnackbar({ open: true, message: '✅ Visualization completed!', severity: 'success' });
-            void fetchFiles();
-          } else if (currentStatus === 'needs_review') {
-            setSnackbar({
-              open: true,
-              message: `Summary withheld for human review: ${statusData.error || 'Evidence or release verification did not pass.'}`,
-              severity: 'warning',
-            });
             void fetchFiles();
           } else if (currentStatus === 'failed') {
             setSnackbar({ open: true, message: `❌ Task failed: ${statusData.error || 'Unknown error'}`, severity: 'error' });
@@ -472,6 +469,8 @@ function App() {
       } catch (error) {
         console.error('Polling error:', error);
         // Continue polling on error (might be temporary)
+      } finally {
+        pollingRequestsRef.current.delete(taskId);
       }
     }, 2000); // Poll every 2 seconds
 
@@ -483,13 +482,14 @@ function App() {
     return () => {
       pollingIntervalsRef.current.forEach(interval => clearInterval(interval));
       pollingIntervalsRef.current.clear();
+      pollingRequestsRef.current.clear();
     };
   }, []);
 
   function highlightSummary(summary: string) {
     if (!summary) return null;
     const keywordRegex = /(\b(?:người|địa điểm|thời gian|quyết định|hành động|cảm xúc|chủ đề|thông tin nhạy cảm|thực thể|mục tiêu|kết quả|liên hệ|mối quan hệ|tên|số điện thoại|email|địa chỉ|sự kiện|vai trò|tóm tắt|key points|entities|privacy)\b)/gi;
-    const blocks = summary.split(/\n|\r|\u2022|\-/).filter(Boolean);
+    const blocks = summary.split(/\n|\r|\u2022|-/).filter(Boolean);
     return (
       <Box>
         {blocks.map((block, idx) => (
@@ -534,6 +534,10 @@ function App() {
       </ThemeProvider>
     );
   }
+
+  const selectedSummaryTranscriptLength = countTranscriptWords(
+    files.find(file => file.task_id === selectedTaskId)?.transcript,
+  );
 
   return (
     <ThemeProvider theme={mode === 'light' ? lightTheme : darkTheme}>
@@ -587,8 +591,10 @@ function App() {
         </Toolbar>
       </AppBar>
       <Drawer
-        variant="persistent"
+        variant={isDesktopViewport ? 'persistent' : 'temporary'}
         open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        ModalProps={{ keepMounted: true }}
         sx={{
           width: drawerWidth,
           flexShrink: 0,
@@ -634,7 +640,7 @@ function App() {
                 <SearchIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
                 <InputBase
                   value={search}
-                  onChange={e => setSearch(e.target.value)}
+                  onChange={e => { setSearch(e.target.value); setCasePage(1); }}
                   placeholder="Search..."
                   sx={{ flex: 1, fontSize: 14 }}
                 />
@@ -651,7 +657,7 @@ function App() {
                     border: '1px solid',
                     borderColor: 'divider',
                     borderRadius: 1,
-                    bgcolor: Boolean(sortMenuAnchor) ? 'rgba(0,0,0,0.05)' : 'transparent'
+                    bgcolor: sortMenuAnchor ? 'rgba(0,0,0,0.05)' : 'transparent'
                   }}
                 >
                   <SortIcon />
@@ -666,25 +672,25 @@ function App() {
             >
               <MenuItem
                 selected={caseSortBy === 'created_at' && caseOrder === 'desc'}
-                onClick={() => { setCaseSortBy('created_at'); setCaseOrder('desc'); setSortMenuAnchor(null); }}
+                  onClick={() => { setCaseSortBy('created_at'); setCaseOrder('desc'); setCasePage(1); setSortMenuAnchor(null); }}
               >
                 Mới nhất
               </MenuItem>
               <MenuItem
                 selected={caseSortBy === 'created_at' && caseOrder === 'asc'}
-                onClick={() => { setCaseSortBy('created_at'); setCaseOrder('asc'); setSortMenuAnchor(null); }}
+                  onClick={() => { setCaseSortBy('created_at'); setCaseOrder('asc'); setCasePage(1); setSortMenuAnchor(null); }}
               >
                 Cũ nhất
               </MenuItem>
               <MenuItem
                 selected={caseSortBy === 'title' && caseOrder === 'asc'}
-                onClick={() => { setCaseSortBy('title'); setCaseOrder('asc'); setSortMenuAnchor(null); }}
+                  onClick={() => { setCaseSortBy('title'); setCaseOrder('asc'); setCasePage(1); setSortMenuAnchor(null); }}
               >
                 Tên (A-Z)
               </MenuItem>
               <MenuItem
                 selected={caseSortBy === 'title' && caseOrder === 'desc'}
-                onClick={() => { setCaseSortBy('title'); setCaseOrder('desc'); setSortMenuAnchor(null); }}
+                  onClick={() => { setCaseSortBy('title'); setCaseOrder('desc'); setCasePage(1); setSortMenuAnchor(null); }}
               >
                 Tên (Z-A)
               </MenuItem>
@@ -702,7 +708,10 @@ function App() {
                   button
                   key={c.id}
                   selected={selectedCase?.id === c.id}
-                  onClick={() => setSelectedCase(c)}
+                  onClick={() => {
+                    setSelectedCase(c);
+                    if (!isDesktopViewport) setSidebarOpen(false);
+                  }}
                   sx={{
                     borderRadius: 1,
                     mb: 0.5,
@@ -746,11 +755,25 @@ function App() {
               ))}
             </List>
           )}
+          {caseTotal > CASE_PAGE_SIZE && (
+            <Box sx={{ px: 1, pb: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+              <Pagination
+                count={Math.ceil(caseTotal / CASE_PAGE_SIZE)}
+                page={casePage}
+                onChange={(_, page) => setCasePage(page)}
+                size="small"
+                siblingCount={0}
+              />
+              <Typography variant="caption" color="text.secondary">
+                {Math.min((casePage - 1) * CASE_PAGE_SIZE + 1, caseTotal)}-{Math.min(casePage * CASE_PAGE_SIZE, caseTotal)} / {caseTotal} cases
+              </Typography>
+            </Box>
+          )}
         </Box>
       </Drawer>
-      <Box sx={{ ml: sidebarOpen ? `${drawerWidth}px` : 0, transition: 'margin 0.2s', p: 3, pt: 10, minHeight: '100vh', bgcolor: 'background.default' }}>
+      <Box sx={{ ml: isDesktopViewport && sidebarOpen ? `${drawerWidth}px` : 0, transition: 'margin 0.2s', p: { xs: 1.5, sm: 3 }, pt: 10, minHeight: '100vh', bgcolor: 'background.default' }}>
         {selectedCase ? (
-          <Paper elevation={0} sx={{ p: 3, maxWidth: 960, mx: 'auto' }}>
+          <Paper elevation={0} sx={{ p: { xs: 1.5, sm: 3 }, maxWidth: 960, mx: 'auto' }}>
             <Typography variant="h5" fontWeight={600} mb={1}>
               {selectedCase.title}
             </Typography>
@@ -764,7 +787,17 @@ function App() {
                 {selectedCase.description}
               </Typography>
             )}
-            <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3 }}>
+            <Tabs
+              value={tab}
+              onChange={(_, v) => {
+                setTab(v);
+                if (v === 4) setAnalysisTaskId(null);
+              }}
+              variant="scrollable"
+              scrollButtons="auto"
+              allowScrollButtonsMobile
+              sx={{ mb: 3, maxWidth: '100%' }}
+            >
               <Tab label="📁 Overview" />
               <Tab label="📝 Transcript" />
               <Tab label="🎤 Diarization" />
@@ -793,19 +826,29 @@ function App() {
                     setSelectedTaskId(taskId);
                     setSummarizeDialogOpen(true);
                   }}
-                  onVisualize={(taskId) => {
+                  onAnalyze={(taskId) => {
                     const file = files.find(f => f.task_id === taskId);
-                    if (!file) return;
-                    const releasedArtifact = validateReleasedVisualizationArtifact(
-                      file.visualization_data
-                    );
-                    if (!file.has_visualization || !releasedArtifact.ok) {
+                    if (!file?.transcript) {
                       setSnackbar({
                         open: true,
-                        message: 'Visualization chưa có released artifact để hiển thị.',
-                        severity: 'warning'
+                        message: 'Cần transcript trước khi mở Analysis.',
+                        severity: 'warning',
                       });
                       return;
+                    }
+                    setAnalysisTaskId(taskId);
+                    setTab(4);
+                  }}
+                    onVisualize={(taskId) => {
+                      const file = files.find(f => f.task_id === taskId);
+                      if (!file) return;
+                      if (!file.transcript) {
+                        setSnackbar({
+                          open: true,
+                          message: 'Cần transcript trước khi mở visualization.',
+                          severity: 'warning'
+                        });
+                        return;
                     }
                     setVisualizeTaskId(taskId);
                     setVisualizeDialogOpen(true);
@@ -824,7 +867,7 @@ function App() {
                 />
               </Box>
             )}
-            {tab === 1 && selectedFileId ? <TranscriptPanel fileId={selectedFileId} /> : tab === 1 ? (
+            {tab === 1 ? (
               files.filter(f => f.transcript).length > 0 ? (
                 <Box>
                   <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
@@ -893,17 +936,17 @@ function App() {
             )}
             {/* Summary Tab (tab 3) */}
             {tab === 3 && (
-              files.filter(f => f.summary).length > 0 ? (
+              files.filter(f => summaryDisplayText(f)).length > 0 ? (
                 <Box>
                   <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
                     <Typography variant="h6" fontWeight={700}>📋 Summary các file</Typography>
                     <Chip
-                      label={`${files.filter(f => f.summary).length} file(s)`}
+                      label={`${files.filter(f => summaryDisplayText(f)).length} file(s)`}
                       size="small"
                       sx={{ bgcolor: '#ff9800', color: '#fff' }}
                     />
                   </Box>
-                  {files.filter(f => f.summary).map((file, idx) => (
+                  {files.filter(f => summaryDisplayText(f)).map((file, idx) => (
                     <Accordion key={file.task_id} defaultExpanded={idx === 0} sx={{ mb: 2, borderRadius: '12px !important', border: '1px solid rgba(255, 152, 0, 0.3)', '&:before': { display: 'none' } }}>
                       <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: 'rgba(255, 152, 0, 0.05)', borderRadius: '12px 12px 0 0' }}>
                         <Box display="flex" alignItems="center" gap={2} width="100%">
@@ -920,8 +963,8 @@ function App() {
                             variant="outlined"
                             startIcon={<ContentCopyIcon />}
                             onClick={() => {
-                              navigator.clipboard.writeText(file.summary || '');
-                              setSnackbar({ open: true, message: '✅ Summary copied!', severity: 'success' });
+                              navigator.clipboard.writeText(summaryDisplayText(file));
+                              setSnackbar({ open: true, message: '✅ Nội dung đã được copy!', severity: 'success' });
                             }}
                             sx={{ borderRadius: '8px', textTransform: 'none', color: '#ff9800', borderColor: '#ff9800' }}
                           >
@@ -929,7 +972,7 @@ function App() {
                           </Button>
                         </Box>
                         <Paper sx={{ p: 2, bgcolor: 'rgba(255, 152, 0, 0.03)', borderRadius: '12px', maxHeight: 400, overflow: 'auto' }}>
-                          <Typography sx={{ whiteSpace: 'pre-line', lineHeight: 1.8 }}>{file.summary}</Typography>
+                          <Typography sx={{ whiteSpace: 'pre-line', lineHeight: 1.8 }}>{summaryDisplayText(file)}</Typography>
                         </Paper>
                       </AccordionDetails>
                     </Accordion>
@@ -943,7 +986,13 @@ function App() {
             )}
             {/* Analysis Tab (tab 4) */}
             {tab === 4 && (
-              <AnalysisPanel files={files} caseId={selectedCase.id} mode={mode} />
+              <AnalysisPanel
+                files={files}
+                caseId={selectedCase.id}
+                mode={mode}
+                onRefresh={fetchFiles}
+                focusTaskId={analysisTaskId}
+              />
             )}
 
           </Paper>
@@ -1030,6 +1079,7 @@ function App() {
         open={summarizeDialogOpen}
         onClose={() => setSummarizeDialogOpen(false)}
         onConfirm={handleSummarize}
+        transcriptLength={selectedSummaryTranscriptLength}
       />
 
       {/* V2 API - Visualization Dialog */}

@@ -1,0 +1,86 @@
+
+=================================== ERRORS ====================================
+____________ ERROR collecting tests/test_audit_reference_repos.py _____________
+ImportError while importing test module 'E:\research\STT-release-candidate-allowlist-v4c-20260814\tests\test_audit_reference_repos.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+C:\Users\Admin\AppData\Local\Programs\Python\Python311\Lib\importlib\__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+tests\test_audit_reference_repos.py:14: in <module>
+    from scripts.reference_port_register import (
+E   ModuleNotFoundError: No module named 'scripts.reference_port_register'
+___________ ERROR collecting tests/test_test_database_isolation.py ____________
+ImportError while importing test module 'E:\research\STT-release-candidate-allowlist-v4c-20260814\tests\test_test_database_isolation.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+C:\Users\Admin\AppData\Local\Programs\Python\Python311\Lib\importlib\__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+tests\test_test_database_isolation.py:14: in <module>
+    import scripts.verify_test_database_isolation as isolation_verifier
+E   ModuleNotFoundError: No module named 'scripts.verify_test_database_isolation'
+============================== warnings summary ===============================
+src\core\config.py:134
+  E:\research\STT-release-candidate-allowlist-v4c-20260814\src\core\config.py:134: PydanticDeprecatedSince20: Pydantic V1 style `@validator` validators are deprecated. You should migrate to Pydantic V2 style `@field_validator` validators, see the migration guide for more details. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/
+    @validator("CORS_ORIGINS", pre=True)
+
+..\STT\venv\Lib\site-packages\pydantic\_internal\_config.py:271
+..\STT\venv\Lib\site-packages\pydantic\_internal\_config.py:271
+..\STT\venv\Lib\site-packages\pydantic\_internal\_config.py:271
+..\STT\venv\Lib\site-packages\pydantic\_internal\_config.py:271
+..\STT\venv\Lib\site-packages\pydantic\_internal\_config.py:271
+..\STT\venv\Lib\site-packages\pydantic\_internal\_config.py:271
+  E:\research\STT\venv\Lib\site-packages\pydantic\_internal\_config.py:271: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+..\STT\venv\Lib\site-packages\pydub\utils.py:14
+  E:\research\STT\venv\Lib\site-packages\pydub\utils.py:14: DeprecationWarning: 'audioop' is deprecated and slated for removal in Python 3.13
+    import audioop
+
+..\STT\venv\Lib\site-packages\pydantic\_internal\_fields.py:149
+  E:\research\STT\venv\Lib\site-packages\pydantic\_internal\_fields.py:149: UserWarning: Field "model_name" has conflict with protected namespace "model_".
+  
+  You may be able to resolve this warning by setting `model_config['protected_namespaces'] = ()`.
+    warnings.warn(
+
+src\main.py:68
+  E:\research\STT-release-candidate-allowlist-v4c-20260814\src\main.py:68: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+..\STT\venv\Lib\site-packages\fastapi\applications.py:4547
+..\STT\venv\Lib\site-packages\fastapi\applications.py:4547
+  E:\research\STT\venv\Lib\site-packages\fastapi\applications.py:4547: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+src\main.py:77
+  E:\research\STT-release-candidate-allowlist-v4c-20260814\src\main.py:77: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+src\cherry_core\__init__.py:1
+  E:\research\STT-release-candidate-allowlist-v4c-20260814\src\cherry_core\__init__.py:1: DeprecationWarning: invalid escape sequence '\C'
+    """
+
+src\cherry_core\config.py:1
+  E:\research\STT-release-candidate-allowlist-v4c-20260814\src\cherry_core\config.py:1: DeprecationWarning: invalid escape sequence '\C'
+    """
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+ERROR tests/test_audit_reference_repos.py
+ERROR tests/test_test_database_isolation.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 2 errors during collection !!!!!!!!!!!!!!!!!!!
+15 warnings, 2 errors in 1.27s

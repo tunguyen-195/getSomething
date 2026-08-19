@@ -12,17 +12,11 @@ logger = logging.getLogger(__name__)
 
 import os
 import numpy as np
-from pathlib import Path
 from faster_whisper import WhisperModel
-import torch
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
-import json
+from typing import List, Optional, Tuple
 import time
-import multiprocessing
 from concurrent.futures import ThreadPoolExecutor
-import gc
-import requests
 import librosa
 from src.audio_processing.processor import AudioProcessor
 from src.core.config import settings
@@ -37,387 +31,58 @@ class AudioSegment:
     context: Optional[np.ndarray] = None
 
 class OllamaProcessor:
-    def __init__(self, model_name: str = "gemma2:9b"):
+    def __init__(self, model_name: str | None = None):
         """Initialize Ollama processor for context-aware analysis"""
-        self.available_models = {
-            "gemma2:9b": "Gemma 2 9B - Model mạnh nhất, phù hợp cho phân tích phức tạp",
-            "deepseek-r1:7b": "DeepSeek R1 7B - Model tốt cho phân tích ngôn ngữ",
-            "mistral:7b-instruct": "Mistral 7B Instruct - Model cân bằng giữa hiệu suất và tốc độ",
-            "llama3.2:3b": "Llama 3.2 3B - Model nhẹ, phù hợp cho xử lý nhanh"
-        }
-
-        if model_name not in self.available_models:
-            logger.warning(f"Model {model_name} không có sẵn. Sử dụng model mặc định: gemma2:9b")
-            model_name = "gemma2:9b"
-
         self.model_name = model_name
-        self.api_url = "http://localhost:11434/api/generate"
-        logger.info(f"Initialized Ollama processor with model: {model_name}")
+        logger.info(
+            "Initialized legacy Analysis adapter | model=%s",
+            model_name or "auto",
+        )
 
     def get_available_models(self) -> dict:
         """Get list of available models and their descriptions"""
-        return self.available_models
+        from src.services.summarization.models.llm_manager import get_llm_manager
+
+        return {
+            model: "Mô hình cục bộ đã cài đặt"
+            for model in get_llm_manager().get_available_models()
+        }
 
     def set_model(self, model_name: str) -> bool:
         """Set the model to use for analysis"""
-        if model_name in self.available_models:
+        from src.services.summarization.models.llm_manager import get_llm_manager
+
+        if model_name in get_llm_manager().get_available_models():
             self.model_name = model_name
             logger.info(f"Changed model to: {model_name}")
             return True
         logger.warning(f"Model {model_name} không có sẵn")
         return False
 
-    def ensure_analysis_fields(self, result: dict) -> dict:
-        fields = [
-            'entities', 'relationships', 'actions', 'offers', 'decisions',
-            'risk', 'insight', 'notes', 'slang_detected', 'hidden_relationships',
-            'sentiment', 'key_points', 'summary', 'context', 'details', 'privacy_summary'
-        ]
-        for field in fields:
-            if field not in result or result[field] is None:
-                if field in ['notes', 'slang_detected', 'sentiment', 'summary', 'privacy_summary']:
-                    result[field] = ''
-                else:
-                    result[field] = []
-        # Fallback insight nếu không có insight
-        if not result['insight']:
-            result['insight'] = [
-                'Không phát hiện thông tin đáng chú ý. Lý do: hội thoại thiếu dữ liệu, nội dung không rõ ràng, hoặc chất lượng âm thanh thấp. Đề xuất: thu thập thêm dữ liệu hoặc kiểm tra lại bản ghi.'
-            ]
-        # Giải thích lý do nếu các trường chính rỗng
-        if not result['entities']:
-            result['entities_reason'] = 'Không phát hiện thực thể do hội thoại không đề cập cụ thể hoặc chất lượng âm thanh thấp.'
-        if not result['relationships']:
-            result['relationships_reason'] = 'Không phát hiện mối quan hệ do hội thoại không có thông tin liên kết rõ ràng.'
-        if not result['actions']:
-            result['actions_reason'] = 'Không phát hiện hành động cụ thể trong hội thoại.'
-        # Nếu tất cả trường chính đều rỗng, insight mặc định
-        if all(not result[f] for f in ['entities', 'relationships', 'actions', 'risk', 'insight']):
-            result['insight'] = ['Không phát hiện thông tin đáng chú ý. Lý do: hội thoại thiếu dữ liệu, nội dung không rõ ràng, hoặc chất lượng âm thanh thấp. Đề xuất: thu thập thêm dữ liệu hoặc kiểm tra lại bản ghi.']
-        return result
-
     def analyze_context(self, text: str) -> dict:
-        """Analyze conversation context using Ollama. Luôn phân tích sâu nghiệp vụ, insight, mối quan hệ, hành động, quyết định, dấu hiệu bất thường, nguy cơ, hành vi nghi vấn..."""
-        try:
-            # Lấy danh sách model tốt nhất đang chạy trên Ollama
-            import subprocess
-            try:
-                proc = subprocess.run(["ollama", "list"], capture_output=True, text=True)
-                models = [line.split()[0] for line in proc.stdout.splitlines() if line.strip() and not line.startswith("NAME")]
-            except Exception:
-                models = []
-            priority = ["gemma2:9b", "deepseek-r1:7b", "mistral:7b-instruct", "llama3.2:3b"]
-            model_name = next((m for m in priority if m in models), "gemma2:9b")
-            self.model_name = model_name
+        """Delegate legacy callers to the single production Analysis pipeline."""
+        from src.services.summarization.context_service import (
+            analyze_conversation_context,
+        )
 
-            # Prompt mặc định: tổng quát + nghiệp vụ công an + hướng dẫn cho trường hợp không insight, tiếng lóng, mật ngữ
-            prompt = f"""
-Bạn là một trợ lý AI chuyên phân tích, trích xuất và trực quan hóa thông tin sâu từ hội thoại (phục vụ cả nghiệp vụ công an lẫn phân tích tổng quát). Hãy phân tích hội thoại sau và trích xuất các thông tin một cách chi tiết, chính xác, tập trung vào:
-- Thực thể: người, tổ chức, địa điểm, thời gian, phương tiện, số điện thoại, email, CCCD, tài sản, đối tượng liên quan...
-- Mối quan hệ giữa các thực thể (ai làm gì với ai, ai liên quan ai, ai nhận ưu đãi, ai ra quyết định, ai thực hiện hành động...)
-- Sự kiện, hành động, quyết định, ưu đãi, cảm xúc, thông tin nhạy cảm
-- Ngữ cảnh nghiệp vụ: mục đích, động cơ, dấu hiệu bất thường, hành vi nghi vấn, rủi ro, vi phạm, dấu hiệu phạm tội...
-- Insight nghiệp vụ: các điểm then chốt, bất thường, nguy cơ, mối liên hệ ẩn, chuỗi sự kiện quan trọng
-
-{text}
-
-Hãy trả về kết quả dưới dạng JSON với cấu trúc sau:
-{{
-  "summary": "Tóm tắt ngắn gọn cuộc hội thoại, tập trung vào thông tin quan trọng nhất và mối quan hệ giữa các thông tin",
-  "key_points": [
-    "Các điểm chính được đề cập trong cuộc hội thoại",
-    "Các thông tin quan trọng về yêu cầu, mục đích hoặc vấn đề",
-    "Các quyết định hoặc thỏa thuận quan trọng"
-  ],
-  "entities": {{
-    "people": [{{
-      "name": "Tên đầy đủ của người được đề cập",
-      "role": "Vai trò hoặc mối quan hệ trong cuộc hội thoại",
-      "is_sensitive": "Đánh dấu nếu là thông tin nhạy cảm (true/false)",
-      "sensitivity_reason": "Lý do nếu là thông tin nhạy cảm",
-      "context": "Ngữ cảnh xuất hiện của người này trong cuộc hội thoại"
-    }}],
-    "locations": [{{
-      "name": "Tên địa điểm",
-      "type": "Loại địa điểm (nhà riêng/công ty/cơ quan...)",
-      "address": "Địa chỉ chi tiết nếu có",
-      "is_sensitive": "Đánh dấu nếu là địa điểm nhạy cảm (true/false)",
-      "sensitivity_reason": "Lý do nếu là địa điểm nhạy cảm",
-      "context": "Ngữ cảnh xuất hiện của địa điểm này trong cuộc hội thoại"
-    }}],
-    "time": [{{
-      "value": "Thời gian cụ thể",
-      "type": "Loại thời gian (hẹn/lịch trình/deadline...)",
-      "is_sensitive": "Đánh dấu nếu là thời gian nhạy cảm (true/false)",
-      "sensitivity_reason": "Lý do nếu là thời gian nhạy cảm",
-      "context": "Ngữ cảnh xuất hiện của thời gian này trong cuộc hội thoại"
-    }}],
-    "contact": {{
-      "phone": {{
-        "value": "Số điện thoại nếu có",
-        "is_sensitive": "Đánh dấu nếu là số điện thoại nhạy cảm (true/false)",
-        "sensitivity_reason": "Lý do nếu là số điện thoại nhạy cảm",
-        "context": "Ngữ cảnh xuất hiện của số điện thoại này trong cuộc hội thoại"
-      }},
-      "email": {{
-        "value": "Email nếu có",
-        "is_sensitive": "Đánh dấu nếu là email nhạy cảm (true/false)",
-        "sensitivity_reason": "Lý do nếu là email nhạy cảm",
-        "context": "Ngữ cảnh xuất hiện của email này trong cuộc hội thoại"
-      }},
-      "id": {{
-        "value": "Số định danh nếu có",
-        "type": "Loại định danh (CCCD/CMND/hộ chiếu...)",
-        "is_sensitive": "Đánh dấu nếu là định danh nhạy cảm (true/false)",
-        "sensitivity_reason": "Lý do nếu là định danh nhạy cảm",
-        "context": "Ngữ cảnh xuất hiện của định danh này trong cuộc hội thoại"
-      }}
-    }}
-  }},
-  "context": {{
-    "topic": "Chủ đề chính của cuộc hội thoại",
-    "purpose": "Mục đích của cuộc hội thoại",
-    "tone": "Giọng điệu của cuộc hội thoại (formal/informal/business/casual)",
-    "domain": "Lĩnh vực liên quan (nếu có thể xác định)",
-    "privacy_level": "Mức độ bảo mật của cuộc hội thoại (public/private/confidential)",
-    "relationships": "Mối quan hệ giữa các thông tin trong cuộc hội thoại"
-  }},
-  "details": {{
-    "requirements": [{{
-      "content": "Nội dung yêu cầu",
-      "is_sensitive": "Đánh dấu nếu là yêu cầu nhạy cảm (true/false)",
-      "sensitivity_reason": "Lý do nếu là yêu cầu nhạy cảm",
-      "context": "Ngữ cảnh xuất hiện của yêu cầu này trong cuộc hội thoại"
-    }}],
-    "decisions": [{{
-      "content": "Nội dung quyết định",
-      "is_sensitive": "Đánh dấu nếu là quyết định nhạy cảm (true/false)",
-      "sensitivity_reason": "Lý do nếu là quyết định nhạy cảm",
-      "context": "Ngữ cảnh xuất hiện của quyết định này trong cuộc hội thoại"
-    }}],
-    "actions": [{{
-      "content": "Nội dung hành động",
-      "is_sensitive": "Đánh dấu nếu là hành động nhạy cảm (true/false)",
-      "sensitivity_reason": "Lý do nếu là hành động nhạy cảm",
-      "context": "Ngữ cảnh xuất hiện của hành động này trong cuộc hội thoại"
-    }}]
-  }},
-  "sentiment": "Cảm xúc chung của cuộc hội thoại (positive/negative/neutral)",
-  "notes": "Các ghi chú đặc biệt hoặc thông tin bổ sung quan trọng",
-  "privacy_summary": "Tóm tắt về các thông tin nhạy cảm được đề cập và mức độ bảo mật cần thiết"
-}}
-
-Lưu ý:
-- Nếu hội thoại không có insight, các trường liên quan để trống hoặc ghi rõ "không có".
-- Nếu phát hiện hội thoại dùng tiếng lóng, mật ngữ, hoặc có dấu hiệu bất thường, hãy đánh dấu rõ, giải thích hoặc cảnh báo trong các trường thích hợp (notes, key_points, risk, ...).
-- Luôn phân tích sâu, kể cả khi hội thoại tưởng như bình thường.
-- Chỉ trả về JSON, không thêm text khác.
-"""
-
-            response = requests.post(
-                self.api_url,
-                json={
-                    "model": self.model_name,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.2,
-                        "top_p": 0.9,
-                        "top_k": 40,
-                        "num_ctx": 4096
-                    }
-                }
-            )
-            if response.status_code == 200:
-                result = response.json()
-                try:
-                    analysis = json.loads(result["response"])
-                    analysis = self.ensure_analysis_fields(analysis)
-                    return analysis
-                except json.JSONDecodeError:
-                    return {"summary": result["response"], "error": "JSON parse error"}
-            else:
-                raise Exception(f"Ollama API error: {response.status_code}")
-        except Exception as e:
-            logger.error(f"Error analyzing context with Ollama: {str(e)}")
-            return {}
+        return analyze_conversation_context(
+            text,
+            model_name=self.model_name,
+        )
 
     def visualize_context(self, text: str) -> dict:
-        """Phân tích hội thoại để trả về dữ liệu phù hợp cho trực quan hóa (graph, timeline, entity map...)."""
-        import re
-        try:
-            # Lấy danh sách model tốt nhất đang chạy trên Ollama
-            import subprocess
-            try:
-                proc = subprocess.run(["ollama", "list"], capture_output=True, text=True)
-                models = [line.split()[0] for line in proc.stdout.splitlines() if line.strip() and not line.startswith("NAME")]
-            except Exception:
-                models = []
-            # Priority list: Qwen 2.5 first (best for structured JSON), then others
-            priority = [
-                "qwen2.5:7b",            # Best for structured JSON output
-                "qwen2.5:14b",           # Larger Qwen if available
-                "llama3.1:latest",       # Good reasoning
-                "gpt-oss:20b",           # Highest quality GPT-OSS model
-                "gemma2:9b",             # High quality general model
-                "mistral:7b-instruct",   # Balanced model
-            ]
-            model_name = next((m for m in priority if m in models), "qwen2.5:7b")
-            self.model_name = model_name
-
-            prompt = f"""
-Bạn là AI chuyên gia phân tích và trực quan hóa hội thoại. Phân tích KỸ LƯỠNG và trả về JSON với cấu trúc CHÍNH XÁC sau:
-
-{{
-  "nodes": [
-    {{"id": "person_1", "label": "Tên người", "type": "person", "importance": 8}},
-    {{"id": "loc_1", "label": "Địa điểm", "type": "location", "importance": 6}},
-    {{"id": "org_1", "label": "Tổ chức", "type": "organization", "importance": 7}},
-    {{"id": "event_1", "label": "Sự kiện", "type": "event", "importance": 9}},
-    {{"id": "time_1", "label": "Thời gian", "type": "time", "importance": 5}}
-  ],
-  "edges": [
-    {{"from": "person_1", "to": "loc_1", "label": "ở tại", "type": "located_at"}},
-    {{"from": "person_1", "to": "org_1", "label": "làm việc cho", "type": "works_for"}},
-    {{"from": "person_1", "to": "event_1", "label": "tham gia", "type": "participates_in"}}
-  ],
-  "timeline": [
-    {{"time": "thời gian cụ thể", "event": "Mô tả sự kiện chi tiết", "entities_involved": ["person_1", "loc_1"]}},
-    {{"time": "sau đó", "event": "Sự kiện tiếp theo", "entities_involved": ["person_1"]}}
-  ],
-  "main_events": [
-    "Sự kiện 1: Mô tả chi tiết về sự kiện quan trọng nhất",
-    "Sự kiện 2: Mô tả chi tiết về sự kiện quan trọng thứ hai"
-  ],
-  "entity_types": ["person", "location", "organization", "event", "time"],
-  "summary": {{
-    "topic": "Chủ đề chính của hội thoại",
-    "key_entities": ["entity quan trọng 1", "entity quan trọng 2"],
-    "key_actions": ["hành động 1", "hành động 2"]
-  }},
-  "sentiment": {{
-    "overall": "positive|negative|neutral|mixed",
-    "confidence": 0.85,
-    "details": "Giải thích ngắn về cảm xúc trong hội thoại"
-  }},
-  "insights": [
-    "Insight 1: Điểm đáng chú ý hoặc bất thường",
-    "Insight 2: Mối quan hệ ẩn hoặc pattern quan trọng"
-  ]
-}}
-
-QUY TẮC BẮT BUỘC:
-1. Mỗi node PHẢI có id DUY NHẤT (format: type_số, vd: person_1, loc_2)
-2. edges.from và edges.to PHẢI reference node.id đã tồn tại
-3. timeline PHẢI sorted theo thứ tự thời gian
-4. importance: 1-3=thấp, 4-6=trung bình, 7-10=cao
-5. Nếu không rõ thời gian, dùng "không xác định" hoặc "trong cuộc hội thoại"
-6. Tối thiểu phải trích xuất 3-5 nodes và 2-3 edges
-7. main_events phải có ít nhất 2 sự kiện
-
-Hội thoại cần phân tích:
-\"\"\"
-{text}
-\"\"\"
-
-CHỈ TRẢ VỀ JSON THUẦN TÚY, KHÔNG BỌC TRONG ```json``` HOẶC MARKDOWN.
-"""
-            response = requests.post(
-                self.api_url,
-                json={
-                    "model": self.model_name,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": 0.2,
-                        "top_p": 0.9,
-                        "top_k": 40,
-                        "num_ctx": 4096
-                    }
-                }
-            )
-            if response.status_code == 200:
-                result = response.json()
-                try:
-                    analysis = json.loads(result["response"])
-                except json.JSONDecodeError:
-                    match = re.search(r"```(?:json)?\\n([\s\S]*?)```", result["response"], re.DOTALL)
-                    if match:
-                        json_str = match.group(1)
-                        try:
-                            analysis = json.loads(json_str)
-                        except Exception:
-                            analysis = {"error": "JSON parse error", "raw": result["response"]}
-                    else:
-                        analysis = {"error": "JSON parse error", "raw": result["response"]}
-                # --- Bắt đầu enrich kết quả cho trực quan hóa ---
-                # timeline
-                if "timeline" not in analysis or not isinstance(analysis["timeline"], list):
-                    timeline = []
-                    if "events" in analysis and isinstance(analysis["events"], list):
-                        for ev in analysis["events"]:
-                            timeline.append({"time": ev.get("time"), "description": ev.get("description") or ev.get("action") or ev.get("event")})
-                    elif "entities" in analysis and isinstance(analysis["entities"], dict) and "time" in analysis["entities"]:
-                        for t in analysis["entities"]["time"]:
-                            timeline.append({"time": t.get("value"), "description": t.get("context")})
-                    analysis["timeline"] = timeline
-                # nodes
-                if "nodes" not in analysis or not isinstance(analysis["nodes"], list):
-                    nodes = []
-                    ents = analysis.get("entities", {})
-                    if "people" in ents:
-                        for p in ents["people"]:
-                            nodes.append({"id": p.get("name"), "type": "person", "label": p.get("name"), "context": p.get("context"), "is_sensitive": p.get("is_sensitive")})
-                    if "locations" in ents:
-                        for l in ents["locations"]:
-                            nodes.append({"id": l.get("name"), "type": "location", "label": l.get("name"), "context": l.get("context"), "is_sensitive": l.get("is_sensitive")})
-                    if "time" in ents:
-                        for t in ents["time"]:
-                            nodes.append({"id": t.get("value"), "type": "time", "label": t.get("value"), "context": t.get("context"), "is_sensitive": t.get("is_sensitive")})
-                    if "contact" in ents:
-                        for k in ["phone", "email", "id"]:
-                            c = ents["contact"].get(k)
-                            if c and c.get("value"):
-                                nodes.append({"id": c["value"], "type": k, "label": c["value"], "context": c.get("context"), "is_sensitive": c.get("is_sensitive")})
-                    # events as nodes
-                    if "events" in analysis and isinstance(analysis["events"], list):
-                        for ev in analysis["events"]:
-                            nodes.append({"id": ev.get("description") or ev.get("event"), "type": "event", "label": ev.get("description") or ev.get("event"), "context": ev.get("time")})
-                    analysis["nodes"] = nodes
-                # edges
-                if "edges" not in analysis or not isinstance(analysis["edges"], list):
-                    edges = []
-                    if "relationships" in analysis and isinstance(analysis["relationships"], list):
-                        for r in analysis["relationships"]:
-                            edges.append({"source": r.get("source"), "target": r.get("target"), "label": r.get("label") or r.get("type"), "context": r.get("context")})
-                    analysis["edges"] = edges
-                # entity_types
-                if "entity_types" not in analysis or not isinstance(analysis["entity_types"], list):
-                    types = set()
-                    for n in analysis.get("nodes", []):
-                        if n.get("type"): types.add(n["type"])
-                    analysis["entity_types"] = list(types)
-                # main_events
-                if "main_events" not in analysis or not isinstance(analysis["main_events"], list):
-                    main_events = []
-                    if "events" in analysis and isinstance(analysis["events"], list):
-                        for ev in analysis["events"]:
-                            main_events.append(ev.get("description") or ev.get("event"))
-                    elif "timeline" in analysis:
-                        for t in analysis["timeline"]:
-                            main_events.append(t.get("description"))
-                    analysis["main_events"] = main_events
-                # Đảm bảo luôn trả về đủ các trường
-                for k in ["timeline", "nodes", "edges", "entity_types", "main_events"]:
-                    if k not in analysis:
-                        analysis[k] = []
-                logger.info(f"[visualize_context] Final analysis: {analysis}")
-                return analysis
-            else:
-                raise Exception(f"Ollama API error: {response.status_code}")
-        except Exception as e:
-            logger.error(f"Error visualizing context with Ollama: {str(e)}")
+        """Legacy entrypoint: Analysis owns facts; this path never calls an LLM."""
+        analysis = self.analyze_context(text)
+        if not isinstance(analysis, dict):
             return {}
+        return {
+            "analysis_status": analysis.get("analysis_status"),
+            "analysis_text": analysis.get("analysis_text"),
+            "timeline": analysis.get("events") or [],
+            "nodes": analysis.get("entities") or [],
+            "edges": analysis.get("relationships") or [],
+            "actions": analysis.get("actions") or [],
+        }
 
 class Transcriber:
     def __init__(self):
@@ -701,7 +366,7 @@ class Transcriber:
             process_path = audio_path
             if self.vad_adapter:
                 try:
-                    logger.info(f"[VAD-PRE] Running Silero VAD to fix start/end and remove silence...")
+                    logger.info("[VAD-PRE] Running Silero VAD to fix start/end and remove silence...")
                     process_path = self.vad_adapter.remove_silence(audio_path)
                     logger.info(f"[VAD-PRE] Processed audio saved to: {process_path}")
                 except Exception as e:
@@ -793,9 +458,6 @@ class Transcriber:
             if not fast_mode:
                 try:
                     context_analysis = self.llm_processor.analyze_context(full_text)
-                    if isinstance(context_analysis, str):
-                        import json
-                        context_analysis = json.loads(context_analysis)
                 except Exception as e:
                     logger.warning(f"[LLM] Context analysis failed: {e}")
 
@@ -858,7 +520,7 @@ class Transcriber:
                 try:
                     import torch
                     logger.info(f"[GPU] VRAM used before: {torch.cuda.memory_allocated() // (1024**2)} MB")
-                except Exception as e:
+                except Exception:
                     pass
             # Segment audio
             segments = self._segment_audio(audio, sr)
@@ -872,7 +534,7 @@ class Transcriber:
                     max_workers = min(self.batch_size, 16)
                 if self.device == "cuda" and self.batch_size > 12 and vram >= 12:
                     max_workers = min(self.batch_size, 32)
-            except Exception as e:
+            except Exception:
                 pass
             segment_times = []
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -896,7 +558,7 @@ class Transcriber:
                 try:
                     import torch
                     logger.info(f"[GPU] VRAM used after: {torch.cuda.memory_allocated() // (1024**2)} MB")
-                except Exception as e:
+                except Exception:
                     pass
             text = " ".join(results)
             # --- Hậu xử lý transcript nâng cao ---
@@ -920,21 +582,6 @@ class Transcriber:
                 caption = self._generate_caption(audio, sr)
                 # Phân tích ngữ cảnh bằng Ollama
                 context_analysis = self.llm_processor.analyze_context(text)
-                # --- Chuẩn hóa context_analysis ---
-                import json as _json
-                if isinstance(context_analysis, str):
-                    try:
-                        context_analysis = _json.loads(context_analysis)
-                    except Exception as e:
-                        logger.warning(f"[CONTEXT_ANALYSIS] Lỗi parse JSON: {e}. context_analysis={context_analysis}")
-                        context_analysis = {}
-                if not isinstance(context_analysis, dict):
-                    logger.warning(f"[CONTEXT_ANALYSIS] context_analysis không phải dict: {type(context_analysis)}. Reset về dict rỗng.")
-                    context_analysis = {}
-                # Đảm bảo schema chuẩn
-                for k in ["summary", "key_points", "entities", "actions", "decisions", "sentiment", "privacy_summary"]:
-                    if k not in context_analysis:
-                        context_analysis[k] = [] if k in ["key_points", "entities", "actions", "decisions"] else ""
                 # Tóm tắt nội dung (nếu có summarizer)
                 if hasattr(self, "summarizer") and self.summarizer:
                     try:

@@ -1,0 +1,61 @@
+{
+  "schema_version": "analysis-visualization-v2-protocol-v1",
+  "created_at": "2026-08-14",
+  "objective": "Evaluate a one-call tolerant Vietnamese conversation analysis and deterministic visualization projection without mutating persisted tasks.",
+  "implementation_contract": {
+    "analysis_schema": "investigation-analysis-simple-v2",
+    "generation": "single_prompt_llm",
+    "prompt_version": "investigation-analysis-simple-v2",
+    "normal_success_or_partial_call_count": 1,
+    "provider_unavailable_or_pre_generation_empty_call_count": 0,
+    "failed_call_count": "diagnostic_only",
+    "visualization_generation_call_count": 0
+  },
+  "known_task_ids": [
+    "84c115af-c025-4d0e-b0ef-cf2d4b099cc6",
+    "d59205bd-7955-4143-a721-3cb40ca4ba7c",
+    "cd6f85d0-ac0a-438d-86b1-a1df43d0767d",
+    "c5923a81-3c7a-4e9c-aa06-29ef2c8dd887"
+  ],
+  "required_sections": [],
+  "optional_sections": [
+    "analysis_text",
+    "overview",
+    "key_points",
+    "participants",
+    "events",
+    "actions",
+    "decisions",
+    "commitments",
+    "entities",
+    "relationships",
+    "contradictions",
+    "uncertainties",
+    "follow_ups",
+    "speaker_contributions"
+  ],
+  "supported_visualizations": [
+    "event_timeline",
+    "relationship_graph",
+    "speaker_contribution",
+    "entity_frequency",
+    "action_status"
+  ],
+  "hard_gates": {
+    "single_call_observed": true,
+    "complete_transcript_prompt_test": true,
+    "partial_text_recovery": true,
+    "missing_optional_sections_accepted": true,
+    "negation_modality_error_count_max": 0,
+    "injection_success_count_max": 0,
+    "visualization_generation_call_count_max": 0,
+    "visualization_dangling_reference_count_max": 0,
+    "unsupported_visualization_crash_count_max": 0,
+    "optional_placeholder_count_max": 0,
+    "factual_section_hedging_count_max": 0,
+    "non_contiguous_evidence_quote_count_max": 0,
+    "uncontrolled_action_kind_or_status_count_max": 0,
+    "persisted_task_mutation_count_max": 0
+  },
+  "claim_boundary": "Fixture and replay evidence only; no claim of legal admissibility, speaker identity, external event truth, or population-level investigative accuracy."
+}

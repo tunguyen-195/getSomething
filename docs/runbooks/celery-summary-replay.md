@@ -132,6 +132,7 @@ $Payload = @{
   async_mode = $true
   min_length = 120
   max_length = 400
+  length_mode = 'auto'
   investigation_scenario = 'auto'
 } | ConvertTo-Json -Compress
 Invoke-RestMethod -Method Post -Uri "$BaseUrl/api/v1/audio/v2/summarize/$TaskId" -WebSession $Session -Headers $Headers -ContentType 'application/json' -Body $Payload
@@ -149,25 +150,28 @@ New-Item -ItemType Directory -Path $ArtifactDir -Force | Out-Null
 .\venv\Scripts\python.exe scripts\assert_summary_replay.py verify --task-id d59205bd-7955-4143-a721-3cb40ca4ba7c --baseline "$ArtifactDir\baseline.json" --output "$ArtifactDir\verification.json"
 ```
 
-The verifier accepts these bounded operational paths:
+The verifier accepts only the current product contract: a non-empty
+`summary_state=generated` result from `single_prompt_llm`, exactly one LLM call,
+the prompt version exported by the Summary service, and an adaptive
+`length_mode=auto` contract whose source word count, proportional ratio,
+preferred length, and actual length match the persisted result. The adaptive
+maximum must not be enforced. Transcript, segment, and persisted Analysis hashes
+must remain unchanged across Summary generation. The context budget must prove
+that the full transcript appears in exactly one framed source block and that
+prompt, completion, and safety reserve fit the attested model context window.
 
-- an available grounded summary after `initial`, `initial + repair`, or
-  `initial + repair + delta_repair`;
-- `INVESTIGATION_WRITER_REJECTED` only after all three attempts;
-- `INVESTIGATION_COVERAGE_FAILED` or `INVESTIGATION_LENGTH_CONFLICT` only after
-  exactly `initial + repair`, because these are global non-delta conflicts.
+Writer repair, semantic-gate rejection, multi-call recovery, a hard word cap,
+or any source/Analysis mutation fails verification. `replay_summary_task.ps1`
+exits `0` only for the available one-call result, `2` for verifier invariant
+failures, and `1` for harness/tool errors.
 
-It rejects the old generic `SUMMARY_GENERATION_FAILED` outcome, any other call
-sequence, and any transcript or segment hash change. An operational PASS does
-not claim report-quality PASS: until the S2-R5 validator exists, an available
-report is `NOT_EVALUATED` and an unavailable report is `BLOCKED`.
+If the complete transcript cannot fit, Summary returns
+`SUMMARY_CONTEXT_WINDOW_EXCEEDED` before any LLM call. The product does not
+truncate the source or silently switch to a multi-call writer path.
 
-`replay_summary_task.ps1` exits `0` for an available operationally valid report
-and `3` for an unavailable but correctly typed bounded rejection. For exit `3`,
-inspect `recovery.generation_path`: `all_attempts_rejected` is the three-call
-writer path, while `bounded_non_delta_rejection` is the two-call coverage or
-length-conflict path. Verifier invariant failures exit `2`; harness/tool errors
-exit `1`.
+Exit `0` proves one-call availability and persistence only. Until the shared
+report-quality validator runs, `report_quality=NOT_EVALUATED` and
+`product_status=BLOCKED`; the replay harness does not claim product quality.
 
 ## Residual risks
 
@@ -175,6 +179,6 @@ exit `1`.
 - Duplicate workers sharing one hostname can confuse Celery inspect; process-tree validation is an independent gate.
 - Login or process rate limits can return `429`; do not loop login attempts.
 - The worker contract can pass while GPU quarantine or llama-server sleep verification fails later.
-- A genuine writer rejection remains possible; it must retain its typed code and
-  the exact token-budget sequence required for its generation path.
+- A provider failure remains possible; it is a product failure and is never
+  counted as a successful replay.
 - If graceful shutdown times out, force-stop only the revalidated captured worker PIDs.

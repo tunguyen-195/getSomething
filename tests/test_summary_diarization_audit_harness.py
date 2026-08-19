@@ -78,6 +78,77 @@ def test_summary_contract_audits_every_legacy_and_worker_entrypoint() -> None:
     assert state["legacy_generator_uses_requested_minimum"] is False
     assert state["summary_visualization_separation_present"] is True
     assert all(row["valid"] for row in state["summary_entrypoint_contracts"])
+    request_models = {
+        row["function"]: row["request_model_annotations"]
+        for row in state["summary_entrypoint_contracts"]
+        if row["function"] in {"summarize_v2", "resummarize_task"}
+    }
+    assert request_models == {
+        "summarize_v2": {
+            "model_name": "str | None",
+            "summary_type": "SummaryType",
+            "include_context": "bool",
+            "async_mode": "bool",
+            "min_length": "int",
+            "max_length": "int",
+            "length_mode": "str",
+            "investigation_scenario": "InvestigationScenario",
+        },
+        "resummarize_task": {
+            "summary_type": "SummaryType",
+            "min_length": "int",
+            "max_length": "int",
+        },
+    }
+
+
+def test_summary_separation_audit_rejects_projection_field_tamper() -> None:
+    v2_source = (CANONICAL_ROOT / "src/api/endpoints/audio_v2.py").read_text(
+        encoding="utf-8"
+    )
+    legacy_source = (CANONICAL_ROOT / "src/api/endpoints/audio.py").read_text(
+        encoding="utf-8"
+    )
+    summary_source = (CANONICAL_ROOT / "src/api/endpoints/summary.py").read_text(
+        encoding="utf-8"
+    )
+    tampered_v2 = v2_source.replace(
+        '"runtime",',
+        '"runtime",\n        "visualization_data",',
+        1,
+    )
+    assert tampered_v2 != v2_source
+
+    state = readiness._summary_visualization_separation_state(
+        v2_api_source=tampered_v2,
+        legacy_api_source=legacy_source,
+        summary_api_source=summary_source,
+    )
+
+    assert state["valid"] is False
+    assert (
+        state["checks"]["v2_response_allowlist_excludes_projection_fields"]
+        is False
+    )
+
+    tampered_legacy = legacy_source.replace(
+        'patch["context_analysis"] = context_analysis',
+        'patch["visualization_data"] = context_analysis',
+        1,
+    )
+    assert tampered_legacy != legacy_source
+    legacy_state = readiness._summary_visualization_separation_state(
+        v2_api_source=v2_source,
+        legacy_api_source=tampered_legacy,
+        summary_api_source=summary_source,
+    )
+    assert legacy_state["valid"] is False
+    assert (
+        legacy_state["checks"][
+            "legacy_summary_patch_excludes_projection_fields"
+        ]
+        is False
+    )
 
 
 def test_package_evidence_binds_complete_s3_g1_f1a_and_d1_allowlists() -> None:

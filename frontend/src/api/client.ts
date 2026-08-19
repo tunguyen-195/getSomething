@@ -2,9 +2,24 @@ let csrfToken: string | null = null;
 
 export const SUMMARY_TYPES = ['brief', 'detailed', 'investigation', 'forensic'] as const;
 export type SummaryType = (typeof SUMMARY_TYPES)[number];
+export type SummaryLengthMode = 'auto' | 'manual';
+export const INVESTIGATION_SCENARIOS = [
+  'auto',
+  'general',
+  'financial_asset',
+  'coordination_planning',
+  'threat_coercion',
+  'goods_transport',
+  'public_administration',
+  'incident_conflict',
+] as const;
+export type InvestigationScenario = (typeof INVESTIGATION_SCENARIOS)[number];
 export const DEFAULT_SUMMARY_TYPE: SummaryType = 'detailed';
+export const DEFAULT_INTERACTIVE_SUMMARY_TYPE: SummaryType = 'investigation';
 export const DEFAULT_SUMMARY_MIN_LENGTH = 50;
 export const DEFAULT_SUMMARY_MAX_LENGTH = 200;
+export const DEFAULT_INVESTIGATION_SUMMARY_MIN_LENGTH = 120;
+export const DEFAULT_INVESTIGATION_SUMMARY_MAX_LENGTH = 400;
 export const DEFAULT_MULTI_SUMMARY_MIN_LENGTH = 100;
 export const DEFAULT_MULTI_SUMMARY_MAX_LENGTH = 400;
 
@@ -14,6 +29,8 @@ export interface SummaryDialogOptions {
   include_context_analysis: boolean;
   min_length: number;
   max_length: number;
+  length_mode: SummaryLengthMode;
+  investigation_scenario: InvestigationScenario;
 }
 
 const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -41,11 +58,25 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
     headers.set('X-CSRF-Token', await getCsrfToken());
   }
 
-  const response = await fetch(input, {
+  let response = await fetch(input, {
     ...init,
     headers,
     credentials: 'include',
   });
+
+  if (response.status === 403 && unsafeMethods.has(method)) {
+    const payload = await response.clone().json().catch(() => null);
+    const detail = typeof payload?.detail === 'string' ? payload.detail : '';
+    if (detail === 'CSRF validation failed') {
+      csrfToken = null;
+      headers.set('X-CSRF-Token', await getCsrfToken());
+      response = await fetch(input, {
+        ...init,
+        headers,
+        credentials: 'include',
+      });
+    }
+  }
 
   if (response.status === 401) {
     window.dispatchEvent(new CustomEvent('auth:required'));

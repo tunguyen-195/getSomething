@@ -35,6 +35,32 @@ def test_compact_case_list_supports_pagination_and_search():
     assert "contexts" not in case
 
 
+def test_case_list_is_compact_by_default():
+    case_id = _create_case("Privacy Default")
+    task_response = client.post(
+        "/api/v1/tasks",
+        json={"filename": "private.wav", "case_id": case_id},
+    )
+    assert task_response.status_code == 200
+    task_id = task_response.json()["task_id"]
+    with SessionLocal() as db:
+        task = db.query(Task).filter(Task.id == task_id).one()
+        task.result = {
+            "transcription": "private transcript must not be bulk listed",
+            "summary": "private summary",
+            "context_analysis": {"analysis_text": "private analysis"},
+        }
+        db.commit()
+
+    response = client.get("/api/v1/cases/")
+
+    assert response.status_code == 200
+    case = next(item for item in response.json() if item["id"] == case_id)
+    assert "transcripts" not in case
+    assert "summaries" not in case
+    assert "contexts" not in case
+
+
 def test_lean_v2_status_does_not_return_large_result_payload():
     case_id = _create_case("Lean Polling")
     task_response = client.post(

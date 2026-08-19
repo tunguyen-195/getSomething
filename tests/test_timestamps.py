@@ -153,6 +153,7 @@ def test_summary_source_metadata_excludes_timestamp_fields(monkeypatch):
     def fake_summary(*_args, **kwargs):
         captured.update(kwargs.get("source_metadata") or {})
         return {
+            "available": True,
             "summary": "Tóm tắt kiểm thử",
             "visualization_data": None,
             "has_visualization": False,

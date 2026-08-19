@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "manifest_version": "1.0.0",
+  "model": {
+    "id": "systran.faster-whisper-large-v3",
+    "version": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+    "relative_path": "whisper/models--Systran--faster-whisper-large-v3/snapshots/edaa852ec7e145841d8ffdb056a99866b5f0a478",
+    "tasks": ["transcription"],
+    "profiles": ["offline", "benchmark-challenger"],
+    "artifact_size_bytes": 3090835702,
+    "source": {
+      "provider": "huggingface",
+      "repository": "Systran/faster-whisper-large-v3",
+      "revision": "edaa852ec7e145841d8ffdb056a99866b5f0a478"
+    },
+    "license": {
+      "spdx": "MIT",
+      "name": "MIT License",
+      "url": "https://spdx.org/licenses/MIT.html"
+    },
+    "backend": {
+      "engine": "faster-whisper",
+      "format": "ctranslate2",
+      "quantization": null
+    },
+    "files": [
+      {
+        "path": "config.json",
+        "size_bytes": 2394,
+        "sha256": "a9306624f5ec14270a014b647e5c316b6e03a662c369758d1b90697a7b0655b9",
+        "required": true
+      },
+      {
+        "path": "model.bin",
+        "size_bytes": 3087284237,
+        "sha256": "69f74147e3334731bc3a76048724833325d2ec74642fb52620eda87352e3d4f1",
+        "required": true
+      },
+      {
+        "path": "preprocessor_config.json",
+        "size_bytes": 340,
+        "sha256": "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+        "required": true
+      },
+      {
+        "path": "tokenizer.json",
+        "size_bytes": 2480617,
+        "sha256": "6d8cbd7cd0d8d5815e478dac67b85a26bbe77c1f5e0c6d76d1ce2abc0e5f21ca",
+        "required": true
+      },
+      {
+        "path": "vocabulary.json",
+        "size_bytes": 1068114,
+        "sha256": "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1",
+        "required": true
+      }
+    ]
+  }
+}

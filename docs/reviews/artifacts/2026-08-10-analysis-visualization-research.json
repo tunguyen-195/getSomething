@@ -1,0 +1,125 @@
+{
+  "artifact_id": "analysis-visualization-research-audit-20260810",
+  "generated_at": "2026-08-10T12:55:15.6884721+07:00",
+  "workspace": "E:\\research\\STT",
+  "scope_boundary": {
+    "canonical_workspace_only": true,
+    "rollback_repo_accessed_or_modified": false,
+    "rollback_repo_deleted": false
+  },
+  "goal": {
+    "active_thread_id": "019fe58f-9943-7a92-ae25-460447e35611",
+    "handoff_goal_id": "019fe1f4-71d2-7fd3-82c0-ef9f59a16d4f",
+    "objective_matches_handoff": true,
+    "status": "active"
+  },
+  "git": {
+    "branch": "feature/architecture-refactor",
+    "head": "a6acc3398378706201c229647ece496d5f9cd594",
+    "worktree": "dirty",
+    "commit_or_push_performed": false
+  },
+  "runtime": {
+    "frontend_http": 200,
+    "backend_health_http": 200,
+    "ports_listening": [
+      3000,
+      8000,
+      5432,
+      6379
+    ],
+    "celery_nodes": 1,
+    "celery_ping": "pong",
+    "celery_active_tasks": 0,
+    "docker_compose": "unavailable: Docker Desktop Linux engine pipe not found",
+    "application_process_from_rollback_repo_observed": false
+  },
+  "independent_reviews": [
+    {
+      "reviewer": "investigative_primary_sources",
+      "result": "PASS_WITH_LIMITATIONS",
+      "focus": "official criminal intelligence, digital evidence, forensic audio, ASR, speaker recognition, privacy and human oversight sources"
+    },
+    {
+      "reviewer": "viz_analysis_product_eval",
+      "result": "PASS_WITH_PRODUCT_GAPS",
+      "focus": "analyst questions, useful views, epistemic boundaries and evaluation design"
+    },
+    {
+      "reviewer": "viz_analysis_repo_audit",
+      "result": "BLOCKED_FOR_PRODUCTION_PROMOTION",
+      "focus": "reachable frontend/backend path, release authority, persistence, provenance and test coverage"
+    }
+  ],
+  "locked_findings": [
+    "Analysis is bounded reasoning over released evidence; Visualization is a deterministic projection and cannot create facts.",
+    "Audio normally supports an attributed source assertion, not proof that the described external event occurred.",
+    "Diarization labels are file-local anonymous clusters and cannot be treated as identity.",
+    "Audio occurrence time and described event time must remain separate.",
+    "Production does not yet create, persist, seal or safely rehydrate the InvestigationRun required by the strict projector.",
+    "The active Analysis UI exposes mostly key points and hides much of the existing intelligence structure and provenance.",
+    "Invalid or stale released visualization artifacts must not silently downgrade to transcript preview.",
+    "Current smoke and structural tests do not establish Vietnamese investigative quality."
+  ],
+  "artifacts": [
+    {
+      "path": "docs/research/investigative-analysis-visualization-capability-research-2026-08-10.md",
+      "bytes": 24098,
+      "sha256": "f91bcc3093c05c1aa4868bd091106b8314fb5fd5552a128abb74ffb1a885e10e"
+    },
+    {
+      "path": "docs/plans/2026-08-10-investigative-analysis-visualization-plan.md",
+      "bytes": 16680,
+      "sha256": "b2165efa8b3da4591740783923424ba04c99507bfd3be61eafb0431cc4399f1a"
+    },
+    {
+      "path": "output/research/analysis-visualization-20260810/source-manifest.json",
+      "bytes": 6461,
+      "sha256": "c5e99cd04ce85d89ce93eedaf6ca7be4639c2a6d9edfcfc781ef8f42feed6057",
+      "official_sources": 17,
+      "locally_hashed_pdf_sources": 12
+    }
+  ],
+  "validation": [
+    {
+      "gate": "source_manifest_json_and_local_hashes",
+      "result": "PASS",
+      "details": "12 of 12 locally stored PDF sources matched declared byte counts and SHA-256"
+    },
+    {
+      "gate": "backend_negative_and_targeted_tests",
+      "result": "PASS",
+      "command": ".\\venv\\Scripts\\python.exe -m pytest -q -p no:cacheprovider tests\\test_investigation_visualization.py tests\\test_investigation_verification.py tests\\test_investigation_knowledge.py tests\\test_summary_visualization_separation.py",
+      "details": "64 passed, 13 warnings"
+    },
+    {
+      "gate": "frontend_tests",
+      "result": "PASS",
+      "command": "npm test -- --run",
+      "details": "21 passed"
+    },
+    {
+      "gate": "frontend_build",
+      "result": "PASS_WITH_ADVISORY",
+      "command": "npm run build",
+      "details": "tsc and Vite build passed; main JS chunk 714.44 kB exceeds advisory 500 kB"
+    }
+  ],
+  "promotion_decision": {
+    "research_and_plan": "PASS",
+    "production_analysis_visualization": "BLOCKED",
+    "reasons": [
+      "no append-only production InvestigationRun owner and release publication path",
+      "no trusted stored-run rehydration authority",
+      "no human-labelled Vietnamese investigative quality corpus",
+      "diarization and speaker attribution quality remain unresolved",
+      "privacy, authorization, review and export controls are not fully implemented"
+    ]
+  },
+  "next_atomic_task": {
+    "id": "AV0.1",
+    "name": "AnalysisProjection contract and negative fixture suite",
+    "implementation_started": false,
+    "required_gate": "strict nested contract, stable schema hash, wrong owner/unit/speaker and reported-speech negatives, independent audit PASS"
+  }
+}

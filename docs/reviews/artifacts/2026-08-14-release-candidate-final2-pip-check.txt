@@ -1,0 +1,3 @@
+resemblyzer 0.1.4 requires typing, which is not installed.
+resemblyzer 0.1.4 requires webrtcvad, which is not installed.
+simple-diarizer 0.0.13 requires ipython, which is not installed.

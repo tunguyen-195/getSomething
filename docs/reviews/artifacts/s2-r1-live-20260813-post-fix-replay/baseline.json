@@ -1,0 +1,15 @@
+{
+  "captured_at": "2026-08-13T07:42:41.607660+00:00",
+  "context_analysis_is_object": true,
+  "context_analysis_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "error_is_generic_failure": false,
+  "error_present": true,
+  "error_sha256": "669e9692ec461ea8ea68dec6c8fc38761c420e12b2a74cceea7acf9382c6c148",
+  "schema_version": "stt-summary-replay-v1",
+  "segment_count": 65,
+  "segments_sha256": "d6cea5143f750df89fd81664a8ec682f471d144c657bf5d17720beaab660ca13",
+  "task_id": "d59205bd-7955-4143-a721-3cb40ca4ba7c",
+  "task_status": "failed",
+  "transcription_length": 3517,
+  "transcription_sha256": "804454479b9bf3bd5f8ab383cdda248a67675c6570bd94df1dd8581089cd5c1a"
+}

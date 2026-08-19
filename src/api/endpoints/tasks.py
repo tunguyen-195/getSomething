@@ -7,6 +7,7 @@ from src.core.logging import logger
 from src.database.config.database import get_db
 from src.core.auth import accessible_case_ids, assert_case_access, assert_task_access, get_current_user
 from src.database.models.models import User
+from src.services.summarization.public_projection import public_task_payload
 
 router = APIRouter()
 
@@ -22,10 +23,10 @@ async def get_tasks(
         allowed_ids = accessible_case_ids(db, current_user)
         if allowed_ids is not None:
             tasks = [task for task in tasks if task.get("case_id") in allowed_ids]
-        return tasks
+        return [public_task_payload(task) for task in tasks]
     except Exception as e:
         logger.error(f"[TASKS] Lỗi get_tasks: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to list tasks") from None
 
 @router.post("/")
 def create_task_api(
@@ -46,7 +47,11 @@ def create_task_api(
         logger.error("[TASKS] Lỗi tạo task mới")
         raise HTTPException(status_code=500, detail="Failed to create task")
     logger.info(f"[TASKS] Đã tạo task mới | task_id={task['id']}")
-    return {"task_id": task["id"], "status": "success", "result": task}
+    return {
+        "task_id": task["id"],
+        "status": "success",
+        "result": public_task_payload(task),
+    }
 
 @router.get("/{task_id}")
 def get_task_api(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -57,14 +62,24 @@ def get_task_api(task_id: str, db: Session = Depends(get_db), current_user: User
         raise HTTPException(status_code=404, detail="Task not found")
     assert_task_access(db, current_user, task_id, "read")
     logger.info(f"[TASKS] Đã lấy task | task_id={task_id}")
-    return {"task_id": task["id"], "status": task["status"], "result": task}
+    public_task = public_task_payload(task)
+    return {
+        "task_id": task["id"],
+        "status": public_task.get("status"),
+        "result": public_task,
+    }
 
 def _task_result_response(task_id: str, db: Session, current_user: User):
     task = get_task(task_id, db=db)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     assert_task_access(db, current_user, task_id, "read")
-    return {"task_id": task["id"], "status": task["status"], "result": task}
+    public_task = public_task_payload(task)
+    return {
+        "task_id": task["id"],
+        "status": public_task.get("status"),
+        "result": public_task,
+    }
 
 @router.get("/results/{task_id}")
 def get_task_result(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

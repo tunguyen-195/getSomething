@@ -19,6 +19,7 @@ import {
   CheckCircle as CheckIcon,
   Download as DownloadIcon,
 } from '@mui/icons-material';
+import { sanitizeSummaryDisplayText } from '../utils/summaryDisplay';
 
 interface FileWithSummary {
   task_id: string;
@@ -38,8 +39,10 @@ const SummaryPanel: React.FC<SummaryPanelProps> = ({ files, caseId, mode = 'ligh
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
-  const filesWithSummary = files.filter(f => f.summary);
-  const pendingFiles = files.filter(f => !f.summary && f.status !== 'uploaded');
+  const filesWithSummary = files.filter(f => sanitizeSummaryDisplayText(f.summary));
+  const pendingFiles = files.filter(
+    f => !sanitizeSummaryDisplayText(f.summary) && f.status !== 'uploaded',
+  );
 
   const handleCopy = (taskId: string, summary: string) => {
     navigator.clipboard.writeText(summary);
@@ -52,7 +55,9 @@ const SummaryPanel: React.FC<SummaryPanelProps> = ({ files, caseId, mode = 'ligh
 
     setExporting(true);
     const content = filesWithSummary
-      .map((f, idx) => `## File ${idx + 1}: ${f.filename}\n\n${f.summary}\n`)
+      .map((f, idx) => (
+        `## File ${idx + 1}: ${f.filename}\n\n${sanitizeSummaryDisplayText(f.summary)}\n`
+      ))
       .join('\n---\n\n');
 
     const blob = new Blob([content], { type: 'text/markdown' });
@@ -88,14 +93,14 @@ const SummaryPanel: React.FC<SummaryPanelProps> = ({ files, caseId, mode = 'ligh
       .replace(/\*([^*]+)\*/g, '$1')
       .replace(/_([^_]+)_/g, '$1')
       // Remove bullet points (- or *)
-      .replace(/^[\-\*]\s+/gm, '• ')
+      .replace(/^[-*]\s+/gm, '• ')
       // Remove numbered lists styling but keep numbers
       .replace(/^(\d+)\.\s+/gm, '$1. ')
       // Remove code blocks
       .replace(/```[\s\S]*?```/g, '')
       .replace(/`([^`]+)`/g, '$1')
       // Remove horizontal rules
-      .replace(/^[\-\*_]{3,}$/gm, '')
+      .replace(/^[-*_]{3,}$/gm, '')
       // Remove extra blank lines
       .replace(/\n{3,}/g, '\n\n')
       // Trim
@@ -215,7 +220,10 @@ const SummaryPanel: React.FC<SummaryPanelProps> = ({ files, caseId, mode = 'ligh
                 size="small"
                 variant={copiedId === file.task_id ? 'contained' : 'outlined'}
                 startIcon={<ContentCopyIcon />}
-                onClick={() => handleCopy(file.task_id, file.summary || '')}
+                onClick={() => handleCopy(
+                  file.task_id,
+                  sanitizeSummaryDisplayText(file.summary || ''),
+                )}
                 sx={{
                   borderRadius: '8px',
                   textTransform: 'none',
@@ -248,7 +256,7 @@ const SummaryPanel: React.FC<SummaryPanelProps> = ({ files, caseId, mode = 'ligh
                   fontSize: '0.95rem',
                 }}
               >
-                {highlightKeywords(cleanMarkdown(file.summary || ''))}
+                {highlightKeywords(cleanMarkdown(sanitizeSummaryDisplayText(file.summary || '')))}
               </Typography>
             </Paper>
           </AccordionDetails>

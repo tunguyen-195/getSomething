@@ -1,0 +1,197 @@
+{
+  "schema_version": "vietnamese-asr-benchmark-v1",
+  "created_at": "2026-08-11T07:43:45.606907+00:00",
+  "privacy": {
+    "transcript_included": false,
+    "audio_path_included": false
+  },
+  "audio": {
+    "name": "947d315589294014aef808c23942029e.mp3",
+    "size_bytes": 12225811,
+    "sha256": "4e5cd4ae20b0a24ec688acf578e065f71f56de1057dc2421874787d3648d8e19"
+  },
+  "runtime": {
+    "python": "3.11.9",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "faster_whisper": "1.2.1",
+    "ctranslate2": "4.6.0",
+    "device": "cuda",
+    "compute_type": "float16"
+  },
+  "profile": "investigation-accuracy-v1",
+  "results": [
+    {
+      "alias": "large-v3-turbo",
+      "model_id": "dropbox-dash/faster-whisper-large-v3-turbo",
+      "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+      "artifact_path": "E:\\research\\STT\\models\\whisper\\models--mobiuslabsgmbh--faster-whisper-large-v3-turbo\\snapshots\\0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+      "artifact_size_bytes": 1617884929,
+      "artifact_sha256": null,
+      "device": "cuda",
+      "compute_type": "float16",
+      "decode_profile": "investigation-accuracy-v1",
+      "decode_parameters": {
+        "language": "vi",
+        "compression_ratio_threshold": 2.4,
+        "log_prob_threshold": -1.0,
+        "vad_filter": true,
+        "vad_parameters": {
+          "threshold": 0.4,
+          "min_speech_duration_ms": 200,
+          "min_silence_duration_ms": 1500,
+          "speech_pad_ms": 800
+        },
+        "word_timestamps": true,
+        "condition_on_previous_text": false,
+        "beam_size": 5,
+        "temperature": [
+          0.0,
+          0.2,
+          0.4
+        ],
+        "no_speech_threshold": 0.6,
+        "hallucination_silence_threshold": 1.5
+      },
+      "detected_language": "vi",
+      "language_probability": 1.0,
+      "duration_seconds": 304.32075,
+      "model_load_seconds": 1.076,
+      "decode_seconds": 6.195,
+      "real_time_factor": 0.020358,
+      "output": {
+        "transcript_sha256": "f3b1d5f2a1fd1989faf880c851ff995b206a01555d2c664ea23ec82867a98485",
+        "characters": 3528,
+        "normalized_words": 848,
+        "segments": 74,
+        "timeline_coverage_seconds": 261.27,
+        "timeline_coverage_ratio": 0.858535,
+        "last_segment_end_seconds": 302.43,
+        "mean_avg_logprob": -0.156593,
+        "min_avg_logprob": -0.303977,
+        "mean_no_speech_probability": 0.0,
+        "repeated_trigram_rate": 0.202128
+      }
+    },
+    {
+      "alias": "large-v2",
+      "model_id": "Systran/faster-whisper-large-v2",
+      "revision": "f0fe81560cb8b68660e564f55dd99207059c092e",
+      "artifact_path": "E:\\research\\STT\\models\\whisper\\models--Systran--faster-whisper-large-v2\\snapshots\\f0fe81560cb8b68660e564f55dd99207059c092e",
+      "artifact_size_bytes": 3086912962,
+      "artifact_sha256": null,
+      "device": "cuda",
+      "compute_type": "float16",
+      "decode_profile": "investigation-accuracy-v1",
+      "decode_parameters": {
+        "language": "vi",
+        "compression_ratio_threshold": 2.4,
+        "log_prob_threshold": -1.0,
+        "vad_filter": true,
+        "vad_parameters": {
+          "threshold": 0.4,
+          "min_speech_duration_ms": 200,
+          "min_silence_duration_ms": 1500,
+          "speech_pad_ms": 800
+        },
+        "word_timestamps": true,
+        "condition_on_previous_text": false,
+        "beam_size": 5,
+        "temperature": [
+          0.0,
+          0.2,
+          0.4
+        ],
+        "no_speech_threshold": 0.6,
+        "hallucination_silence_threshold": 1.5
+      },
+      "detected_language": "vi",
+      "language_probability": 1.0,
+      "duration_seconds": 304.32075,
+      "model_load_seconds": 2.236,
+      "decode_seconds": 19.132,
+      "real_time_factor": 0.062868,
+      "output": {
+        "transcript_sha256": "804454479b9bf3bd5f8ab383cdda248a67675c6570bd94df1dd8581089cd5c1a",
+        "characters": 3517,
+        "normalized_words": 844,
+        "segments": 65,
+        "timeline_coverage_seconds": 253.78,
+        "timeline_coverage_ratio": 0.833923,
+        "last_segment_end_seconds": 303.31,
+        "mean_avg_logprob": -0.270214,
+        "min_avg_logprob": -0.576451,
+        "mean_no_speech_probability": 0.364463,
+        "repeated_trigram_rate": 0.18171
+      }
+    },
+    {
+      "alias": "large-v3",
+      "model_id": "Systran/faster-whisper-large-v3",
+      "revision": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+      "artifact_path": "E:\\research\\STT\\models\\whisper\\models--Systran--faster-whisper-large-v3\\snapshots\\edaa852ec7e145841d8ffdb056a99866b5f0a478",
+      "artifact_size_bytes": 3087284237,
+      "artifact_sha256": null,
+      "device": "cuda",
+      "compute_type": "float16",
+      "decode_profile": "investigation-accuracy-v1",
+      "decode_parameters": {
+        "language": "vi",
+        "compression_ratio_threshold": 2.4,
+        "log_prob_threshold": -1.0,
+        "vad_filter": true,
+        "vad_parameters": {
+          "threshold": 0.4,
+          "min_speech_duration_ms": 200,
+          "min_silence_duration_ms": 1500,
+          "speech_pad_ms": 800
+        },
+        "word_timestamps": true,
+        "condition_on_previous_text": false,
+        "beam_size": 5,
+        "temperature": [
+          0.0,
+          0.2,
+          0.4
+        ],
+        "no_speech_threshold": 0.6,
+        "hallucination_silence_threshold": 1.5
+      },
+      "detected_language": "vi",
+      "language_probability": 1.0,
+      "duration_seconds": 304.32075,
+      "model_load_seconds": 2.065,
+      "decode_seconds": 18.202,
+      "real_time_factor": 0.059811,
+      "output": {
+        "transcript_sha256": "d004cd4318d8af4bf5d6dae35a06083059778f1cd3b326c5fa3f452dcf896441",
+        "characters": 3508,
+        "normalized_words": 838,
+        "segments": 80,
+        "timeline_coverage_seconds": 249.72,
+        "timeline_coverage_ratio": 0.820582,
+        "last_segment_end_seconds": 302.37,
+        "mean_avg_logprob": -0.136927,
+        "min_avg_logprob": -0.185752,
+        "mean_no_speech_probability": 0.09022,
+        "repeated_trigram_rate": 0.214115
+      }
+    }
+  ],
+  "pairwise_disagreement": [
+    {
+      "left": "large-v3-turbo",
+      "right": "large-v2",
+      "normalized_word_disagreement": 0.114387
+    },
+    {
+      "left": "large-v3-turbo",
+      "right": "large-v3",
+      "normalized_word_disagreement": 0.058962
+    },
+    {
+      "left": "large-v2",
+      "right": "large-v3",
+      "normalized_word_disagreement": 0.11019
+    }
+  ]
+}

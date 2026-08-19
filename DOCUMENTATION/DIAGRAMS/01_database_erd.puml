@@ -1,0 +1,323 @@
+@startuml SpeechToInformation Database ERD
+
+!define Table(name,desc) class name as "desc" << (T,#FFAAAA) >>
+!define primary_key(x) <b>PK: x</b>
+!define foreign_key(x) <i>FK: x</i>
+!define unique(x) <u>x</u>
+
+' User Management Tables
+Table(users, "users\n(User accounts)") {
+  primary_key(id: INTEGER)
+  unique(username: VARCHAR)
+  unique(email: VARCHAR)
+  password_hash: VARCHAR
+  full_name: VARCHAR
+  is_active: BOOLEAN
+  last_login: DATETIME
+  foreign_key(role_id: INTEGER)
+  created_at: DATETIME
+  updated_at: DATETIME
+}
+
+Table(user_roles, "user_roles\n(User roles)") {
+  primary_key(id: INTEGER)
+  unique(role_name: VARCHAR)
+  description: TEXT
+  permissions: JSON
+  created_at: DATETIME
+  updated_at: DATETIME
+}
+
+' Case Management Tables
+Table(cases, "cases\n(Investigation cases)") {
+  primary_key(id: INTEGER)
+  unique(case_code: VARCHAR(50))
+  title: VARCHAR(200)
+  description: TEXT
+  foreign_key(status_id: INTEGER)
+  foreign_key(priority_id: INTEGER)
+  foreign_key(created_by: INTEGER)
+  closed_at: DATETIME
+  is_archived: BOOLEAN
+  archive_reason: TEXT
+  case_metadata: JSON
+  created_at: DATETIME
+}
+
+Table(casestatuses, "casestatuses\n(Case statuses)") {
+  primary_key(id: INTEGER)
+  unique(status_name: VARCHAR(50))
+  description: TEXT
+  is_active: BOOLEAN
+  display_order: INTEGER
+  color_code: VARCHAR(7)
+}
+
+Table(casepriorities, "casepriorities\n(Case priorities)") {
+  primary_key(id: INTEGER)
+  unique(priority_name: VARCHAR(50))
+  description: TEXT
+  weight: INTEGER
+  color_code: VARCHAR(7)
+}
+
+Table(caseparticipants, "caseparticipants\n(Case participants)") {
+  primary_key(id: INTEGER)
+  foreign_key(case_id: INTEGER)
+  foreign_key(user_id: INTEGER)
+  foreign_key(role_id: INTEGER)
+  joined_at: DATETIME
+  left_at: DATETIME
+  is_active: BOOLEAN
+}
+
+Table(participantroles, "participantroles\n(Participant roles)") {
+  primary_key(id: INTEGER)
+  unique(role_name: VARCHAR(50))
+  description: TEXT
+  permissions: JSON
+  is_system: BOOLEAN
+}
+
+Table(casenotes, "casenotes\n(Case notes)") {
+  primary_key(id: INTEGER)
+  foreign_key(case_id: INTEGER)
+  foreign_key(audio_id: INTEGER)
+  version: INTEGER
+  content: TEXT
+  foreign_key(created_by: INTEGER)
+  is_private: BOOLEAN
+  extra_metadata: JSON
+  created_at: DATETIME
+}
+
+' Audio Processing Tables
+Table(audio_files, "audio_files\n(Audio files)") {
+  primary_key(id: INTEGER)
+  filename: VARCHAR
+  file_path: VARCHAR
+  file_size: BIGINT
+  duration: FLOAT
+  status: VARCHAR
+  foreign_key(audio_status_id: INTEGER)
+  processed_at: DATETIME
+  error_message: TEXT
+  foreign_key(task_id: VARCHAR)
+  foreign_key(case_id: INTEGER)
+  foreign_key(language_id: INTEGER)
+  foreign_key(uploaded_by: INTEGER)
+  is_archived: BOOLEAN
+  archive_reason: TEXT
+  storage_type: VARCHAR(50)
+  storage_config: JSON
+  extra_metadata: JSON
+  created_at: DATETIME
+  updated_at: DATETIME
+}
+
+Table(tasks, "tasks\n(Processing tasks)") {
+  primary_key(id: VARCHAR(50))
+  filename: VARCHAR
+  status: VARCHAR(50)
+  result: JSONB
+  error: TEXT
+  foreign_key(case_id: INTEGER)
+  foreign_key(user_id: INTEGER)
+  created_at: DATETIME
+  updated_at: DATETIME
+
+  -- result JSONB structure:
+  -- {
+  --   transcription: TEXT,
+  --   summary: TEXT,
+  --   segments: ARRAY,
+  --   context_analysis: {
+  --     entities: ARRAY,
+  --     relationships: ARRAY,
+  --     actions: ARRAY,
+  --     insights: ARRAY
+  --   },
+  --   visualization_data: {
+  --     nodes: ARRAY,
+  --     edges: ARRAY,
+  --     timeline: ARRAY
+  --   }
+  -- }
+}
+
+Table(languages, "languages\n(Supported languages)") {
+  primary_key(id: INTEGER)
+  unique(language_code: VARCHAR(10))
+  language_name: VARCHAR(100)
+  is_active: BOOLEAN
+}
+
+Table(audiostatuses, "audiostatuses\n(Audio statuses)") {
+  primary_key(id: INTEGER)
+  unique(status_name: VARCHAR(50))
+  description: TEXT
+  display_order: INTEGER
+  color_code: VARCHAR(7)
+}
+
+' Transcription Tables
+Table(transcriptions, "transcriptions\n(Transcription results)") {
+  primary_key(id: INTEGER)
+  foreign_key(task_id: VARCHAR)
+  foreign_key(audio_id: INTEGER)
+  version: INTEGER
+  content: TEXT
+  foreign_key(language_id: INTEGER)
+  foreign_key(created_by: INTEGER)
+  confidence_score: INTEGER
+  processing_time: INTEGER
+  extra_metadata: JSON
+  created_at: DATETIME
+  updated_at: DATETIME
+}
+
+' Analysis Tables
+Table(analysis_results, "analysis_results\n(Analysis results)") {
+  primary_key(id: INTEGER)
+  foreign_key(task_id: VARCHAR)
+  foreign_key(audio_id: INTEGER)
+  version: INTEGER
+  summary: TEXT
+  foreign_key(sentiment_id: INTEGER)
+  keywords: JSON
+  entities: JSON
+  foreign_key(created_by: INTEGER)
+  confidence_score: INTEGER
+  processing_time: INTEGER
+  extra_metadata: JSON
+  created_at: DATETIME
+  updated_at: DATETIME
+}
+
+Table(analysisdetails, "analysisdetails\n(Analysis details)") {
+  primary_key(id: INTEGER)
+  foreign_key(analysis_id: INTEGER)
+  detail_type: VARCHAR(50)
+  content: JSON
+}
+
+Table(sentiments, "sentiments\n(Sentiment types)") {
+  primary_key(id: INTEGER)
+  unique(sentiment_name: VARCHAR(50))
+  description: TEXT
+  color_code: VARCHAR(7)
+}
+
+Table(summaries, "summaries\n(Summaries)") {
+  primary_key(id: INTEGER)
+  type: VARCHAR
+  foreign_key(case_id: INTEGER)
+  files: JSONB
+  content: TEXT
+  created_at: DATETIME
+}
+
+' Activity Logging Tables
+Table(activitylogs, "activitylogs\n(Activity logs)") {
+  primary_key(id: INTEGER)
+  foreign_key(user_id: INTEGER)
+  foreign_key(case_id: INTEGER)
+  foreign_key(audio_id: INTEGER)
+  foreign_key(activity_type_id: INTEGER)
+  foreign_key(task_id: VARCHAR)
+  action_detail: JSON
+  ip_address: VARCHAR(45)
+  user_agent: VARCHAR(500)
+  created_at: DATETIME
+}
+
+Table(activitytypes, "activitytypes\n(Activity types)") {
+  primary_key(id: INTEGER)
+  unique(type_name: VARCHAR)
+  description: TEXT
+  is_system: BOOLEAN
+  created_at: DATETIME
+  updated_at: DATETIME
+}
+
+' Relationships - User Management
+users "1" -- "0..*" user_roles : has role
+users "1" -- "0..*" cases : creates
+users "1" -- "0..*" audio_files : uploads
+users "1" -- "0..*" activitylogs : performs
+
+' Relationships - Case Management
+cases "1" -- "0..*" casestatuses : has status
+cases "1" -- "0..*" casepriorities : has priority
+cases "1" -- "0..*" caseparticipants : has participants
+cases "1" -- "0..*" audio_files : contains
+cases "1" -- "0..*" casenotes : has notes
+cases "1" -- "0..*" activitylogs : tracks
+cases "1" -- "0..*" summaries : has summaries
+
+caseparticipants "0..*" -- "1" users : involves
+caseparticipants "0..*" -- "1" participantroles : has role
+
+' Relationships - Audio Processing
+audio_files "1" -- "0..1" tasks : has task
+audio_files "1" -- "0..*" languages : in language
+audio_files "1" -- "0..*" audiostatuses : has status
+audio_files "1" -- "0..1" transcriptions : has transcription
+audio_files "1" -- "0..1" analysis_results : has analysis
+audio_files "1" -- "0..*" casenotes : referenced in
+audio_files "1" -- "0..*" activitylogs : tracks
+
+' Relationships - Task Processing
+tasks "1" -- "0..*" audio_files : processes
+tasks "1" -- "0..*" transcriptions : produces
+tasks "1" -- "0..*" analysis_results : produces
+tasks "1" -- "0..*" activitylogs : logs
+tasks "0..*" -- "0..1" users : owned by
+
+' Relationships - Transcription & Analysis
+transcriptions "0..*" -- "1" languages : in language
+transcriptions "0..*" -- "1" users : created by
+transcriptions "0..*" -- "1" tasks : from task
+
+analysis_results "0..*" -- "1" users : created by
+analysis_results "0..*" -- "1" sentiments : has sentiment
+analysis_results "1" -- "0..*" analysisdetails : contains
+analysis_results "0..*" -- "1" tasks : from task
+
+' Relationships - Activity Logging
+activitylogs "0..*" -- "1" activitytypes : of type
+
+note right of tasks
+  **Central Task Table**
+  Stores all processing results in JSONB format:
+  - transcription: Full transcript text
+  - summary: Summary text
+  - segments: Array of timestamped segments
+  - context_analysis: Entities, relationships, insights
+  - visualization_data: Knowledge graph data
+
+  This design provides flexibility and
+  avoids complex multi-table joins.
+end note
+
+note left of audio_files
+  **Audio File Management**
+  Supports multiple storage types:
+  - local: Local filesystem
+  - s3: AWS S3
+  - gcs: Google Cloud Storage
+
+  Includes archive/restore functionality
+  for efficient storage management.
+end note
+
+note bottom of cases
+  **Case Management**
+  Each case can contain:
+  - Multiple audio files
+  - Multiple participants with roles
+  - Notes and summaries
+  - Activity logs for audit trail
+end note
+
+@enduml

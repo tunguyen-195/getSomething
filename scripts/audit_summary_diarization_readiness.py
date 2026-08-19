@@ -298,7 +298,7 @@ def _git_index_sha256(repo_root: Path, relative: str) -> str | None:
     if normalized is None:
         return None
     completed = subprocess.run(
-        ["git", "show", f":{normalized}"],
+        ["git", "-c", f"safe.directory={repo_root}", "show", f":{normalized}"],
         cwd=repo_root,
         check=False,
         capture_output=True,
@@ -553,6 +553,254 @@ def _function_swallows_exception(path: Path, function_name: str) -> bool:
     return False
 
 
+def _summary_visualization_separation_state(
+    *,
+    v2_api_source: str,
+    legacy_api_source: str,
+    summary_api_source: str,
+) -> dict[str, Any]:
+    """Verify Summary/Analysis ownership without depending on source formatting."""
+
+    forbidden_projection_fields = {
+        "visualization_data",
+        "has_visualization",
+        "released_investigation_run",
+    }
+
+    def parse(source: str, filename: str) -> tuple[ast.Module, dict[str, ast.AST]]:
+        tree = ast.parse(source.lstrip("\ufeff"), filename=filename)
+        nodes = {
+            node.name: node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        return tree, nodes
+
+    def literal_strings(tree: ast.Module, variable_name: str) -> set[str] | None:
+        for statement in tree.body:
+            target = None
+            value = None
+            if isinstance(statement, ast.Assign):
+                target = next(
+                    (
+                        item
+                        for item in statement.targets
+                        if isinstance(item, ast.Name) and item.id == variable_name
+                    ),
+                    None,
+                )
+                value = statement.value
+            elif (
+                isinstance(statement, ast.AnnAssign)
+                and isinstance(statement.target, ast.Name)
+                and statement.target.id == variable_name
+            ):
+                target = statement.target
+                value = statement.value
+            if target is None or not isinstance(
+                value,
+                (ast.Set, ast.List, ast.Tuple, ast.Call),
+            ):
+                continue
+            elements = value.args[0].elts if (
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Name)
+                and value.func.id == "frozenset"
+                and len(value.args) == 1
+                and isinstance(value.args[0], (ast.Set, ast.List, ast.Tuple))
+            ) else value.elts if isinstance(value, (ast.Set, ast.List, ast.Tuple)) else []
+            if not elements or not all(
+                isinstance(item, ast.Constant) and isinstance(item.value, str)
+                for item in elements
+            ):
+                return None
+            return {str(item.value) for item in elements}
+        return None
+
+    def assigned_dict_keys(node: ast.AST | None, variable_name: str) -> set[str] | None:
+        if node is None:
+            return None
+        for statement in ast.walk(node):
+            if not isinstance(statement, (ast.Assign, ast.AnnAssign)):
+                continue
+            targets = (
+                statement.targets
+                if isinstance(statement, ast.Assign)
+                else [statement.target]
+            )
+            if not any(
+                isinstance(target, ast.Name) and target.id == variable_name
+                for target in targets
+            ):
+                continue
+            value = statement.value
+            if not isinstance(value, ast.Dict) or not all(
+                isinstance(key, ast.Constant) and isinstance(key.value, str)
+                for key in value.keys
+            ):
+                return None
+            return {str(key.value) for key in value.keys}
+        return None
+
+    def returned_mapping_keys(node: ast.AST | None) -> set[str] | None:
+        if node is None:
+            return None
+        returns = [
+            statement
+            for statement in ast.walk(node)
+            if isinstance(statement, ast.Return)
+        ]
+        if len(returns) != 1:
+            return None
+        returned = returns[0].value
+        if isinstance(returned, ast.Dict):
+            if not all(
+                isinstance(key, ast.Constant) and isinstance(key.value, str)
+                for key in returned.keys
+            ):
+                return None
+            return {str(key.value) for key in returned.keys}
+        if not isinstance(returned, ast.Name):
+            return None
+
+        variable_name = returned.id
+        keys = assigned_dict_keys(node, variable_name)
+        if keys is None:
+            return None
+        for statement in ast.walk(node):
+            if not isinstance(statement, (ast.Assign, ast.AnnAssign)):
+                continue
+            targets = (
+                statement.targets
+                if isinstance(statement, ast.Assign)
+                else [statement.target]
+            )
+            for target in targets:
+                if not (
+                    isinstance(target, ast.Subscript)
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == variable_name
+                ):
+                    continue
+                key = target.slice
+                if not (
+                    isinstance(key, ast.Constant)
+                    and isinstance(key.value, str)
+                ):
+                    return None
+                keys.add(str(key.value))
+        if any(
+            isinstance(item, ast.Call)
+            and isinstance(item.func, ast.Attribute)
+            and isinstance(item.func.value, ast.Name)
+            and item.func.value.id == variable_name
+            and item.func.attr in {"clear", "pop", "popitem", "setdefault", "update"}
+            for item in ast.walk(node)
+        ):
+            return None
+        return keys
+
+    def calls(node: ast.AST | None, function_name: str) -> bool:
+        if node is None:
+            return False
+        return any(
+            isinstance(item, ast.Call)
+            and (
+                isinstance(item.func, ast.Name)
+                and item.func.id == function_name
+                or isinstance(item.func, ast.Attribute)
+                and item.func.attr == function_name
+            )
+            for item in ast.walk(node)
+        )
+
+    def persists_result_patch(node: ast.AST | None, variable_name: str) -> bool:
+        if node is None:
+            return False
+        for call in (
+            item for item in ast.walk(node) if isinstance(item, ast.Call)
+        ):
+            call_name = (
+                call.func.id
+                if isinstance(call.func, ast.Name)
+                else call.func.attr
+                if isinstance(call.func, ast.Attribute)
+                else None
+            )
+            if call_name != "update_task":
+                continue
+            for mapping in (
+                item for item in call.args if isinstance(item, ast.Dict)
+            ):
+                for key, value in zip(mapping.keys, mapping.values):
+                    if (
+                        isinstance(key, ast.Constant)
+                        and key.value == "result"
+                        and isinstance(value, ast.Name)
+                        and value.id == variable_name
+                    ):
+                        return True
+        return False
+
+    v2_tree, v2_functions = parse(v2_api_source, "src/api/endpoints/audio_v2.py")
+    legacy_tree, legacy_functions = parse(
+        legacy_api_source,
+        "src/api/endpoints/audio.py",
+    )
+    _, summary_functions = parse(summary_api_source, "src/api/endpoints/summary.py")
+
+    response_fields = literal_strings(v2_tree, "_SUMMARY_RESPONSE_FIELDS")
+    v2_patch_fields = assigned_dict_keys(
+        v2_functions.get("summarize_v2"),
+        "summary_result_patch",
+    )
+    legacy_patch_fields = returned_mapping_keys(
+        legacy_functions.get("_summary_context_patch")
+    )
+    analysis_patch_fields = assigned_dict_keys(
+        summary_functions.get("analyze_summary"),
+        "context_result_patch",
+    )
+    checks = {
+        "v2_response_allowlist_excludes_projection_fields": (
+            response_fields is not None
+            and forbidden_projection_fields.isdisjoint(response_fields)
+        ),
+        "v2_summary_patch_excludes_projection_fields": (
+            v2_patch_fields is not None
+            and forbidden_projection_fields.isdisjoint(v2_patch_fields)
+            and calls(v2_functions.get("summarize_v2"), "_summary_response_result")
+            and persists_result_patch(
+                v2_functions.get("summarize_v2"),
+                "summary_result_patch",
+            )
+        ),
+        "legacy_summary_patch_excludes_projection_fields": (
+            legacy_patch_fields is not None
+            and forbidden_projection_fields.isdisjoint(legacy_patch_fields)
+            and calls(legacy_functions.get("resummarize_task"), "_summary_context_patch")
+            and calls(legacy_functions.get("summarize_task"), "_summary_context_patch")
+        ),
+        "analysis_patch_is_independent_and_attested": (
+            analysis_patch_fields
+            == {"context_analysis", "context_analysis_attestation"}
+            and persists_result_patch(
+                summary_functions.get("analyze_summary"),
+                "context_result_patch",
+            )
+        ),
+    }
+    return {
+        "valid": all(checks.values()),
+        "checks": checks,
+        "response_fields": sorted(response_fields or []),
+        "v2_summary_patch_fields": sorted(v2_patch_fields or []),
+        "legacy_summary_patch_fields": sorted(legacy_patch_fields or []),
+        "analysis_patch_fields": sorted(analysis_patch_fields or []),
+        "forbidden_projection_fields": sorted(forbidden_projection_fields),
+    }
+
+
 def _summary_contract(repo_root: Path) -> dict[str, Any]:
     from src.services.investigation.contracts import NarrativeSentence
     from src.services.summarization.models.context_analysis import ContextAnalysisPayload
@@ -606,6 +854,11 @@ def _summary_contract(repo_root: Path) -> dict[str, Any]:
     run_source = (
         repo_root / "src/services/investigation/run_contracts.py"
     ).read_text(encoding="utf-8")
+    separation = _summary_visualization_separation_state(
+        v2_api_source=v2_api_source,
+        legacy_api_source=legacy_api_source,
+        summary_api_source=summary_api_source,
+    )
     entrypoint_specs = {
         "src/services/summarization/summary_service_v2.py": {
             "summarize_transcript_v2": {"direct": True},
@@ -616,12 +869,18 @@ def _summary_contract(repo_root: Path) -> dict[str, Any]:
             "summarize_multi_transcripts": {"direct": True},
         },
         "src/api/endpoints/audio_v2.py": {
-            "summarize_v2": {"direct": True},
+            "summarize_v2": {
+                "request": "SummaryV2Request",
+                "typed_request_model": True,
+            },
         },
         "src/api/endpoints/audio.py": {
             "summarize_multi": {"request": "MultiSummaryRequest"},
             "summarize_case": {"request": "CaseSummaryRequest"},
-            "resummarize_task": {"direct": True},
+            "resummarize_task": {
+                "request": "ResummarizeRequest",
+                "typed_request_model": True,
+            },
             "summarize_task": {"request": "SummaryRequest"},
         },
         "src/worker/tasks/summarize_task.py": {
@@ -639,6 +898,11 @@ def _summary_contract(repo_root: Path) -> dict[str, Any]:
             for node in tree.body
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
+        class_nodes = {
+            node.name: node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef)
+        }
         for function_name, expectation in functions.items():
             node = nodes.get(function_name)
             annotations = {
@@ -654,13 +918,35 @@ def _summary_contract(repo_root: Path) -> dict[str, Any]:
                     and "max_length" in annotations
                 )
             else:
-                valid = annotations.get("request") == expectation["request"]
+                request_model = expectation["request"]
+                request_annotations: dict[str, str | None] = {}
+                if expectation.get("typed_request_model"):
+                    request_node = class_nodes.get(request_model)
+                    request_annotations = {
+                        statement.target.id: ast.unparse(statement.annotation)
+                        for statement in (
+                            request_node.body if request_node is not None else []
+                        )
+                        if isinstance(statement, ast.AnnAssign)
+                        and isinstance(statement.target, ast.Name)
+                    }
+                valid = annotations.get("request") == request_model and (
+                    not expectation.get("typed_request_model")
+                    or (
+                        request_annotations.get("summary_type") == "SummaryType"
+                        and request_annotations.get("min_length") == "int"
+                        and request_annotations.get("max_length") == "int"
+                    )
+                )
             entrypoint_contracts.append(
                 {
                     "path": relative,
                     "function": function_name,
                     "valid": valid,
                     "annotations": annotations,
+                    "request_model_annotations": request_annotations
+                    if not expectation.get("direct")
+                    else {},
                 }
             )
             if not valid:
@@ -715,16 +1001,8 @@ def _summary_contract(repo_root: Path) -> dict[str, Any]:
         "legacy_generator_uses_requested_minimum": (
             legacy_generator_uses_requested_minimum
         ),
-        "summary_visualization_separation_present": (
-            "def _summary_response_result(" in v2_api_source
-            and '"result": _summary_response_result(result)' in v2_api_source
-            and "def _summary_context_patch(" in legacy_api_source
-            and legacy_api_source.count("_summary_context_patch(") >= 3
-            and 'context_result_patch = {"context_analysis": context_analysis}'
-            in summary_api_source
-            and 'update_task(task_id, {"result": context_result_patch})'
-            in summary_api_source
-        ),
+        "summary_visualization_separation_present": separation["valid"],
+        "summary_visualization_separation": separation,
         "release_sentence_fields": sorted(narrative_fields),
         "release_sentence_contract_present": (
             required_release_fields.issubset(narrative_fields)

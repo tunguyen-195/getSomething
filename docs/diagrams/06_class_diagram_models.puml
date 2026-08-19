@@ -1,0 +1,370 @@
+@startuml SpeechToInformation Class Diagram (Database Models)
+
+title SpeechToInformation - Database Models Class Diagram
+
+!define Table(name,desc) class name as "desc"
+skinparam class {
+  BackgroundColor #FFF9C4
+  BorderColor #F57F17
+  ArrowColor #333333
+}
+
+' Base Model
+abstract class BaseModel {
+  + id: Integer {PK}
+  + created_at: DateTime
+  + updated_at: DateTime
+}
+
+' User Management
+class User {
+  + id: Integer {PK}
+  + username: String {UK}
+  + email: String {UK}
+  + password_hash: String
+  + full_name: String
+  + is_active: Boolean
+  + last_login: DateTime
+  + role_id: Integer {FK}
+  __
+  + set_password(password: str): void
+  + check_password(password: str): bool
+}
+
+class UserRole {
+  + id: Integer {PK}
+  + role_name: String {UK}
+  + description: Text
+  + permissions: JSON
+}
+
+' Case Management
+class Case {
+  + id: Integer {PK}
+  + case_code: String(50) {UK}
+  + title: String(200)
+  + description: Text
+  + status_id: Integer {FK}
+  + priority_id: Integer {FK}
+  + created_by: Integer {FK}
+  + closed_at: DateTime
+  + is_archived: Boolean
+  + archive_reason: Text
+  + case_metadata: JSON
+}
+
+class CaseStatus {
+  + id: Integer {PK}
+  + status_name: String(50) {UK}
+  + description: Text
+  + is_active: Boolean
+  + display_order: Integer
+  + color_code: String(7)
+}
+
+class CasePriority {
+  + id: Integer {PK}
+  + priority_name: String(50) {UK}
+  + description: Text
+  + weight: Integer
+  + color_code: String(7)
+}
+
+class CaseParticipant {
+  + id: Integer {PK}
+  + case_id: Integer {FK}
+  + user_id: Integer {FK}
+  + role_id: Integer {FK}
+  + joined_at: DateTime
+  + left_at: DateTime
+  + is_active: Boolean
+}
+
+class ParticipantRole {
+  + id: Integer {PK}
+  + role_name: String(50) {UK}
+  + description: Text
+  + permissions: JSON
+  + is_system: Boolean
+}
+
+class CaseNote {
+  + id: Integer {PK}
+  + case_id: Integer {FK}
+  + audio_id: Integer {FK}
+  + version: Integer
+  + content: Text
+  + created_by: Integer {FK}
+  + is_private: Boolean
+  + extra_metadata: JSON
+}
+
+' Audio Processing
+class AudioFile {
+  + id: Integer {PK}
+  + filename: String
+  + file_path: String
+  + file_size: BigInt
+  + duration: Float
+  + status: String
+  + audio_status_id: Integer {FK}
+  + processed_at: DateTime
+  + error_message: Text
+  + task_id: String {FK}
+  + case_id: Integer {FK}
+  + language_id: Integer {FK}
+  + uploaded_by: Integer {FK}
+  + is_archived: Boolean
+  + storage_type: String(50)
+  + storage_config: JSON
+  __
+  + absolute_path(): Path
+  + exists(): bool
+  + archive(reason: str): void
+  + restore(): void
+  + delete_file(): void
+  + {static} create_storage_path(case_id, filename): str
+}
+
+class Task {
+  + id: String(50) {PK}
+  + filename: String
+  + status: String(50)
+  + result: JSONB
+  + error: Text
+  + case_id: Integer {FK}
+  + user_id: Integer {FK}
+  __
+  result structure:
+  - transcription: Text
+  - summary: Text
+  - segments: Array
+  - context_analysis: Object
+    - entities: Array
+    - relationships: Array
+    - actions: Array
+    - insights: Array
+  - visualization_data: Object
+    - nodes: Array
+    - edges: Array
+    - timeline: Array
+}
+
+class Language {
+  + id: Integer {PK}
+  + language_code: String(10) {UK}
+  + language_name: String(100)
+  + is_active: Boolean
+}
+
+class AudioStatus {
+  + id: Integer {PK}
+  + status_name: String(50) {UK}
+  + description: Text
+  + display_order: Integer
+  + color_code: String(7)
+}
+
+' Transcription & Analysis
+class Transcription {
+  + id: Integer {PK}
+  + task_id: String {FK}
+  + audio_id: Integer {FK}
+  + version: Integer
+  + content: Text
+  + language_id: Integer {FK}
+  + created_by: Integer {FK}
+  + confidence_score: Integer
+  + processing_time: Integer
+  + extra_metadata: JSON
+}
+
+class AnalysisResult {
+  + id: Integer {PK}
+  + task_id: String {FK}
+  + audio_id: Integer {FK}
+  + version: Integer
+  + summary: Text
+  + sentiment_id: Integer {FK}
+  + keywords: JSON
+  + entities: JSON
+  + created_by: Integer {FK}
+  + confidence_score: Integer
+  + processing_time: Integer
+  + extra_metadata: JSON
+}
+
+class AnalysisDetail {
+  + id: Integer {PK}
+  + analysis_id: Integer {FK}
+  + detail_type: String(50)
+  + content: JSON
+}
+
+class Sentiment {
+  + id: Integer {PK}
+  + sentiment_name: String(50) {UK}
+  + description: Text
+  + color_code: String(7)
+}
+
+class Summary {
+  + id: Integer {PK}
+  + type: String
+  + case_id: Integer {FK}
+  + files: JSONB
+  + content: Text
+}
+
+' Activity Logging
+class ActivityLog {
+  + id: Integer {PK}
+  + user_id: Integer {FK}
+  + case_id: Integer {FK}
+  + audio_id: Integer {FK}
+  + activity_type_id: Integer {FK}
+  + task_id: String {FK}
+  + action_detail: JSON
+  + ip_address: String(45)
+  + user_agent: String(500)
+}
+
+class ActivityType {
+  + id: Integer {PK}
+  + type_name: String {UK}
+  + description: Text
+  + is_system: Boolean
+}
+
+' Inheritance
+BaseModel <|-- User
+BaseModel <|-- UserRole
+BaseModel <|-- Case
+BaseModel <|-- CaseStatus
+BaseModel <|-- CasePriority
+BaseModel <|-- CaseParticipant
+BaseModel <|-- ParticipantRole
+BaseModel <|-- CaseNote
+BaseModel <|-- AudioFile
+BaseModel <|-- Task
+BaseModel <|-- Language
+BaseModel <|-- AudioStatus
+BaseModel <|-- Transcription
+BaseModel <|-- AnalysisResult
+BaseModel <|-- AnalysisDetail
+BaseModel <|-- Sentiment
+BaseModel <|-- Summary
+BaseModel <|-- ActivityLog
+BaseModel <|-- ActivityType
+
+' Relationships - User Management
+User "1" -- "0..1" UserRole : has role >
+User "1" -- "*" Case : creates >
+User "1" -- "*" AudioFile : uploads >
+User "1" -- "*" Task : owns >
+User "1" -- "*" CaseParticipant : participates >
+User "1" -- "*" ActivityLog : performs >
+
+' Relationships - Case Management
+Case "1" -- "0..1" CaseStatus : has status >
+Case "1" -- "0..1" CasePriority : has priority >
+Case "1" -- "*" CaseParticipant : has participants >
+Case "1" -- "*" AudioFile : contains >
+Case "1" -- "*" CaseNote : has notes >
+Case "1" -- "*" Summary : has summaries >
+Case "1" -- "*" ActivityLog : tracks activities >
+
+CaseParticipant "*" -- "1" ParticipantRole : has role >
+
+' Relationships - Audio Processing
+AudioFile "1" -- "0..1" Task : has task >
+AudioFile "*" -- "1" Language : in language >
+AudioFile "*" -- "0..1" AudioStatus : has status >
+AudioFile "1" -- "0..1" Transcription : has transcription >
+AudioFile "1" -- "0..1" AnalysisResult : has analysis >
+AudioFile "1" -- "*" CaseNote : referenced in >
+AudioFile "1" -- "*" ActivityLog : tracks activities >
+
+' Relationships - Task Processing
+Task "1" -- "*" AudioFile : processes >
+Task "1" -- "*" Transcription : produces >
+Task "1" -- "*" AnalysisResult : produces >
+Task "1" -- "*" ActivityLog : logs activities >
+
+' Relationships - Analysis
+Transcription "*" -- "1" Language : in language >
+AnalysisResult "*" -- "0..1" Sentiment : has sentiment >
+AnalysisResult "1" -- "*" AnalysisDetail : contains details >
+
+' Relationships - Activity Logging
+ActivityLog "*" -- "1" ActivityType : of type >
+
+note right of Task
+  **Central Task Model**
+
+  Stores all processing results in JSONB format.
+  This flexible approach allows:
+  - Easy schema evolution
+  - Fast queries with GIN indexes
+  - Reduced database complexity
+  - Version control of results
+
+  Key fields in result JSONB:
+  - transcription: Full transcript text
+  - summary: Summary text
+  - segments: Timestamped segments with speakers
+  - context_analysis: Multi-layer analysis
+    - entities, relationships, actions
+    - anomalies, risks, insights
+  - visualization_data: Knowledge graph
+    - nodes, edges, timeline
+end note
+
+note right of AudioFile
+  **Audio File Management**
+
+  Supports multiple storage backends:
+  - local: Local filesystem (default)
+  - s3: AWS S3
+  - gcs: Google Cloud Storage
+
+  Methods:
+  - archive(): Move to archive directory
+  - restore(): Restore from archive
+  - delete_file(): Permanently delete
+
+  Properties:
+  - absolute_path: Computed full path
+  - exists: Check if file exists
+end note
+
+note left of Case
+  **Case-centric Model**
+
+  Each case can contain:
+  - Multiple audio files
+  - Multiple participants with roles
+  - Notes (private/public)
+  - Summaries (individual/multi-file)
+  - Full activity audit trail
+
+  Supports:
+  - Archiving with reason
+  - Status workflow
+  - Priority management
+  - Metadata extensibility (JSON)
+end note
+
+note bottom of AnalysisResult
+  **Multi-version Analysis**
+
+  Allows multiple analysis versions
+  for the same audio file:
+  - Version 1: Initial analysis
+  - Version 2: Re-analysis with different model
+  - Version 3: Manual corrections
+
+  Unique constraint: (audio_id, version)
+end note
+
+@enduml

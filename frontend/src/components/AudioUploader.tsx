@@ -53,8 +53,8 @@ const AudioUploader = ({ onNewTask, caseId, onUploadComplete }: AudioUploaderPro
   const [newCaseDesc, setNewCaseDesc] = useState('');
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
-  const [diarizationMethod, setDiarizationMethod] = useState<string>("whisperx");
-  const [transcriptionMode, setTranscriptionMode] = useState<string>("fast");  // "fast" or "full"
+  const [diarizationMethod, setDiarizationMethod] = useState<string>("pyannote");
+  const [transcriptionMode, setTranscriptionMode] = useState<string>("full");  // "fast" or "full"
 
   // Update selectedCase when caseId prop changes
   useEffect(() => {

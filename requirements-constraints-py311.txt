@@ -1,0 +1,49 @@
+# Resolver-tested Python 3.11 transitive constraints.
+#
+# Torch is intentionally not constrained here because the same application
+# manifest supports either the cu121 or CPU wheel profile. Install the chosen
+# torch/torchvision/torchaudio trio before requirements.txt.
+
+# faster-whisper closure
+# 14.4.0 has no public CPython 3.11 Windows wheel and falls back to a local
+# FFmpeg-header build. 14.2.0 is the closest compatible wheel-backed release.
+av==14.2.0
+onnxruntime==1.22.0
+tokenizers==0.15.2
+
+# OpenAI Whisper / Librosa numerical closure
+llvmlite==0.44.0
+more-itertools==10.7.0
+networkx==3.5
+numba==0.61.2
+scipy==1.16.0
+tiktoken==0.9.0
+
+# Pyannote 3.1 closure. These pins prevent the resolver from exploring newer
+# incompatible pyannote, Lightning, Pandas and Optuna release families.
+asteroid-filterbanks==0.4.0
+einops==0.8.1
+lightning==2.5.2
+lightning-utilities==0.14.3
+omegaconf==2.3.0
+pandas==2.3.0
+pyannote.core==5.0.0
+pyannote.database==5.1.3
+pyannote.metrics==3.2.1
+pyannote.pipeline==3.0.1
+pytorch-lightning==2.5.2
+pytorch-metric-learning==2.8.1
+speechbrain==1.0.3
+tensorboardX==2.6.4
+torch-audiomentations==0.12.0
+torch-pitch-shift==1.2.5
+torchmetrics==1.7.3
+
+# Shared Pyannote dependencies that otherwise have wide moving ranges.
+HyperPyYAML==1.2.2
+matplotlib==3.10.3
+optuna==4.4.0
+rich==14.0.0
+ruamel.yaml==0.18.14
+ruamel.yaml.clib==0.2.12
+typer==0.16.0

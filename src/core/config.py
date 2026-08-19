@@ -1,6 +1,6 @@
 from typing import List, Literal
 from pydantic_settings import BaseSettings
-from pydantic import AnyHttpUrl, validator
+from pydantic import Field, validator
 
 class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
@@ -41,14 +41,39 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
 
     # Model
-    WHISPER_MODEL: str = "large-v3-turbo"  # Upgraded from large-v2 (6-7x faster, better accuracy)
+    # large-v2 is the product default; newer variants remain explicit challengers.
+    WHISPER_MODEL: str = "large-v2"
+    OFFLINE_STRICT: bool = True
     WHISPER_USE_LOCAL: bool = True  # Use local cached model for offline mode
     WHISPER_MODEL_PATH: str = "models/whisper"  # Local model cache directory
-    WHISPER_FAST_MODE: bool = True  # Skip heavy LLM post-processing (31x speed vs 3x)
-    TRANSCRIPTION_ENGINE: Literal["legacy", "cherry", "auto"] = "auto"
+    WHISPER_FAST_MODE: bool = False
+    # Keep the measured faster-whisper path as the default. Cherry is an
+    # explicit benchmark challenger until it passes the Vietnamese release set.
+    TRANSCRIPTION_ENGINE: Literal["legacy", "cherry", "auto"] = "legacy"
     ENABLE_HIGH_RISK_AI_FIELDS: bool = False
     STORE_RAW_LLM_RESPONSES: bool = False
     AI_CONTEXT_RETENTION_DAYS: int = 90
+    GPU_LEASE_ENABLED: bool = True
+    GPU_LEASE_PATH: str = "logs/runtime/gpu.lock"
+    GPU_LEASE_TIMEOUT_SECONDS: float = 900.0
+    UNLOAD_MODELS_AFTER_TASK: bool = True
+    LOCAL_LLM_PROVIDER: Literal["ollama", "llama_cpp_server"] = "llama_cpp_server"
+    OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
+    LLAMA_SERVER_BASE_URL: str = "http://127.0.0.1:8088"
+    LLAMA_SERVER_MODEL: str = "speechintel-qwen3-8b-q4_k_m"
+    LLAMA_SERVER_MODEL_PATH: str = "models/qwen3/Qwen3-8B-Q4_K_M.gguf"
+    LLAMA_SERVER_API_KEY: str = ""
+    LLAMA_SERVER_CONTEXT_SIZE: int = Field(default=12288, ge=1024, le=40960)
+    LLAMA_SERVER_MINIMUM_FREE_VRAM_MIB: int = Field(default=7000, ge=1024)
+    LLAMA_SERVER_SLEEP_IDLE_SECONDS: int = 2
+    LLAMA_SERVER_SLEEP_WAIT_SECONDS: float = 15.0
+    LLM_SEED: int = 42
+    LLM_CONNECT_TIMEOUT_SECONDS: float = 10.0
+    LLM_READ_TIMEOUT_SECONDS: float = 600.0
+    SUMMARY_SINGLE_PASS_INVESTIGATION: bool = True
+    OLLAMA_KEEP_ALIVE: str = "5m"
+    OLLAMA_NUM_CTX: int = 8192
+    LLM_HEALTH_CACHE_SECONDS: float = 10.0
     HF_TOKEN: str = ""  # HuggingFace token for gated models (pyannote)
     VOSK_MODEL_PATH: str = "models/vosk-model-vn-0.4"
     T5_MODEL_PATH: str = "models/t5-base"

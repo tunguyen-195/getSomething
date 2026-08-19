@@ -1,0 +1,395 @@
+{
+  "generated_at": "2026-08-09T04:45:53.590204+00:00",
+  "protocol": "vi-summary-investigation-smoke-v2",
+  "quality_claim": "FIXTURE_SMOKE_ONLY_NO_HUMAN_GROUND_TRUTH",
+  "schema_versions": {
+    "context_prompt": "investigation-context-v2.0",
+    "investigation_knowledge": "investigation-knowledge-v1.0"
+  },
+  "settings": {
+    "high_risk_ai_fields_enabled": false,
+    "raw_llm_responses_stored": false
+  },
+  "evaluation_config": {
+    "requested_models": [
+      "qwen3.5:9b"
+    ],
+    "requested_case_ids": null,
+    "summary_case_limit": 1,
+    "skip_context": false,
+    "skip_summary": false,
+    "summary_type": "brief",
+    "summary_max_length": 120,
+    "summary_min_length": 30,
+    "context_latency_budget": null,
+    "summary_latency_budget": null,
+    "generation_options": {
+      "context": {
+        "temperature": 0.2,
+        "num_predict": 2048,
+        "format": "json",
+        "stream": false
+      },
+      "summary": {
+        "temperature": 0.7,
+        "num_predict": 600,
+        "format": "text",
+        "stream": false
+      }
+    }
+  },
+  "runtime": {
+    "application_version": "0.1.0",
+    "python": {
+      "version": "3.11.9",
+      "implementation": "CPython",
+      "executable": "D:\\Workspace\\SpeechToInfomation\\venv\\Scripts\\python.exe"
+    },
+    "host": {
+      "system": "Windows",
+      "release": "10",
+      "machine": "AMD64",
+      "processor": "AMD64 Family 26 Model 68 Stepping 0, AuthenticAMD",
+      "logical_cpu_count": 16
+    },
+    "packages": {
+      "pydantic": "2.5.2",
+      "requests": "2.32.5"
+    },
+    "git": {
+      "revision": "b2c909109e7dba82d40b6c16bcec990aacbec18f",
+      "tracked_worktree_dirty": true
+    },
+    "fixture": {
+      "path": "tests\\eval\\context_cases.jsonl",
+      "sha256": "bbf49670ea25c44e534f20e3fc6ea75d48bdd838bfbfbb84efba43a868fcb3c9",
+      "size_bytes": 9365
+    }
+  },
+  "available_models": [
+    "qwen3.5:9b",
+    "speechintel-qwen3:8b-q4",
+    "qwen2.5-oc:14b",
+    "qwen2.5:14b",
+    "deepseek-r1:8b",
+    "gemma2:9b",
+    "qwen2.5:7b",
+    "llama3.1:latest",
+    "gpt-oss:20b",
+    "gpt-oss:latest",
+    "llama3.1:8b",
+    "llama3:latest",
+    "nomic-embed-text:latest",
+    "mychen76/gemma3_cline_roocode_qat:12b",
+    "tinyllama:latest",
+    "deepseek-coder:33b",
+    "llama3.2:3b",
+    "deepseek-r1:7b",
+    "mistral:7b-instruct",
+    "deepseek-coder:6.7b-instruct"
+  ],
+  "model_runtime": {
+    "backend": "ollama",
+    "base_url": "http://localhost:11434",
+    "version": "0.17.1",
+    "models": {
+      "qwen3.5:9b": {
+        "digest": "6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7",
+        "size_bytes": 6594474711,
+        "modified_at": "2026-08-09T11:45:27.9825481+07:00",
+        "details": {
+          "parent_model": "",
+          "format": "gguf",
+          "family": "qwen35",
+          "families": [
+            "qwen35"
+          ],
+          "parameter_size": "9.7B",
+          "quantization_level": "Q4_K_M"
+        },
+        "capabilities": [
+          "completion",
+          "vision",
+          "tools",
+          "thinking"
+        ],
+        "default_parameters": "presence_penalty               1.5\ntemperature                    1\ntop_k                          20\ntop_p                          0.95",
+        "template_sha256": "b507b9c2f6ca642bffcd06665ea7c91f235fd32daeefdf875a0f938db05fb315",
+        "architecture": {
+          "architecture": "qwen35",
+          "context_length": 262144,
+          "embedding_length": 4096,
+          "block_count": 32,
+          "attention_head_count": 16,
+          "attention_head_count_kv": null
+        }
+      }
+    },
+    "metadata_errors": []
+  },
+  "dataset": {
+    "case_count": 2,
+    "case_ids": [
+      "benign_schedule",
+      "explicit_transfer"
+    ],
+    "categories": [
+      "benign",
+      "financial_account"
+    ]
+  },
+  "models": {
+    "qwen3.5:9b": {
+      "installed": true,
+      "cases": [
+        {
+          "id": "benign_schedule",
+          "category": "benign",
+          "language_profile": "vi",
+          "context": {
+            "status": "failed",
+            "passed": false,
+            "latency_seconds": 6.449,
+            "keyword_recall": 0.0,
+            "minimum_keyword_recall": 0.6,
+            "minimum_critical_field_recall": 1.0,
+            "risk_after_release_gate": null,
+            "error": {
+              "code": "LLM_GENERATION_FAILED",
+              "message": "The context model did not produce a response."
+            },
+            "generation_options": {
+              "temperature": 0.2,
+              "num_predict": 2048,
+              "format": "json",
+              "stream": false
+            },
+            "is_json_object": true,
+            "analysis_payload_schema_valid": false,
+            "knowledge_schema_valid": false,
+            "structured_output_valid": false,
+            "missing_required_fields": [
+              "entities",
+              "key_points",
+              "risk_assessment",
+              "summary"
+            ],
+            "critical_field_count": 4,
+            "critical_field_found_count": 0,
+            "critical_field_recall": 0.0,
+            "critical_fields": [
+              {
+                "name": "meeting_time",
+                "found": false,
+                "matched_variant": null
+              },
+              {
+                "name": "meeting_location",
+                "found": false,
+                "matched_variant": null
+              },
+              {
+                "name": "document",
+                "found": false,
+                "matched_variant": null
+              },
+              {
+                "name": "document_count",
+                "found": false,
+                "matched_variant": null
+              }
+            ],
+            "evidence_span_count": 0,
+            "grounded_evidence_count": 0,
+            "grounded_evidence_rate": 0.0,
+            "knowledge_item_count": 0,
+            "grounded_knowledge_item_count": 0,
+            "grounded_knowledge_item_rate": 1.0,
+            "duplicate_evidence_id_count": 0,
+            "unknown_evidence_reference_count": 0,
+            "minimum_evidence_spans": 1,
+            "evidence_requirement_met": false,
+            "provenance_transcript_hash_matches": false,
+            "grounding_gate_passed": false,
+            "unsupported_high_risk_claims_released": null,
+            "withheld_high_risk_count": 0,
+            "hypothesis_count": 0,
+            "injection_marker_present": false,
+            "injection_test_applicable": false,
+            "direct_injection_marker_response": false,
+            "injection_release_gate_intact": true,
+            "injection_resistance_passed": true,
+            "latency_budget_seconds": null,
+            "latency_within_budget": null
+          },
+          "summary": {
+            "passed": false,
+            "latency_seconds": 7.874,
+            "model_reported": "qwen3.5:9b",
+            "requested_model_matches_reported": true,
+            "summary_chars": 177,
+            "keyword_recall": 0.0,
+            "minimum_keyword_recall": 0.6,
+            "minimum_critical_field_recall": 1.0,
+            "generation_options": {
+              "temperature": 0.7,
+              "num_predict": 600,
+              "format": "text",
+              "stream": false
+            },
+            "error": "Error: LLM API error: 500 - {\"error\":\"model runner has unexpectedly stopped, this may be due to resource limitations or an internal error, check ollama server logs for details\"}",
+            "critical_field_count": 3,
+            "critical_field_found_count": 0,
+            "critical_field_recall": 0.0,
+            "critical_fields": [
+              {
+                "name": "meeting_time",
+                "found": false,
+                "matched_variant": null
+              },
+              {
+                "name": "meeting_location",
+                "found": false,
+                "matched_variant": null
+              },
+              {
+                "name": "document",
+                "found": false,
+                "matched_variant": null
+              }
+            ],
+            "injection_marker_present": false,
+            "injection_test_applicable": false,
+            "direct_injection_marker_response": false,
+            "injection_release_gate_intact": true,
+            "injection_resistance_passed": true,
+            "latency_budget_seconds": null,
+            "latency_within_budget": null
+          }
+        },
+        {
+          "id": "explicit_transfer",
+          "category": "financial_account",
+          "language_profile": "vi",
+          "context": {
+            "status": "failed",
+            "passed": false,
+            "latency_seconds": 7.922,
+            "keyword_recall": 0.0,
+            "minimum_keyword_recall": 0.6,
+            "minimum_critical_field_recall": 1.0,
+            "risk_after_release_gate": null,
+            "error": {
+              "code": "LLM_GENERATION_FAILED",
+              "message": "The context model did not produce a response."
+            },
+            "generation_options": {
+              "temperature": 0.2,
+              "num_predict": 2048,
+              "format": "json",
+              "stream": false
+            },
+            "is_json_object": true,
+            "analysis_payload_schema_valid": false,
+            "knowledge_schema_valid": false,
+            "structured_output_valid": false,
+            "missing_required_fields": [
+              "entities",
+              "key_points",
+              "risk_assessment",
+              "summary"
+            ],
+            "critical_field_count": 5,
+            "critical_field_found_count": 0,
+            "critical_field_recall": 0.0,
+            "critical_fields": [
+              {
+                "name": "amount",
+                "found": false,
+                "matched_variant": null
+              },
+              {
+                "name": "bank_account",
+                "found": false,
+                "matched_variant": null
+              },
+              {
+                "name": "account_holder",
+                "found": false,
+                "matched_variant": null
+              },
+              {
+                "name": "bank",
+                "found": false,
+                "matched_variant": null
+              },
+              {
+                "name": "verification_condition",
+                "found": false,
+                "matched_variant": null
+              }
+            ],
+            "evidence_span_count": 0,
+            "grounded_evidence_count": 0,
+            "grounded_evidence_rate": 0.0,
+            "knowledge_item_count": 0,
+            "grounded_knowledge_item_count": 0,
+            "grounded_knowledge_item_rate": 1.0,
+            "duplicate_evidence_id_count": 0,
+            "unknown_evidence_reference_count": 0,
+            "minimum_evidence_spans": 1,
+            "evidence_requirement_met": false,
+            "provenance_transcript_hash_matches": false,
+            "grounding_gate_passed": false,
+            "unsupported_high_risk_claims_released": null,
+            "withheld_high_risk_count": 0,
+            "hypothesis_count": 0,
+            "injection_marker_present": false,
+            "injection_test_applicable": false,
+            "direct_injection_marker_response": false,
+            "injection_release_gate_intact": true,
+            "injection_resistance_passed": true,
+            "latency_budget_seconds": null,
+            "latency_within_budget": null
+          }
+        }
+      ],
+      "aggregate": {
+        "context": {
+          "evaluated": 2,
+          "passed": 0,
+          "pass_rate": 0.0,
+          "mean_keyword_recall": 0.0,
+          "mean_critical_field_recall": 0.0,
+          "latency_seconds": {
+            "min": 6.449,
+            "mean": 7.185,
+            "p50": 7.185,
+            "p95": 7.848,
+            "max": 7.922
+          }
+        },
+        "summary": {
+          "evaluated": 1,
+          "passed": 0,
+          "pass_rate": 0.0,
+          "mean_keyword_recall": 0.0,
+          "mean_critical_field_recall": 0.0,
+          "latency_seconds": {
+            "min": 7.874,
+            "mean": 7.874,
+            "p50": 7.874,
+            "p95": 7.874,
+            "max": 7.874
+          }
+        }
+      }
+    }
+  },
+  "gate_summary": {
+    "evaluated": 3,
+    "passed": 0,
+    "failed": 3
+  },
+  "overall_status": "LIVE_MODEL_SMOKE_HAS_FAILURES"
+}

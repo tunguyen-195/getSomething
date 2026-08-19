@@ -1,52 +1,47 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
+    Accordion,
+    AccordionDetails,
+    AccordionSummary,
+    Alert,
     Box,
-    Typography,
-    Paper,
+    Button,
     Chip,
+    CircularProgress,
     Grid,
     List,
     ListItem,
     ListItemIcon,
     ListItemText,
-    Accordion,
-    AccordionSummary,
-    AccordionDetails,
-    Avatar,
-    IconButton,
-    LinearProgress,
+    Paper,
+    Typography,
 } from '@mui/material';
 import {
-    Timeline as TimelineIcon,
-    Person as PersonIcon,
-    Place as PlaceIcon,
-    Event as EventIcon,
-    Hub as HubIcon,
-    ExpandMore as ExpandMoreIcon,
-    ContentCopy as ContentCopyIcon,
     Analytics as AnalyticsIcon,
-    Description as SummaryIcon,
-    Phone as PhoneIcon,
-    Email as EmailIcon,
-    Home as AddressIcon,
-    AttachMoney as MoneyIcon,
-    CalendarMonth as DateIcon,
-    RecordVoiceOver as SpeakerIcon,
-    Category as TopicIcon,
+    AssignmentTurnedIn as ActionIcon,
+    Badge as ParticipantIcon,
+    Event as EventIcon,
+    ExpandMore as ExpandMoreIcon,
+    HelpOutline as QuestionIcon,
+    Hub as HubIcon,
+    Link as RelationshipIcon,
+    Numbers as NumbersIcon,
+    Person as PersonIcon,
+    Refresh as RefreshIcon,
+    ReportProblem as ReportProblemIcon,
 } from '@mui/icons-material';
-import {
-    ReleasedVisualizationArtifact,
-    validateReleasedVisualizationArtifact,
-} from '../utils/investigationProjection';
+import { apiFetch } from '../api/client';
+import { sanitizeSummaryDisplayText } from '../utils/summaryDisplay';
+import { AnalysisAction, projectInvestigationAnalysis } from '../utils/investigationAnalysis';
 
 interface FileWithData {
     task_id: string;
     filename: string;
+    transcript?: string;
     summary?: string;
     status: string;
-    num_speakers?: number;
-    has_visualization?: boolean;
-    visualization_data?: unknown;
+    duration?: number;
+    context_analysis?: unknown;
     segments?: Array<{ speaker?: string; text: string }>;
 }
 
@@ -54,324 +49,322 @@ interface AnalysisPanelProps {
     files: FileWithData[];
     caseId: string;
     mode?: 'light' | 'dark';
+    onRefresh?: () => Promise<void> | void;
+    focusTaskId?: string | null;
 }
 
-type FileWithReleasedVisualization = FileWithData & {
-    visualization_data: ReleasedVisualizationArtifact;
-};
+function responseError(payload: unknown, fallback: string): string {
+    if (!payload || typeof payload !== 'object') return fallback;
+    const detail = (payload as Record<string, unknown>).detail;
+    if (typeof detail === 'string') return detail;
+    if (detail && typeof detail === 'object') {
+        const record = detail as Record<string, unknown>;
+        if (typeof record.message === 'string') return record.message;
+        if (typeof record.code === 'string') return record.code;
+    }
+    return fallback;
+}
 
-// Extract key information from summary text
-const extractKeyInfo = (summary: string) => {
-    const info: { type: string; value: string; icon: React.ReactNode; color: string; context?: string }[] = [];
+function AnalysisItemList({ items }: { items: AnalysisAction[] }) {
+    return (
+        <List dense disablePadding>
+            {items.map(item => (
+                <ListItem key={item.id} alignItems="flex-start">
+                    <ListItemIcon sx={{ minWidth: 34 }}><ActionIcon color="action" /></ListItemIcon>
+                    <ListItemText
+                        primary={item.description}
+                        secondary={[
+                            item.actor && `Chủ thể: ${item.actor}`,
+                            item.target && `Đối tượng: ${item.target}`,
+                            item.assignee && `Phụ trách: ${item.assignee}`,
+                            item.deadline && `Hạn: ${item.deadline}`,
+                            item.priority && `Ưu tiên: ${item.priority}`,
+                            item.reason && `Lý do: ${item.reason}`,
+                            item.status && `Trạng thái: ${item.status}`,
+                        ].filter(Boolean).join(' • ')}
+                    />
+                </ListItem>
+            ))}
+        </List>
+    );
+}
 
-    // Phone numbers (Vietnamese format)
-    const phones = summary.match(/(?:0\d{9,10}|\+84\d{9,10}|0\d{2,3}[\s.-]\d{3}[\s.-]\d{4})/g) || [];
-    phones.forEach(p => info.push({ type: 'phone', value: p, icon: <PhoneIcon />, color: '#2196f3' }));
+const AnalysisPanel: React.FC<AnalysisPanelProps> = ({ files, caseId, onRefresh, focusTaskId }) => {
+    const [analyzingTaskId, setAnalyzingTaskId] = useState<string | null>(null);
+    const [requestError, setRequestError] = useState<string | null>(null);
+    const [requestSuccess, setRequestSuccess] = useState<string | null>(null);
+    const analysisRows = useMemo(() => files.map(file => ({
+        file,
+        preview: projectInvestigationAnalysis(file.context_analysis),
+    })), [files]);
 
-    // Emails
-    const emails = summary.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
-    emails.forEach(e => info.push({ type: 'email', value: e, icon: <EmailIcon />, color: '#4caf50' }));
+    const analyzedFileCount = analysisRows.filter(row => row.preview.state === 'source_preview').length;
+    const participantCount = analysisRows.reduce((sum, row) => sum + row.preview.participants.length, 0);
+    const entityCount = analysisRows.reduce(
+        (sum, row) => sum + row.preview.entities.length + row.preview.exact_values.length,
+        0,
+    );
+    const eventCount = analysisRows.reduce((sum, row) => sum + row.preview.events.length, 0);
+    const actionCount = analysisRows.reduce(
+        (sum, row) => sum + row.preview.actions.length + row.preview.decisions.length
+            + row.preview.commitments.length + row.preview.follow_ups.length,
+        0,
+    );
 
-    // Money (Vietnamese format)
-    const money = summary.match(/(?:\d{1,3}(?:[.,]\d{3})*(?:\s*(?:đồng|vnđ|VNĐ|triệu|tr|nghìn|ngàn|k))?|\d+\s*(?:triệu|tr|nghìn|ngàn|k))/gi) || [];
-    money.forEach(m => info.push({ type: 'money', value: m, icon: <MoneyIcon />, color: '#ff9800' }));
-
-    // Dates (common Vietnamese formats)
-    const dates = summary.match(/(?:\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)/g) || [];
-    dates.forEach(d => info.push({ type: 'date', value: d, icon: <DateIcon />, color: '#9c27b0' }));
-
-    return info;
-};
-
-// Calculate speaker statistics
-const calculateSpeakerStats = (files: FileWithData[]) => {
-    const stats: { [key: string]: number } = {};
-    let total = 0;
-
-    files.forEach(f => {
-        if (f.segments) {
-            f.segments.forEach(seg => {
-                const speaker = seg.speaker || 'Unknown';
-                const wordCount = seg.text?.split(/\s+/).length || 0;
-                stats[speaker] = (stats[speaker] || 0) + wordCount;
-                total += wordCount;
+    const runAnalysis = async (file: FileWithData) => {
+        if (!file.transcript || analyzingTaskId) return;
+        setAnalyzingTaskId(file.task_id);
+        setRequestError(null);
+        setRequestSuccess(null);
+        try {
+            const response = await apiFetch('/api/v1/summaries/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    summary: sanitizeSummaryDisplayText(file.summary || ''),
+                    task_id: file.task_id,
+                }),
             });
-        } else if (f.num_speakers) {
-            // Fallback: estimate from num_speakers
-            for (let i = 1; i <= f.num_speakers; i++) {
-                const speaker = `Speaker ${i}`;
-                stats[speaker] = (stats[speaker] || 0) + Math.floor(100 / f.num_speakers);
-            }
-            total = 100;
+            const payload = await response.json().catch(() => null);
+            if (!response.ok) throw new Error(responseError(payload, `HTTP ${response.status}`));
+            setRequestSuccess(`Đã cập nhật Analysis cho ${file.filename}.`);
+            await onRefresh?.();
+        } catch (error) {
+            setRequestError(error instanceof Error ? error.message : 'Không thể chạy Analysis.');
+        } finally {
+            setAnalyzingTaskId(null);
         }
-    });
-
-    return Object.entries(stats).map(([speaker, count]) => ({
-        speaker,
-        count,
-        percentage: total > 0 ? Math.round((count / total) * 100) : 0,
-    })).sort((a, b) => b.percentage - a.percentage);
-};
-
-const AnalysisPanel: React.FC<AnalysisPanelProps> = ({ files, caseId }) => {
-    const [copiedId, setCopiedId] = useState<string | null>(null);
-
-    const filesWithData = useMemo<FileWithReleasedVisualization[]>(() => (
-        files.flatMap(file => {
-            if (!file.has_visualization) return [];
-            const validation = validateReleasedVisualizationArtifact(file.visualization_data);
-            return validation.ok
-                ? [{ ...file, visualization_data: validation.value }]
-                : [];
-        })
-    ), [files]);
-
-    // Aggregate stats
-    const stats = useMemo(() => {
-        let people = new Set<string>();
-        let places = new Set<string>();
-        let phones = new Set<string>();
-        let events: string[] = [];
-        let timeline: Array<{ time?: string; event: string; file: string }> = [];
-        let allKeyInfo: { type: string; value: string; icon: React.ReactNode; color: string; context?: string }[] = [];
-
-        filesWithData.forEach(f => {
-            if (f.visualization_data) {
-                f.visualization_data.nodes.forEach(n => {
-                    if (n.type?.toLowerCase() === 'person') people.add(n.label);
-                    if (['place', 'location'].includes(n.type?.toLowerCase() || '')) places.add(n.label);
-                    if (n.type?.toLowerCase() === 'phone') phones.add(n.label);
-                });
-                f.visualization_data.main_events.forEach(e => events.push(e.event));
-                f.visualization_data.timeline.forEach(t => timeline.push({ ...t, file: f.filename }));
-
-                if (f.visualization_data.extracted_entities.length > 0) {
-                    f.visualization_data.extracted_entities.forEach(e => {
-                        let icon = <TopicIcon />;
-                        let color = '#757575';
-
-                        switch (e.type.toLowerCase()) {
-                            case 'phone': icon = <PhoneIcon />; color = '#2196f3'; break;
-                            case 'email': icon = <EmailIcon />; color = '#4caf50'; break;
-                            case 'money': icon = <MoneyIcon />; color = '#ff9800'; break;
-                            case 'date': icon = <DateIcon />; color = '#9c27b0'; break;
-                        }
-
-                        allKeyInfo.push({
-                            type: e.type,
-                            value: e.value,
-                            icon,
-                            color,
-                            context: e.context // Add context if available
-                        });
-                    });
-                }
-            }
-
-        });
-
-        // Dedupe key info
-        const uniqueKeyInfo = allKeyInfo.filter((item, idx, arr) =>
-            arr.findIndex(i => i.value === item.value) === idx
-        );
-
-        return {
-            peopleCount: people.size,
-            placesCount: places.size,
-            eventsCount: events.length,
-            timelineCount: timeline.length,
-            people: Array.from(people),
-            places: Array.from(places),
-            phones: Array.from(phones),
-            events,
-            timeline,
-            keyInfo: uniqueKeyInfo,
-        };
-    }, [filesWithData]);
-
-    const speakerStats = useMemo(() => calculateSpeakerStats(files), [files]);
-
-    const handleCopy = (id: string, text: string) => {
-        navigator.clipboard.writeText(text);
-        setCopiedId(id);
-        setTimeout(() => setCopiedId(null), 2000);
     };
 
     if (files.length === 0) {
         return (
-            <Paper sx={{ p: 4, textAlign: 'center', borderRadius: '12px' }}>
-                <AnalyticsIcon sx={{ fontSize: 48, color: '#bdbdbd', mb: 2 }} />
-                <Typography color="text.secondary">Chưa có files để phân tích</Typography>
-            </Paper>
-        );
-    }
-
-    if (filesWithData.length === 0) {
-        return (
-            <Paper sx={{ p: 4, textAlign: 'center', borderRadius: '12px' }}>
-                <AnalyticsIcon sx={{ fontSize: 48, color: '#9c27b0', mb: 2 }} />
-                <Typography color="text.secondary">
-                    Chưa có released analysis artifact đủ bằng chứng để hiển thị.
-                </Typography>
+            <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
+                <AnalyticsIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+                <Typography color="text.secondary">Chưa có file để phân tích.</Typography>
             </Paper>
         );
     }
 
     return (
         <Box>
-            {/* Quick Stats Row */}
-            <Grid container spacing={1} sx={{ mb: 2 }}>
+            <Alert severity="info" sx={{ mb: 2 }}>
+                Analysis dùng LLM để đọc toàn bộ hội thoại và trình bày các insight hữu ích. Các mục không có dữ liệu sẽ tự động được ẩn.
+            </Alert>
+            {requestError && <Alert severity="error" sx={{ mb: 2 }}>{requestError}</Alert>}
+            {requestSuccess && <Alert severity="success" sx={{ mb: 2 }}>{requestSuccess}</Alert>}
+
+            <Box display="flex" alignItems="center" justifyContent="space-between" gap={2} mb={2}>
+                <Typography variant="h6" fontWeight={800}>Phân tích nội dung điều tra</Typography>
+                <Chip label={`Case ${caseId}`} size="small" variant="outlined" />
+            </Box>
+
+            <Grid container spacing={1.25} sx={{ mb: 2 }}>
                 {[
-                    { icon: <PersonIcon />, label: 'Người', value: stats.peopleCount, color: '#1976d2' },
-                    { icon: <PlaceIcon />, label: 'Địa điểm', value: stats.placesCount, color: '#43a047' },
-                    { icon: <EventIcon />, label: 'Sự kiện', value: stats.eventsCount, color: '#ff9800' },
-                    { icon: <TimelineIcon />, label: 'Timeline', value: stats.timelineCount, color: '#9c27b0' },
-                ].map((stat, i) => (
-                    <Grid item xs={3} key={i}>
-                        <Paper sx={{ p: 1, textAlign: 'center', borderRadius: '8px', border: `1px solid ${stat.color}30` }}>
-                            <Avatar sx={{ bgcolor: `${stat.color}15`, color: stat.color, mx: 'auto', width: 32, height: 32, mb: 0.5 }}>
+                    { label: 'File có Analysis', value: `${analyzedFileCount}/${files.length}`, icon: <AnalyticsIcon />, color: '#1565c0' },
+                    { label: 'Người tham gia', value: participantCount, icon: <ParticipantIcon />, color: '#00796b' },
+                    { label: 'Thực thể / giá trị', value: entityCount, icon: <HubIcon />, color: '#ef6c00' },
+                    { label: 'Sự kiện / công việc', value: `${eventCount}/${actionCount}`, icon: <EventIcon />, color: '#ad1457' },
+                ].map(stat => (
+                    <Grid item xs={6} md={3} key={stat.label}>
+                        <Paper sx={{ p: 1.5, height: '100%', borderRadius: 2.5, border: `1px solid ${stat.color}35` }}>
+                            <Box display="flex" alignItems="center" gap={1} color={stat.color}>
                                 {stat.icon}
-                            </Avatar>
-                            <Typography variant="h6" fontWeight={700} color={stat.color}>{stat.value}</Typography>
+                                <Typography variant="h6" fontWeight={800}>{stat.value}</Typography>
+                            </Box>
                             <Typography variant="caption" color="text.secondary">{stat.label}</Typography>
                         </Paper>
                     </Grid>
                 ))}
             </Grid>
 
-            {/* Key Information Cards - NEW */}
-            {stats.keyInfo.length > 0 && (
-                <Accordion defaultExpanded sx={{ mb: 1, borderRadius: '12px !important', '&:before': { display: 'none' } }}>
-                    <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: 'rgba(33, 150, 243, 0.05)' }}>
-                        <Box display="flex" alignItems="center" gap={1}>
-                            <PhoneIcon sx={{ color: '#2196f3' }} />
-                            <Typography fontWeight={600}>Thông tin quan trọng</Typography>
-                            <Chip label={stats.keyInfo.length} size="small" color="info" />
-                        </Box>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                        <Grid container spacing={1}>
-                            {stats.keyInfo.map((info, idx) => (
-                                <Grid item xs={6} sm={4} md={3} key={idx}>
-                                    <Paper
-                                        sx={{
-                                            p: 1.5,
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 1,
-                                            borderRadius: '8px',
-                                            border: `1px solid ${info.color}30`,
-                                            cursor: 'pointer',
-                                            '&:hover': { bgcolor: `${info.color}08` },
-                                        }}
-                                        onClick={() => handleCopy(`info-${idx}`, info.value)}
-                                    >
-                                        <Avatar sx={{ bgcolor: `${info.color}15`, color: info.color, width: 28, height: 28 }}>
-                                            {info.icon}
-                                        </Avatar>
-                                        <Box flex={1} overflow="hidden">
-                                            <Typography variant="body2" fontWeight={600} noWrap>{info.value}</Typography>
-                                            <Typography variant="caption" color="text.secondary" textTransform="capitalize">
-                                                {/* @ts-ignore */}
-                                                {info.context || info.type}
-                                            </Typography>
-                                        </Box>
-                                    </Paper>
-                                </Grid>
-                            ))}
-                        </Grid>
-                    </AccordionDetails>
-                </Accordion>
-            )}
-
-            {/* Speaker stats REMOVED - now in dedicated Diarization tab */}
-
-            {/* Summary section REMOVED - now in dedicated Summary tab */}
-
-            {/* Entities Section */}
-            {stats.people.length > 0 || stats.places.length > 0 ? (
-                <Accordion sx={{ mb: 1, borderRadius: '12px !important', '&:before': { display: 'none' } }}>
-                    <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: 'rgba(33, 150, 243, 0.05)' }}>
-                        <Box display="flex" alignItems="center" gap={1}>
-                            <HubIcon sx={{ color: '#2196f3' }} />
-                            <Typography fontWeight={600}>Thực thể</Typography>
-                            <Chip label={stats.peopleCount + stats.placesCount} size="small" />
-                        </Box>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                        <Grid container spacing={2}>
-                            {stats.people.length > 0 && (
-                                <Grid item xs={12} md={6}>
-                                    <Typography variant="subtitle2" fontWeight={600} mb={1}>👤 Người ({stats.peopleCount})</Typography>
-                                    <Box display="flex" flexWrap="wrap" gap={0.5}>
-                                        {stats.people.map((p, i) => <Chip key={i} label={p} size="small" sx={{ bgcolor: '#e3f2fd' }} />)}
-                                    </Box>
-                                </Grid>
+            {analysisRows.map(row => {
+                const preview = row.preview;
+                const actionGroups = [
+                    { title: 'Hành động', items: preview.actions },
+                    { title: 'Quyết định', items: preview.decisions },
+                    { title: 'Cam kết', items: preview.commitments },
+                ].filter(group => group.items.length > 0);
+                return (
+                    <Accordion
+                        key={row.file.task_id}
+                        defaultExpanded={files.length === 1 || row.file.task_id === focusTaskId}
+                        sx={{ mb: 1.25, borderRadius: '12px !important', '&:before': { display: 'none' } }}
+                    >
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                            <Box display="flex" alignItems="center" gap={1} width="100%" pr={1} minWidth={0}>
+                                <Typography fontWeight={700} flex={1} noWrap>{row.file.filename}</Typography>
+                                <Chip
+                                    label={preview.state_label}
+                                    size="small"
+                                    color={preview.state === 'failed' ? 'error' : preview.state === 'source_preview' ? 'warning' : 'default'}
+                                />
+                            </Box>
+                        </AccordionSummary>
+                        <AccordionDetails>
+                            {preview.state === 'failed' && (
+                                <Alert severity="error" sx={{ mb: 2 }}>
+                                    {preview.error_message || 'LLM chưa thể trả về kết quả Analysis sử dụng được.'}
+                                </Alert>
                             )}
-                            {stats.places.length > 0 && (
-                                <Grid item xs={12} md={6}>
-                                    <Typography variant="subtitle2" fontWeight={600} mb={1}>📍 Địa điểm ({stats.placesCount})</Typography>
-                                    <Box display="flex" flexWrap="wrap" gap={0.5}>
-                                        {stats.places.map((p, i) => <Chip key={i} label={p} size="small" sx={{ bgcolor: '#e8f5e9' }} />)}
-                                    </Box>
-                                </Grid>
+                            {preview.state === 'source_preview' && (
+                                <Alert severity="warning" sx={{ mb: 2 }}>
+                                    Kết quả do AI tạo từ nội dung hội thoại; điều tra viên cần đối chiếu transcript trước khi sử dụng nghiệp vụ.
+                                </Alert>
                             )}
-                        </Grid>
-                    </AccordionDetails>
-                </Accordion>
-            ) : null}
+                            {!row.file.transcript && <Alert severity="info" sx={{ mb: 2 }}>Cần transcript trước khi chạy Analysis.</Alert>}
+                            {row.file.transcript && (
+                                <Button
+                                    variant="outlined"
+                                    size="small"
+                                    startIcon={analyzingTaskId === row.file.task_id ? <CircularProgress size={16} /> : <RefreshIcon />}
+                                    disabled={Boolean(analyzingTaskId)}
+                                    onClick={() => runAnalysis(row.file)}
+                                    sx={{ mb: 2, textTransform: 'none' }}
+                                >
+                                    {preview.state === 'missing' ? 'Chạy Analysis' : 'Phân tích lại'}
+                                </Button>
+                            )}
 
-            {/* Events Section */}
-            {stats.events.length > 0 && (
-                <Accordion sx={{ mb: 1, borderRadius: '12px !important', '&:before': { display: 'none' } }}>
-                    <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: 'rgba(255, 152, 0, 0.05)' }}>
-                        <Box display="flex" alignItems="center" gap={1}>
-                            <EventIcon sx={{ color: '#ff9800' }} />
-                            <Typography fontWeight={600}>Sự kiện chính</Typography>
-                            <Chip label={stats.eventsCount} size="small" />
-                        </Box>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                        <List dense disablePadding>
-                            {stats.events.slice(0, 10).map((event, idx) => (
-                                <ListItem key={idx} sx={{ py: 0.5 }}>
-                                    <ListItemIcon sx={{ minWidth: 28 }}>
-                                        <Chip label={idx + 1} size="small" sx={{ width: 22, height: 22, fontSize: '0.7rem' }} />
-                                    </ListItemIcon>
-                                    <ListItemText primary={event} primaryTypographyProps={{ fontSize: '0.85rem' }} />
-                                </ListItem>
-                            ))}
-                        </List>
-                    </AccordionDetails>
-                </Accordion>
-            )}
-
-            {/* Timeline Section */}
-            {stats.timeline.length > 0 && (
-                <Accordion sx={{ borderRadius: '12px !important', '&:before': { display: 'none' } }}>
-                    <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: 'rgba(156, 39, 176, 0.05)' }}>
-                        <Box display="flex" alignItems="center" gap={1}>
-                            <TimelineIcon sx={{ color: '#9c27b0' }} />
-                            <Typography fontWeight={600}>Timeline</Typography>
-                            <Chip label={stats.timelineCount} size="small" />
-                        </Box>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                        <Box sx={{ position: 'relative', pl: 3, maxHeight: 300, overflow: 'auto' }}>
-                            <Box sx={{ position: 'absolute', left: 8, top: 0, bottom: 0, width: 2, bgcolor: '#9c27b0' }} />
-                            {stats.timeline.slice(0, 15).map((item, idx) => (
-                                <Box key={idx} sx={{ display: 'flex', mb: 1, position: 'relative' }}>
-                                    <Box sx={{ position: 'absolute', left: -19, width: 10, height: 10, borderRadius: '50%', bgcolor: '#9c27b0' }} />
-                                    <Paper sx={{ p: 1, ml: 1, flex: 1, bgcolor: 'rgba(156, 39, 176, 0.03)', borderRadius: '6px' }}>
-                                        {item.time && <Chip label={item.time} size="small" sx={{ mb: 0.5, bgcolor: '#9c27b0', color: '#fff', height: 18, fontSize: '0.65rem' }} />}
-                                        <Typography variant="body2" fontSize="0.85rem">{item.event}</Typography>
-                                    </Paper>
+                            {preview.overview && (
+                                <Paper variant="outlined" sx={{ p: 2, mb: 2, bgcolor: 'action.hover' }}>
+                                    <Typography variant="subtitle1" fontWeight={800} mb={0.5}>Tổng quan</Typography>
+                                    <Typography sx={{ whiteSpace: 'pre-wrap' }}>{preview.overview}</Typography>
+                                </Paper>
+                            )}
+                            {preview.key_points.length > 0 && (
+                                <Box mb={2}>
+                                    <Typography variant="subtitle1" fontWeight={800}>Điểm chính</Typography>
+                                    <List dense disablePadding>
+                                        {preview.key_points.map((point, index) => (
+                                            <ListItem key={`${point}-${index}`}>
+                                                <ListItemIcon sx={{ minWidth: 34 }}><Chip label={index + 1} size="small" /></ListItemIcon>
+                                                <ListItemText primary={point} />
+                                            </ListItem>
+                                        ))}
+                                    </List>
+                                </Box>
+                            )}
+                            {preview.participants.length > 0 && (
+                                <Box mb={2}>
+                                    <Typography variant="subtitle1" fontWeight={800} mb={1}>Người tham gia và vai trò</Typography>
+                                    <Grid container spacing={1}>
+                                        {preview.participants.map(item => (
+                                            <Grid item xs={12} md={6} key={item.id}>
+                                                <Paper variant="outlined" sx={{ p: 1.25, height: '100%' }}>
+                                                    <Box display="flex" gap={0.75} alignItems="center" flexWrap="wrap">
+                                                        <Chip icon={<PersonIcon />} label={item.name} size="small" />
+                                                        {item.role && <Chip label={item.role} size="small" variant="outlined" />}
+                                                    </Box>
+                                                    {item.description && <Typography variant="body2" mt={0.75}>{item.description}</Typography>}
+                                                </Paper>
+                                            </Grid>
+                                        ))}
+                                    </Grid>
+                                </Box>
+                            )}
+                            {(preview.entities.length > 0 || preview.exact_values.length > 0) && (
+                                <Box mb={2}>
+                                    <Typography variant="subtitle1" fontWeight={800} mb={1}>Thực thể và giá trị chính xác</Typography>
+                                    <Box display="flex" gap={0.75} flexWrap="wrap">
+                                        {preview.entities.map(item => (
+                                            <Chip key={item.id} label={`${item.value}${item.role ? ` - ${item.role}` : ''}`} variant="outlined" />
+                                        ))}
+                                        {preview.exact_values.map(item => (
+                                            <Chip key={item.id} icon={<NumbersIcon />} label={item.value} color="warning" variant="outlined" />
+                                        ))}
+                                    </Box>
+                                </Box>
+                            )}
+                            {preview.events.length > 0 && (
+                                <Box mb={2}>
+                                    <Typography variant="subtitle1" fontWeight={800}>Timeline sự kiện</Typography>
+                                    <List dense disablePadding>
+                                        {preview.events.map(event => (
+                                            <ListItem key={event.id} alignItems="flex-start">
+                                                <ListItemIcon sx={{ minWidth: 36 }}><EventIcon color="action" /></ListItemIcon>
+                                                <ListItemText
+                                                    primary={event.description}
+                                                    secondary={[
+                                                        event.described_time && `Thời gian: ${event.described_time}`,
+                                                        event.location && `Địa điểm: ${event.location}`,
+                                                        event.actors.length > 0 && `Liên quan: ${event.actors.join(', ')}`,
+                                                        event.status && `Trạng thái: ${event.status}`,
+                                                    ].filter(Boolean).join(' • ')}
+                                                />
+                                            </ListItem>
+                                        ))}
+                                    </List>
+                                </Box>
+                            )}
+                            {actionGroups.map(group => (
+                                <Box mb={2} key={group.title}>
+                                    <Typography variant="subtitle1" fontWeight={800}>{group.title}</Typography>
+                                    <AnalysisItemList items={group.items} />
                                 </Box>
                             ))}
-                        </Box>
-                    </AccordionDetails>
-                </Accordion>
-            )}
+                            {preview.relationships.length > 0 && (
+                                <Box mb={2}>
+                                    <Typography variant="subtitle1" fontWeight={800}>Mối quan hệ được nêu</Typography>
+                                    <List dense disablePadding>
+                                        {preview.relationships.map(item => (
+                                            <ListItem key={item.id}>
+                                                <ListItemIcon sx={{ minWidth: 36 }}><RelationshipIcon color="action" /></ListItemIcon>
+                                                <ListItemText primary={`${item.source} — ${item.label} — ${item.target}`} secondary={item.status} />
+                                            </ListItem>
+                                        ))}
+                                    </List>
+                                </Box>
+                            )}
+                            {preview.contradictions.length > 0 && (
+                                <Alert severity="warning" icon={<ReportProblemIcon />} sx={{ mb: 2 }}>
+                                    <Typography fontWeight={800}>Mâu thuẫn cần đối chiếu</Typography>
+                                    {preview.contradictions.map(item => (
+                                        <Box key={item.id} mt={0.5}>
+                                            <Typography variant="body2">• {item.statement}</Typography>
+                                            {item.details.map(detail => <Typography key={detail} variant="caption" display="block">— {detail}</Typography>)}
+                                        </Box>
+                                    ))}
+                                </Alert>
+                            )}
+                            {preview.uncertainties.length > 0 && (
+                                <Alert severity="info" icon={<QuestionIcon />} sx={{ mb: 2 }}>
+                                    <Typography fontWeight={800}>Điểm chưa rõ</Typography>
+                                    {preview.uncertainties.map(item => <Typography key={item.id} variant="body2">• {item.statement}</Typography>)}
+                                </Alert>
+                            )}
+                            {preview.follow_ups.length > 0 && (
+                                <Box mb={2}>
+                                    <Typography variant="subtitle1" fontWeight={800}>Câu hỏi và việc cần làm tiếp</Typography>
+                                    <AnalysisItemList items={preview.follow_ups} />
+                                </Box>
+                            )}
+                            {preview.gaps.length > 0 && (
+                                <Alert severity="warning" sx={{ mb: 2 }}>
+                                    <Typography fontWeight={800}>Khoảng trống cần kiểm tra</Typography>
+                                    {preview.gaps.map(item => <Typography key={item} variant="body2">• {item}</Typography>)}
+                                </Alert>
+                            )}
+                            {preview.analysis_text && (
+                                <Box mb={2}>
+                                    <Typography variant="subtitle1" fontWeight={800}>Nội dung phân tích</Typography>
+                                    <Typography sx={{ whiteSpace: 'pre-wrap' }}>{preview.analysis_text}</Typography>
+                                </Box>
+                            )}
+                            {preview.state !== 'failed'
+                                && !preview.overview
+                                && !preview.analysis_text
+                                && preview.key_points.length === 0
+                                && preview.participants.length === 0
+                                && preview.entities.length === 0
+                                && preview.events.length === 0
+                                && preview.actions.length === 0
+                                && preview.relationships.length === 0 && (
+                                <Typography color="text.secondary">Chưa có nội dung Analysis để hiển thị.</Typography>
+                            )}
+                        </AccordionDetails>
+                    </Accordion>
+                );
+            })}
         </Box>
     );
 };

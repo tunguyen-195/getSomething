@@ -1,0 +1,124 @@
+{
+  "finished_at": "2026-08-09T05:20:02.877868+00:00",
+  "git_dirty": true,
+  "git_revision": "674ca91d40d3b64d929ade41653fa45f5cc7aef0",
+  "git_untracked": true,
+  "limitations": [
+    "This benchmark isolates contradiction discovery from full T3/T4 replay.",
+    "Thresholds are release gates for this workstation, not universal SLAs."
+  ],
+  "passed": true,
+  "protocol_version": "t4-contradiction-performance-v1.0",
+  "results": [
+    {
+      "candidate_count": 100,
+      "deterministic": true,
+      "grouped_pair_count": 0,
+      "latency_budget_ms": 3000,
+      "latency_ms": 14.586299890652299,
+      "materialized_pair_count": 0,
+      "passed": true,
+      "peak_memory_budget_mib": 192,
+      "peak_memory_mib": 0.08599567413330078,
+      "record_count": 0,
+      "shape": "unique"
+    },
+    {
+      "candidate_count": 100,
+      "deterministic": true,
+      "grouped_pair_count": 2500,
+      "latency_budget_ms": 3000,
+      "latency_ms": 13.569199945777655,
+      "materialized_pair_count": 0,
+      "passed": true,
+      "peak_memory_budget_mib": 192,
+      "peak_memory_mib": 0.13168048858642578,
+      "record_count": 1,
+      "shape": "collision"
+    },
+    {
+      "candidate_count": 500,
+      "deterministic": true,
+      "grouped_pair_count": 0,
+      "latency_budget_ms": 15000,
+      "latency_ms": 76.92270004190505,
+      "materialized_pair_count": 0,
+      "passed": true,
+      "peak_memory_budget_mib": 384,
+      "peak_memory_mib": 0.4257211685180664,
+      "record_count": 0,
+      "shape": "unique"
+    },
+    {
+      "candidate_count": 500,
+      "deterministic": true,
+      "grouped_pair_count": 62500,
+      "latency_budget_ms": 15000,
+      "latency_ms": 67.08159996196628,
+      "materialized_pair_count": 0,
+      "passed": true,
+      "peak_memory_budget_mib": 384,
+      "peak_memory_mib": 0.6168832778930664,
+      "record_count": 1,
+      "shape": "collision"
+    },
+    {
+      "candidate_count": 1000,
+      "deterministic": true,
+      "grouped_pair_count": 0,
+      "latency_budget_ms": 30000,
+      "latency_ms": 160.26319994125515,
+      "materialized_pair_count": 0,
+      "passed": true,
+      "peak_memory_budget_mib": 512,
+      "peak_memory_mib": 0.7818613052368164,
+      "record_count": 0,
+      "shape": "unique"
+    },
+    {
+      "candidate_count": 1000,
+      "deterministic": true,
+      "grouped_pair_count": 250000,
+      "latency_budget_ms": 30000,
+      "latency_ms": 132.27170007303357,
+      "materialized_pair_count": 0,
+      "passed": true,
+      "peak_memory_budget_mib": 512,
+      "peak_memory_mib": 0.980259895324707,
+      "record_count": 1,
+      "shape": "collision"
+    },
+    {
+      "candidate_count": 2000,
+      "deterministic": true,
+      "grouped_pair_count": 0,
+      "latency_budget_ms": 60000,
+      "latency_ms": 332.4793999781832,
+      "materialized_pair_count": 0,
+      "passed": true,
+      "peak_memory_budget_mib": 768,
+      "peak_memory_mib": 1.4442062377929688,
+      "record_count": 0,
+      "shape": "unique"
+    },
+    {
+      "candidate_count": 2000,
+      "deterministic": true,
+      "grouped_pair_count": 1000000,
+      "latency_budget_ms": 60000,
+      "latency_ms": 273.8077000249177,
+      "materialized_pair_count": 0,
+      "passed": true,
+      "peak_memory_budget_mib": 768,
+      "peak_memory_mib": 1.4653863906860352,
+      "record_count": 1,
+      "shape": "collision"
+    }
+  ],
+  "source_hashes": {
+    "claim_semantics.py": "da4b748d6eb0c7619eac106d079d338d98f175c5799a9c711b9a2f76f7623561",
+    "contradictions.py": "6bc874761d6a93e2b49301e38545b491976bef7674cc52bc5925b05054e502ea",
+    "verification_contracts.py": "de1b09abb4a60f5f5dd91f8108f1ab1b69bd83069028cbf2c450bc5638a93bcf"
+  },
+  "started_at": "2026-08-09T05:19:57.219218+00:00"
+}

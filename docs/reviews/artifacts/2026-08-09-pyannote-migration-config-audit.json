@@ -1,7 +1,7 @@
 {
   "schema_version": "rtk-evidence-v1",
   "artifact_type": "pyannote-migration-config-audit",
-  "observed_at": "2026-08-09T17:12:43.147730+07:00",
+  "observed_at": "2026-08-12T02:57:40.079868+07:00",
   "repo_root": "E:\\research\\STT",
   "canonical_workspace": true,
   "scope": "read_only_no_model_download_no_model_activation",
@@ -21,11 +21,11 @@
     "scripts/capture_diarization_primary_sources.py": "d8fa86924dd8818ef3626b7d5e37baebcd3c3426561e363828929be4da82d089",
     "docs/reviews/artifacts/2026-08-09-diarization-primary-source-verification.json": "1a317e5f7f9bba48d0318f9eb3ba0757a12fc28accd0c52ba551f5aa2c1b4cd8",
     "src/services/model_runtime/local_artifacts.py": "500a4679e25de468e14c339a76155a62755eb5d9de630135e6813c4759879767",
-    "src/services/transcription/models/pyannote_manager.py": "c2466b70f83468ee45bd655e5b09782a1a6445d15c91dd82baf178ef81082da8",
-    "src/cherry_core/adapters/diarization/pyannote_adapter.py": "4c742d570fe52d37379d1a767f4db24056f6222f5551cc5b45e1fce99046f800",
-    "src/services/transcription/transcribe_service_v2.py": "9aabe0d0607c1c4866f69ea8975bd3e75c4f27aa2b249099541c8d8a104338dd",
-    "src/services/transcription/cherry_transcription_service.py": "3c6a19a1c007c95ed520d22a2d4dce2d52fbbafb53fb91c308580520f0874759",
-    "src/core/config.py": "1d68f0eba4216d9beecf9cd02bb83da4bdc311eeec0277ed529b3fca36b6865a",
+    "src/services/transcription/models/pyannote_manager.py": "bb6291510483306440b03feff7f7dfae1dac3dbded44185d0e1b72411baa7542",
+    "src/cherry_core/adapters/diarization/pyannote_adapter.py": "74e227941975e53ec8e22ba37f0e2d17918ca30f7ba562d32766dc298a3af7eb",
+    "src/services/transcription/transcribe_service_v2.py": "086171d26af3899d90344a8195a335e5eebb25dae67529c3952aed4124ff51b4",
+    "src/services/transcription/cherry_transcription_service.py": "24671503e131cd8cced67406b325329268ab953ddeb1f0a60a8ce423be89ea63",
+    "src/core/config.py": "bbab8d9e8822f33062441424e0f15739bb4af3f84218ace77946e8a947098431",
     "requirements.txt": "7be256c4ef90c79ff0fbf930da9e7a815bebfd94726861b667697ee38937b230",
     "requirements-torch-cu121.txt": "3bf0ddcd4d004273d2350feadc0340684663c367778df190725f377b97c5fe25"
   },
@@ -47,7 +47,123 @@
   },
   "local_artifacts": {
     "target_root": "E:\\research\\STT\\models\\pyannote",
-    "target_files": [],
+    "target_files": [
+      {
+        "path": "models/pyannote/models--pyannote--segmentation-3.0/blobs/57096acc294a0ddb9282612549056ede76cb8213",
+        "size": 1061,
+        "sha256": "63a777ad4b3c7aed4b260b084d8fb49ec781c46c70c6b599ca5d2402ef7ebe50"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--segmentation-3.0/blobs/c3a7a5be5e67d6d1b1d95af32a4c77d0fe9d6e55",
+        "size": 399,
+        "sha256": "fa65a47a751602f04cc570135007d76859b69e8f9f1bfdf5878a5145980d4263"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--segmentation-3.0/blobs/da85c29829d4002daedd676e012936488234d9255e65e86dfab9bec6b1729298",
+        "size": 5905440,
+        "sha256": "da85c29829d4002daedd676e012936488234d9255e65e86dfab9bec6b1729298"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--segmentation-3.0/blobs/f0e6457c5dce6718669462a674fda832d8a12f90",
+        "size": 4648,
+        "sha256": "a37bc19811cc1a52a4c128c33207813b1558b4e49b050b03e814d0a96d14f05d"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--segmentation-3.0/refs/main",
+        "size": 40,
+        "sha256": "ebeba353f18374df2a2d458ccac960680113e9116a4b0dc680c4c344ab52b7a9"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--segmentation-3.0/snapshots/e66f3d3b9eb0873085418a7b813d3b369bf160bb/config.yaml",
+        "size": 399,
+        "sha256": "fa65a47a751602f04cc570135007d76859b69e8f9f1bfdf5878a5145980d4263"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--segmentation-3.0/snapshots/e66f3d3b9eb0873085418a7b813d3b369bf160bb/LICENSE",
+        "size": 1061,
+        "sha256": "63a777ad4b3c7aed4b260b084d8fb49ec781c46c70c6b599ca5d2402ef7ebe50"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--segmentation-3.0/snapshots/e66f3d3b9eb0873085418a7b813d3b369bf160bb/pytorch_model.bin",
+        "size": 5905440,
+        "sha256": "da85c29829d4002daedd676e012936488234d9255e65e86dfab9bec6b1729298"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--segmentation-3.0/snapshots/e66f3d3b9eb0873085418a7b813d3b369bf160bb/README.md",
+        "size": 4648,
+        "sha256": "a37bc19811cc1a52a4c128c33207813b1558b4e49b050b03e814d0a96d14f05d"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--speaker-diarization-3.1/blobs/1e61b2b23fcd0444f969679396689321d7d6fcc1",
+        "size": 21,
+        "sha256": "bb450fa73fc3f0156f9affea74e66900e42c23c81b9d9da70d30312e28fdf149"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--speaker-diarization-3.1/blobs/5402e3ca79b6cfa5b0ec283eed920cafe45ee39b",
+        "size": 469,
+        "sha256": "04ad9cd59a93c3a7c754200ecc9e1c4ba87bf1657ef8a4debf7555e711daeeda"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--speaker-diarization-3.1/blobs/5a56a40d6b4c14491f009b82924b78ccef6863b4",
+        "size": 10985,
+        "sha256": "8af30a33044bf34a51bbef3d87695c204894d172e9aae6f018417ce0066f0cb5"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--speaker-diarization-3.1/refs/main",
+        "size": 40,
+        "sha256": "bee945510d73adecd0cc02f2446e451f1760e36e964e840759e070d0a25bb7ae"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--speaker-diarization-3.1/snapshots/84fd25912480287da0247647c3d2b4853cb3ee5d/config.yaml",
+        "size": 469,
+        "sha256": "04ad9cd59a93c3a7c754200ecc9e1c4ba87bf1657ef8a4debf7555e711daeeda"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--speaker-diarization-3.1/snapshots/84fd25912480287da0247647c3d2b4853cb3ee5d/README.md",
+        "size": 10985,
+        "sha256": "8af30a33044bf34a51bbef3d87695c204894d172e9aae6f018417ce0066f0cb5"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--speaker-diarization-3.1/snapshots/84fd25912480287da0247647c3d2b4853cb3ee5d/requirements.txt",
+        "size": 21,
+        "sha256": "bb450fa73fc3f0156f9affea74e66900e42c23c81b9d9da70d30312e28fdf149"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--wespeaker-voxceleb-resnet34-LM/blobs/366edf44f4c80889a3eb7a9d7bdf02c4aede3127f7dd15e274dcdb826b143c56",
+        "size": 26645418,
+        "sha256": "366edf44f4c80889a3eb7a9d7bdf02c4aede3127f7dd15e274dcdb826b143c56"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--wespeaker-voxceleb-resnet34-LM/blobs/6b8a7afcd16051587687a13e556a8b0ee587f5ad",
+        "size": 3319,
+        "sha256": "ffc47d6f225a9341771a8304c0b8a354f706184956737661cb2c695e310551e3"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--wespeaker-voxceleb-resnet34-LM/blobs/f6508f3ba9be494115516d34cab74943714b9460",
+        "size": 221,
+        "sha256": "6ff718cff3c5d7a4493537ab7f4780cad7e3d32453f59099b4076aefa07a9974"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--wespeaker-voxceleb-resnet34-LM/refs/main",
+        "size": 40,
+        "sha256": "aa69820e3ecf932b1c1c490c2ff7a476746e68d9a81574d939f60a8fdc3ec0a1"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--wespeaker-voxceleb-resnet34-LM/snapshots/837717ddb9ff5507820346191109dc79c958d614/config.yaml",
+        "size": 221,
+        "sha256": "6ff718cff3c5d7a4493537ab7f4780cad7e3d32453f59099b4076aefa07a9974"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--wespeaker-voxceleb-resnet34-LM/snapshots/837717ddb9ff5507820346191109dc79c958d614/pytorch_model.bin",
+        "size": 26645418,
+        "sha256": "366edf44f4c80889a3eb7a9d7bdf02c4aede3127f7dd15e274dcdb826b143c56"
+      },
+      {
+        "path": "models/pyannote/models--pyannote--wespeaker-voxceleb-resnet34-LM/snapshots/837717ddb9ff5507820346191109dc79c958d614/README.md",
+        "size": 3319,
+        "sha256": "ffc47d6f225a9341771a8304c0b8a354f706184956737661cb2c695e310551e3"
+      }
+    ],
     "legacy_cache_root": "E:\\research\\STT\\models\\pyannote_cache",
     "legacy_cache_files": [
       {
@@ -97,7 +213,7 @@
       }
     ],
     "community_1_snapshot": null,
-    "legacy_3_1_snapshot": null,
+    "legacy_3_1_snapshot": "E:\\research\\STT\\models\\pyannote\\models--pyannote--speaker-diarization-3.1\\snapshots\\84fd25912480287da0247647c3d2b4853cb3ee5d",
     "required_files": [
       "config.yaml",
       "embedding/pytorch_model.bin",
@@ -125,10 +241,10 @@
     },
     "community_1_stack_compatible": false,
     "community_1_code_api_compatible": false,
-    "manager_uses_relative_model_root": true,
-    "adapter_uses_models_dir": true,
+    "manager_uses_relative_model_root": false,
+    "adapter_uses_models_dir": false,
     "runtime_mentions_legacy_cache": false,
-    "manager_requires_full_tree": false,
+    "manager_requires_full_tree": true,
     "adapter_requires_full_tree": false,
     "uses_legacy_use_auth_token_keyword": true,
     "handles_community_1_output_object": false
@@ -203,7 +319,7 @@
   "runtime_log": {
     "path": "E:\\research\\STT\\celery.runtime.e.log",
     "present": true,
-    "observed_size": 27601,
+    "observed_size": 158435,
     "matches": [
       {
         "line": 23,
@@ -216,6 +332,26 @@
       {
         "line": 96,
         "text": "[2026-08-09 16:19:21,021: WARNING/MainProcess] [PYANNOTE_MANAGER] No complete local snapshot; offline strict mode refuses provider fallback"
+      },
+      {
+        "line": 157,
+        "text": "[2026-08-09 19:27:08,702: WARNING/MainProcess] [PYANNOTE_MANAGER] No complete local snapshot; offline strict mode refuses provider fallback"
+      },
+      {
+        "line": 193,
+        "text": "[2026-08-09 21:16:20,229: WARNING/MainProcess] [PYANNOTE_MANAGER] No complete local snapshot; offline strict mode refuses provider fallback"
+      },
+      {
+        "line": 245,
+        "text": "[2026-08-10 06:18:48,098: WARNING/MainProcess] [PYANNOTE_MANAGER] No complete local snapshot; offline strict mode refuses provider fallback"
+      },
+      {
+        "line": 275,
+        "text": "[2026-08-10 06:25:49,292: WARNING/MainProcess] [PYANNOTE_MANAGER] No complete local snapshot; offline strict mode refuses provider fallback"
+      },
+      {
+        "line": 456,
+        "text": "[2026-08-10 06:35:56,761: WARNING/MainProcess] [PYANNOTE_MANAGER] No complete local snapshot; offline strict mode refuses provider fallback"
       }
     ]
   },
@@ -224,7 +360,7 @@
     "current_e_cache_matches_destination": true,
     "community_1_target_snapshot_present": false,
     "community_1_full_required_tree_present": false,
-    "runtime_uses_canonical_model_root": true,
+    "runtime_uses_canonical_model_root": false,
     "runtime_model_root_consistent_and_absolute": false,
     "runtime_resolver_requires_full_tree": false,
     "community_1_runtime_stack_compatible": false,
@@ -245,6 +381,7 @@
     "pyannote_dependency_declared",
     "runtime_model_root_consistent_and_absolute",
     "runtime_resolver_requires_full_tree",
+    "runtime_uses_canonical_model_root",
     "token_source_consistent",
     "torchcodec_dependency_declared"
   ],

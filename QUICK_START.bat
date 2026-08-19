@@ -1,0 +1,86 @@
+@echo off
+chcp 65001 > nul
+echo.
+echo ???????????????????????????????????????????????????????????????????????????????
+echo                    QUICK START - ALL SERVICES
+echo ???????????????????????????????????????????????????????????????????????????????
+echo.
+echo Starting Backend, Celery, and Frontend...
+echo.
+
+cd /d %~dp0
+
+REM Local development defaults. Production must use .env / Docker secrets.
+if not defined ENVIRONMENT set ENVIRONMENT=development
+if not defined DEBUG set DEBUG=true
+if not defined AUTH_ENABLED set AUTH_ENABLED=false
+if not defined INIT_DB_ON_STARTUP set INIT_DB_ON_STARTUP=true
+if not defined ENABLE_API_DOCS set ENABLE_API_DOCS=true
+if not defined SECRET_KEY set SECRET_KEY=local-dev-only-change-before-production-123456789
+if not defined INITIAL_ADMIN_PASSWORD set INITIAL_ADMIN_PASSWORD=local-dev-admin-change-me
+
+REM Check if PostgreSQL is running
+echo [CHECK] Checking PostgreSQL...
+netstat -ano | findstr ":5432" | findstr "LISTENING" >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo [WARNING] PostgreSQL not detected on port 5432
+    echo           Database connection may fail
+    echo           Check: netstat -ano ^| findstr :5432
+    echo.
+) else (
+    echo [OK] PostgreSQL is running
+    echo.
+)
+
+REM Check if Redis is running
+echo [CHECK] Checking Redis...
+netstat -ano | findstr ":6379" | findstr "LISTENING" >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo [WARNING] Redis not detected on port 6379
+    echo           Please ensure Redis/Memurai is running
+    echo           Check: netstat -ano ^| findstr :6379
+    echo.
+) else (
+    echo [OK] Redis is running
+    echo.
+)
+
+REM Start Backend
+echo [1/3] Starting Backend (FastAPI on port 8000)...
+start "Backend - FastAPI" cmd /k "cd /d %~dp0 && venv\Scripts\python.exe -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8000"
+timeout /t 3 /nobreak > nul
+echo [OK] Backend starting...
+echo.
+
+REM Start Celery
+echo [2/3] Starting Celery Worker...
+start "Celery Worker (Gevent)" cmd /k "cd /d %~dp0 && venv\Scripts\python.exe -m celery -A src.worker.worker worker --pool=gevent --concurrency=4 --loglevel=info --logfile=celery.log --without-heartbeat --without-gossip --without-mingle"
+timeout /t 3 /nobreak > nul
+echo [OK] Celery Worker starting...
+echo.
+
+REM Start Frontend
+echo [3/3] Starting Frontend (React + Vite on port 3000)...
+start "Frontend - React" cmd /k "cd /d %~dp0\frontend && npm run dev"
+timeout /t 3 /nobreak > nul
+echo [OK] Frontend starting...
+echo.
+
+echo ???????????????????????????????????????????????????????????????????????????????
+echo                         ALL SERVICES STARTED
+echo ???????????????????????????????????????????????????????????????????????????????
+echo.
+echo Services:
+echo   Backend:  http://localhost:8000
+echo   API Docs: http://localhost:8000/docs
+echo   Frontend: http://localhost:3000
+echo.
+echo 3 windows opened:
+echo   - Backend (FastAPI + Uvicorn)
+echo   - Celery Worker (Background tasks)
+echo   - Frontend (React + Vite)
+echo.
+echo To stop all services, run: STOP_ALL_SERVICES.bat
+echo.
+echo Press any key to close this window (services will keep running)...
+pause > nul

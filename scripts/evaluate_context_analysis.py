@@ -14,7 +14,6 @@ import json
 import math
 import os
 import platform
-import re
 import subprocess
 import sys
 import time
@@ -31,15 +30,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.core.config import settings
-from src.services.summarization.models.context_analysis import CONTEXT_PROMPT_VERSION
-from src.services.summarization.models.investigation_knowledge import (
+from src.core.config import settings  # noqa: E402
+from src.services.summarization.models.context_analysis import (  # noqa: E402
+    CONTEXT_PROMPT_VERSION,
+)
+from src.services.summarization.models.investigation_knowledge import (  # noqa: E402
     GroundedContextAnalysisPayload,
     KNOWLEDGE_SCHEMA_VERSION,
     InvestigationKnowledge,
     build_s1_schema_artifact,
 )
-from scripts.audit_summary_diarization_readiness import (
+from scripts.audit_summary_diarization_readiness import (  # noqa: E402
     _git_index_sha256,
     _plan_package_allowlists,
 )
@@ -124,7 +125,7 @@ def _schema_object_nodes(value: Any) -> list[dict[str, Any]]:
 def _load_staged_llm_manager_module():
     relative = "src/services/summarization/models/llm_manager.py"
     completed = subprocess.run(
-        ["git", "show", f":{relative}"],
+        ["git", "-c", f"safe.directory={PROJECT_ROOT}", "show", f":{relative}"],
         cwd=PROJECT_ROOT,
         check=True,
         capture_output=True,
@@ -259,6 +260,69 @@ def _emit_s1_evidence(output: Path, observed_at: str | None) -> int:
     missing = sorted(path for path, digest in source_hashes.items() if digest is None)
     if missing:
         raise ValueError(f"S1 source paths are not present in the git index: {missing}")
+    worktree_diff = subprocess.run(
+        [
+            "git",
+            "-c",
+            f"safe.directory={PROJECT_ROOT}",
+            "diff",
+            "--quiet",
+            "--",
+            *bound_paths,
+        ],
+        cwd=PROJECT_ROOT,
+        check=False,
+        capture_output=True,
+    )
+    if worktree_diff.returncode != 0:
+        raise ValueError(
+            "S1 schema imports must match the selected git index for every bound path"
+        )
+
+    configured_index = os.environ.get("GIT_INDEX_FILE")
+    if configured_index:
+        index_path = Path(configured_index)
+        if not index_path.is_absolute():
+            index_path = PROJECT_ROOT / index_path
+        index_path = index_path.resolve()
+    else:
+        index_value = subprocess.run(
+            [
+                "git",
+                "-c",
+                f"safe.directory={PROJECT_ROOT}",
+                "rev-parse",
+                "--git-path",
+                "index",
+            ],
+            cwd=PROJECT_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        index_path = Path(index_value)
+        if not index_path.is_absolute():
+            index_path = PROJECT_ROOT / index_path
+        index_path = index_path.resolve()
+    if not index_path.is_file():
+        raise ValueError(f"Selected git index does not exist: {index_path}")
+    git_directory_value = subprocess.run(
+        [
+            "git",
+            "-c",
+            f"safe.directory={PROJECT_ROOT}",
+            "rev-parse",
+            "--git-dir",
+        ],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    git_directory = Path(git_directory_value)
+    if not git_directory.is_absolute():
+        git_directory = PROJECT_ROOT / git_directory
+    canonical_index = (git_directory.resolve() / "index").resolve()
 
     snapshot = build_s1_schema_artifact()
     checks = _s1_contract_checks(snapshot)
@@ -283,15 +347,28 @@ def _emit_s1_evidence(output: Path, observed_at: str | None) -> int:
         "environment": {
             "workspace": str(PROJECT_ROOT),
             "python": platform.python_version(),
+            "packages": _package_versions(("pydantic",)),
             "platform": platform.platform(),
             "git_head": subprocess.run(
-                ["git", "rev-parse", "HEAD"],
+                [
+                    "git",
+                    "-c",
+                    f"safe.directory={PROJECT_ROOT}",
+                    "rev-parse",
+                    "HEAD",
+                ],
                 cwd=PROJECT_ROOT,
                 check=True,
                 capture_output=True,
                 text=True,
             ).stdout.strip(),
             "snapshot": "git_index",
+            "git_index": {
+                "path": str(index_path),
+                "sha256": _sha256_bytes(index_path.read_bytes()),
+                "alternate": index_path != canonical_index,
+                "working_tree_matches_selected_index": True,
+            },
             "model_calls": 0,
             "network_calls": 0,
         },
@@ -838,7 +915,7 @@ def _git_metadata() -> dict[str, Any]:
     def run(*args: str) -> str | None:
         try:
             completed = subprocess.run(
-                ["git", *args],
+                ["git", "-c", f"safe.directory={PROJECT_ROOT}", *args],
                 cwd=PROJECT_ROOT,
                 check=True,
                 capture_output=True,

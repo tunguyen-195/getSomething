@@ -1,5 +1,4 @@
-# Use CUDA 12.1 to match the pinned PyTorch cu121 wheels.
-FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+FROM python:3.11-slim-bookworm
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -8,10 +7,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    python3.10 \
-    python3-pip \
     ffmpeg \
     libsndfile1 \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 RUN ffprobe -version >/dev/null
@@ -21,11 +19,12 @@ WORKDIR /app
 
 # Copy requirements files
 COPY requirements.txt .
+COPY requirements-constraints-py311.txt .
 COPY requirements-torch-cu121.txt .
 
 # Install Python dependencies
-RUN pip3 install --no-cache-dir -r requirements-torch-cu121.txt --index-url https://download.pytorch.org/whl/cu121 \
-    && pip3 install --no-cache-dir -r requirements.txt
+RUN python -m pip install --no-cache-dir --no-deps -r requirements-torch-cu121.txt --index-url https://download.pytorch.org/whl/cu121 \
+    && python -m pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
 COPY . .
@@ -37,4 +36,4 @@ RUN mkdir -p uploads models logs
 EXPOSE 8000
 
 # Run the application
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

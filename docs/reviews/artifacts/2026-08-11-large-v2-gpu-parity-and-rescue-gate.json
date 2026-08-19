@@ -1,0 +1,107 @@
+{
+  "schema_version": "asr-gpu-parity-rescue-gate-v1",
+  "created_at": "2026-08-11T15:22:00+07:00",
+  "workspace": "E:\\research\\STT",
+  "privacy": {
+    "audio_path_included": false,
+    "transcript_text_included": false
+  },
+  "audio": {
+    "sha256": "4e5cd4ae20b0a24ec688acf578e065f71f56de1057dc2421874787d3648d8e19",
+    "duration_seconds": 304.321
+  },
+  "runtime": {
+    "gpu": "NVIDIA GeForce RTX 4070 SUPER",
+    "driver": "591.86",
+    "faster_whisper": "1.2.1",
+    "ctranslate2": "4.6.0",
+    "cuda_device_count": 1,
+    "observed_cudnn_frontend": "9.1.0.70",
+    "observed_cudnn_components": "9.10.2.21",
+    "cudnn_note": "Mixed minor versions remain a reproducibility risk, but the controlled CPU/GPU FP32 result was exact and the reported span reproduced on every tested device."
+  },
+  "primary_model": {
+    "model_id": "Systran/faster-whisper-large-v2",
+    "revision": "f0fe81560cb8b68660e564f55dd99207059c092e",
+    "model_bin_sha256": "bf2a9746382e1aa7ffff6b3a0d137ed9edbd9670c3b87e5d35f5e85e70d0333a",
+    "device": "cuda",
+    "compute_type": "float16",
+    "snapshot_loaded_by_exact_path": true
+  },
+  "primary_vad_parity": {
+    "cpu_float32": {
+      "transcript_sha256": "bff195a407e6635b923253d56b37be787dfa3ab015118d257f664556a7ee4236",
+      "decode_seconds": 268.756
+    },
+    "gpu_float32": {
+      "transcript_sha256": "bff195a407e6635b923253d56b37be787dfa3ab015118d257f664556a7ee4236",
+      "decode_seconds": 28.314
+    },
+    "gpu_float16": {
+      "transcript_sha256": "804454479b9bf3bd5f8ab383cdda248a67675c6570bd94df1dd8581089cd5c1a",
+      "decode_seconds": 19.059
+    },
+    "cpu_gpu_float32_exact_match": true,
+    "gpu_float16_word_disagreement_ratio": 0.00237
+  },
+  "leading_gap_reproduction": {
+    "clip_seconds": [
+      0.0,
+      20.14
+    ],
+    "cpu_float32_sha256": "d27bb645ce9389bc3b166dfb36a02323043ed281d8c6f50741db25f317a66a1d",
+    "gpu_float32_sha256": "d27bb645ce9389bc3b166dfb36a02323043ed281d8c6f50741db25f317a66a1d",
+    "gpu_float16_sha256": "d27bb645ce9389bc3b166dfb36a02323043ed281d8c6f50741db25f317a66a1d",
+    "exact_cross_device_match": true,
+    "gpu_float16_no_speech_probability": 0.474609,
+    "cpu_int8_no_speech_probability": 0.505575,
+    "first_vad_speech_seconds": 19.744,
+    "candidate_outside_voiced_ratio": 0.958,
+    "root_cause": "Forced no-VAD leading-gap decoding plus a threshold-edge precision difference, not a GPU-only model failure."
+  },
+  "implemented_contract": {
+    "model_default": "large-v2",
+    "temperature": 0.0,
+    "condition_on_previous_text": false,
+    "minimum_vad_speech_overlap_ratio": 0.5,
+    "vad_validation_failure_behavior": "withhold_rescue",
+    "phrase_blacklist_used": false
+  },
+  "live_verification": {
+    "task_id": "d59205bd-7955-4143-a721-3cb40ca4ba7c",
+    "celery_task_id": "ee18197f-2511-486b-914c-6e06f1bf982b",
+    "status": "transcribed",
+    "model_id": "Systran/faster-whisper-large-v2",
+    "model_revision": "f0fe81560cb8b68660e564f55dd99207059c092e",
+    "temperature": 0.0,
+    "coverage_rescue_status": "rejected",
+    "candidate_vad_speech_overlap_ratio": 0.021606,
+    "candidate_rejection_reason": "insufficient_vad_speech_overlap",
+    "first_released_segment_start_seconds": 20.2,
+    "first_released_segment_source": "primary_vad",
+    "released_transcript_sha256": "804454479b9bf3bd5f8ab383cdda248a67675c6570bd94df1dd8581089cd5c1a",
+    "released_segment_count": 65,
+    "speaker_count": 2,
+    "processing_seconds": 38.519
+  },
+  "tests": {
+    "targeted_rescue_and_model": "30 passed",
+    "expanded_transcription_diarization_runtime": "52 passed",
+    "py_compile": "passed",
+    "git_diff_check": "passed"
+  },
+  "primary_sources": [
+    "https://github.com/SYSTRAN/faster-whisper/blob/v1.2.1/README.md",
+    "https://github.com/SYSTRAN/faster-whisper/blob/v1.2.1/faster_whisper/transcribe.py",
+    "https://github.com/SYSTRAN/faster-whisper/blob/v1.2.1/faster_whisper/vad.py",
+    "https://github.com/OpenNMT/CTranslate2/issues/1757",
+    "https://github.com/OpenNMT/CTranslate2/issues/1845",
+    "https://github.com/VinAIResearch/PhoWhisper",
+    "https://huggingface.co/Qwen/Qwen3-ASR-1.7B"
+  ],
+  "residual_uncertainty": [
+    "The probe audio has no human reference transcript, so CPU/GPU parity does not establish absolute word accuracy.",
+    "The large-v2 primary still contains contextually suspicious words that require a frozen human-reference Vietnamese product corpus.",
+    "PhoWhisper-large and Qwen3-ASR are researched challengers but are not yet pinned or benchmarked locally."
+  ]
+}

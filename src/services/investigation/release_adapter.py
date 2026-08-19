@@ -100,7 +100,7 @@ def _source_hashes(source_dir: Path, names: frozenset[str]) -> dict[str, str]:
 def _git_output(repository_root: Path, *args: str) -> str:
     try:
         completed = subprocess.run(
-            ["git", *args],
+            ["git", "-c", f"safe.directory={repository_root}", *args],
             cwd=repository_root,
             check=True,
             capture_output=True,

@@ -1,7 +1,7 @@
 {
   "schema_version": "rtk-evidence-v1",
   "artifact_id": "s1-summary-schema",
-  "observed_at": "2026-08-09T19:24:00+07:00",
+  "observed_at": "2026-08-11T19:58:01.410970+00:00",
   "verdict": "PASS",
   "exit_code": 0,
   "command": [
@@ -13,31 +13,40 @@
   "environment": {
     "workspace": "E:\\research\\STT",
     "python": "3.11.9",
+    "packages": {
+      "pydantic": "2.5.2"
+    },
     "platform": "Windows-10-10.0.26200-SP0",
-    "git_head": "ff0886122950a9275e3fab53d066e7e7accb8f92",
+    "git_head": "060f3d7aaef71a863d556c9fd79055e89abd2183",
     "snapshot": "git_index",
+    "git_index": {
+      "path": "E:\\research\\STT\\output\\rtk-index\\s1-r5-20260812-025800382.index",
+      "sha256": "5a3ea640d9a9f826b2d7aece9579247a0942e824dc6971822a6a60e3681d022b",
+      "alternate": true,
+      "working_tree_matches_selected_index": true
+    },
     "model_calls": 0,
     "network_calls": 0
   },
   "source_scope": "git_index",
   "harness_path": "scripts/evaluate_context_analysis.py",
-  "harness_sha256": "6955a2bde3eeec804edecbc0812f074b0aa09363e01ae40d9000d33d66d7e4f2",
+  "harness_sha256": "ab488eaf23b214ab0823574f0aeb83954c2ea1b3cfa9e85f6970a183fa1b35c8",
   "source_sha256": {
-    "docs/plans/2026-08-09-investigative-bulletin-diarization-plan.md": "3949a5e750488931fe2b88e8fa17aaa90842d6d72a0159467e60d2990e26b078",
-    "scripts/audit_summary_diarization_readiness.py": "05388cb0262f2187ee9d681cd563e69f7c3ccd49f11c064b2d7eea481c443912",
-    "scripts/evaluate_context_analysis.py": "6955a2bde3eeec804edecbc0812f074b0aa09363e01ae40d9000d33d66d7e4f2",
-    "src/services/audio_service.py": "9ef3911260dd6e6689fa1a05c0e77ca1669de986fd2d56ea20013a6288520b55",
-    "src/services/summarization/context_service.py": "8e2ef1fbbb05a366077c0843cf6176d65031f65b08aa081adfd897cfb44c666f",
+    "docs/plans/2026-08-09-investigative-bulletin-diarization-plan.md": "36ba90ca8a29824b39cd0a82e5208e39f0e62325ca60c9de61775780b039a9d2",
+    "scripts/audit_summary_diarization_readiness.py": "a73b08e07695271332e7b2b7a3a680af8a40075f24768efffc95ecadf971eec7",
+    "scripts/evaluate_context_analysis.py": "ab488eaf23b214ab0823574f0aeb83954c2ea1b3cfa9e85f6970a183fa1b35c8",
+    "src/services/audio_service.py": "7343fc53508bfa523ea68ca28cc5f3d28dda472fc0703750fabac3dc8f852c43",
+    "src/services/summarization/context_service.py": "7f9f98e6a7adf23694c4efebdc355826e5dd81b9b86efb94498dbb28ab3cc830",
     "src/services/summarization/legacy_context_adapter.py": "3375fe758f989b4cdf01f6c0594f071932fe884930b2d3007bff285a319658b6",
-    "src/services/summarization/models/context_analysis.py": "e5310c72fb941c5263e1767794f5198d8a6291d1ebe89dd19bed921e30df0fae",
-    "src/services/summarization/models/investigation_knowledge.py": "a330fe5f1aa238f7b92770bb42f023c47856e78bad7e3cbf4e9cd96a282be8f5",
-    "src/services/summarization/models/llm_manager.py": "f5dc4f8ab8afd7c84dd162e76a13e11d24cd2663da3bb73c311df9ca5159acf3",
+    "src/services/summarization/models/context_analysis.py": "5561bb99dfdee2e893a7268747cd16e9a0f559bd64fcf9c91ec4c9012887a771",
+    "src/services/summarization/models/investigation_knowledge.py": "dead7a29314a1ea40e15d18456c9c2b95dfb6f97773fcc83f720c2d05c648ef0",
+    "src/services/summarization/models/llm_manager.py": "118d243e97007d28f28ab922bff23ef956d3a4f0f341b2fba530c333009f7c76",
     "src/summarization/summarizer.py": "eb278a46f8965fe36abe9035cea38ea6c301089f8e899609a107d3ea1b5725ad",
     "src/web_interface/app.py": "640bbb9e1a1168f96ef3f8b8478b394c00dfd7a933385bae2fa7255e2c4669c8",
-    "tests/test_context_analysis.py": "9b5c45f783446551946dfa091d0d8d1c4f647176d96868045484f902e54b1653",
+    "tests/test_context_analysis.py": "5ff5da9e93aef63c1d85e8ab7aaa94e1b56956f71ec3f6b720d621d2d986bd9a",
     "tests/test_context_eval_harness.py": "6daa0257621d9f5595045c0ccc6cceb00b4fe03d4588d0e3a45e50639897e8da",
-    "tests/test_investigation_knowledge.py": "6e6cfbff769d45480f00eb1fb5e00d6b8fffc7a819aa22d5465423a1afe7a71c",
-    "tests/test_summary_diarization_audit_harness.py": "863ba02c28b45321e06a20b50df1bb8de42d6518e7398664f001e0d4f2fe300d"
+    "tests/test_investigation_knowledge.py": "1a3b0eb088354714dd9092dae0baaeaec600e45e916736242bb447f28b47f193",
+    "tests/test_summary_diarization_audit_harness.py": "0cf47718b8cd6e22d1202a28661ede614d75c4cb0b20657e700cc4abf4e3f113"
   },
   "checks": {
     "strict_nested_schema": true,
@@ -48,9 +57,9 @@
   },
   "schema_snapshot": {
     "artifact_version": "s1-summary-schema-v1",
-    "context_prompt_version": "investigation-context-v2.4-typed-summary",
-    "knowledge_schema_version": "investigation-knowledge-v1.1",
-    "grounded_context_schema_version": "grounded-context-v1.0",
+    "context_prompt_version": "investigation-context-v2.7-participant-safe-ledger",
+    "knowledge_schema_version": "investigation-knowledge-v1.2",
+    "grounded_context_schema_version": "grounded-context-v1.1",
     "provider_schema": {
       "$defs": {
         "ActionItem": {
@@ -806,6 +815,20 @@
           "title": "Summary",
           "type": "string"
         },
+        "scenario_profile": {
+          "default": "general",
+          "enum": [
+            "general",
+            "financial_asset",
+            "coordination_planning",
+            "threat_coercion",
+            "goods_transport",
+            "public_administration",
+            "incident_conflict"
+          ],
+          "title": "Scenario Profile",
+          "type": "string"
+        },
         "summary_sentences": {
           "items": {
             "$ref": "#/$defs/SummarySentenceDraft"
@@ -896,8 +919,8 @@
           "title": "Analysis Status"
         },
         "prompt_version": {
-          "const": "investigation-context-v2.4-typed-summary",
-          "default": "investigation-context-v2.4-typed-summary",
+          "const": "investigation-context-v2.7-participant-safe-ledger",
+          "default": "investigation-context-v2.7-participant-safe-ledger",
           "title": "Prompt Version"
         },
         "model_generated": {
@@ -1041,6 +1064,59 @@
             "source_sha256"
           ],
           "title": "EvidenceSpan",
+          "type": "object"
+        },
+        "GroundedParticipantRole": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "role_id": {
+              "minLength": 1,
+              "title": "Role Id",
+              "type": "string"
+            },
+            "label": {
+              "minLength": 1,
+              "title": "Label",
+              "type": "string"
+            },
+            "role_type": {
+              "default": "other",
+              "enum": [
+                "occupation",
+                "organization_affiliation",
+                "conversation_role",
+                "relationship",
+                "other"
+              ],
+              "title": "Role Type",
+              "type": "string"
+            },
+            "basis": {
+              "enum": [
+                "explicit_self_statement",
+                "explicit_named_relation",
+                "source_attributed",
+                "trusted_channel_metadata"
+              ],
+              "title": "Basis",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_ids",
+            "role_id",
+            "label",
+            "basis"
+          ],
+          "title": "GroundedParticipantRole",
           "type": "object"
         },
         "GroundedSummarySentence": {
@@ -1418,6 +1494,19 @@
               "title": "Statement",
               "type": "string"
             },
+            "actor": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Actor"
+            },
             "status": {
               "default": "reported",
               "enum": [
@@ -1532,8 +1621,8 @@
               "type": "array"
             },
             "prompt_version": {
-              "const": "investigation-context-v2.4-typed-summary",
-              "default": "investigation-context-v2.4-typed-summary",
+              "const": "investigation-context-v2.7-participant-safe-ledger",
+              "default": "investigation-context-v2.7-participant-safe-ledger",
               "title": "Prompt Version"
             },
             "model_id": {
@@ -1790,6 +1879,213 @@
           "title": "KnowledgeTimelineEntry",
           "type": "object"
         },
+        "ParticipantReference": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "participant_id": {
+              "minLength": 1,
+              "title": "Participant Id",
+              "type": "string"
+            },
+            "participant_kind": {
+              "enum": [
+                "speaker",
+                "mentioned_person"
+              ],
+              "title": "Participant Kind",
+              "type": "string"
+            },
+            "source_speaker_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Source Speaker Ids",
+              "type": "array"
+            },
+            "speaker_binding_state": {
+              "enum": [
+                "verified_cluster",
+                "degraded_unresolved",
+                "unavailable",
+                "not_applicable"
+              ],
+              "title": "Speaker Binding State",
+              "type": "string"
+            },
+            "entity_id": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Entity Id"
+            },
+            "display_name": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Display Name"
+            },
+            "grounded_roles": {
+              "items": {
+                "$ref": "#/$defs/GroundedParticipantRole"
+              },
+              "title": "Grounded Roles",
+              "type": "array"
+            },
+            "identity_basis": {
+              "enum": [
+                "self_identified",
+                "source_attributed",
+                "conversation_role",
+                "anonymous"
+              ],
+              "title": "Identity Basis",
+              "type": "string"
+            },
+            "public_actor_label": {
+              "minLength": 1,
+              "title": "Public Actor Label",
+              "type": "string"
+            },
+            "allowed_reference_forms": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Allowed Reference Forms",
+              "type": "array"
+            },
+            "withheld_identity_reason": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "diarization_degraded",
+                    "diarization_unavailable",
+                    "identity_conflict",
+                    "insufficient_relation_evidence"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Withheld Identity Reason"
+            },
+            "attribution_required": {
+              "default": false,
+              "title": "Attribution Required",
+              "type": "boolean"
+            },
+            "verification_status": {
+              "default": "unverified",
+              "enum": [
+                "unverified",
+                "human_verified"
+              ],
+              "title": "Verification Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_ids",
+            "participant_id",
+            "participant_kind",
+            "speaker_binding_state",
+            "identity_basis",
+            "public_actor_label",
+            "allowed_reference_forms"
+          ],
+          "title": "ParticipantReference",
+          "type": "object"
+        },
+        "ParticipantRegistry": {
+          "additionalProperties": false,
+          "properties": {
+            "source_metadata_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Source Metadata Sha256",
+              "type": "string"
+            },
+            "diarization_status": {
+              "enum": [
+                "success",
+                "degraded",
+                "failed",
+                "unavailable",
+                "disabled"
+              ],
+              "title": "Diarization Status",
+              "type": "string"
+            },
+            "speaker_count_release_status": {
+              "enum": [
+                "verified",
+                "withheld"
+              ],
+              "title": "Speaker Count Release Status",
+              "type": "string"
+            },
+            "verified_speaker_count": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Verified Speaker Count"
+            },
+            "degraded_reasons": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Degraded Reasons",
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "$ref": "#/$defs/ParticipantReference"
+              },
+              "minItems": 1,
+              "title": "Participants",
+              "type": "array"
+            }
+          },
+          "required": [
+            "source_metadata_sha256",
+            "diarization_status",
+            "speaker_count_release_status",
+            "participants"
+          ],
+          "title": "ParticipantRegistry",
+          "type": "object"
+        },
         "SegmentSourceHash": {
           "additionalProperties": false,
           "properties": {
@@ -1802,6 +2098,45 @@
               "pattern": "^[0-9a-f]{64}$",
               "title": "Source Sha256",
               "type": "string"
+            },
+            "start_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Start Seconds"
+            },
+            "end_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "End Seconds"
+            },
+            "speaker_id": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Speaker Id"
             }
           },
           "required": [
@@ -1815,8 +2150,8 @@
       "additionalProperties": false,
       "properties": {
         "schema_version": {
-          "const": "investigation-knowledge-v1.1",
-          "default": "investigation-knowledge-v1.1",
+          "const": "investigation-knowledge-v1.2",
+          "default": "investigation-knowledge-v1.2",
           "title": "Schema Version"
         },
         "evidence_spans": {
@@ -1876,6 +2211,9 @@
           "title": "Hypotheses",
           "type": "array"
         },
+        "participant_registry": {
+          "$ref": "#/$defs/ParticipantRegistry"
+        },
         "provenance": {
           "$ref": "#/$defs/KnowledgeProvenance"
         },
@@ -1898,6 +2236,7 @@
         "relationships",
         "timeline",
         "hypotheses",
+        "participant_registry",
         "provenance",
         "quality",
         "retention",
@@ -1960,8 +2299,8 @@
           "additionalProperties": false,
           "properties": {
             "summary_source": {
-              "const": "summary_sentence_evidence_quotes",
-              "default": "summary_sentence_evidence_quotes",
+              "const": "grounded_summary_sentence_text",
+              "default": "grounded_summary_sentence_text",
               "title": "Summary Source"
             },
             "raw_model_summary_released": {
@@ -1970,8 +2309,8 @@
               "title": "Raw Model Summary Released"
             },
             "projection_version": {
-              "const": "summary-projection-v1",
-              "default": "summary-projection-v1",
+              "const": "summary-projection-v2",
+              "default": "summary-projection-v2",
               "title": "Projection Version"
             },
             "release_authority": {
@@ -2526,6 +2865,59 @@
           "title": "FactItem",
           "type": "object"
         },
+        "GroundedParticipantRole": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "role_id": {
+              "minLength": 1,
+              "title": "Role Id",
+              "type": "string"
+            },
+            "label": {
+              "minLength": 1,
+              "title": "Label",
+              "type": "string"
+            },
+            "role_type": {
+              "default": "other",
+              "enum": [
+                "occupation",
+                "organization_affiliation",
+                "conversation_role",
+                "relationship",
+                "other"
+              ],
+              "title": "Role Type",
+              "type": "string"
+            },
+            "basis": {
+              "enum": [
+                "explicit_self_statement",
+                "explicit_named_relation",
+                "source_attributed",
+                "trusted_channel_metadata"
+              ],
+              "title": "Basis",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_ids",
+            "role_id",
+            "label",
+            "basis"
+          ],
+          "title": "GroundedParticipantRole",
+          "type": "object"
+        },
         "GroundedSummarySentence": {
           "additionalProperties": false,
           "properties": {
@@ -2715,8 +3107,8 @@
           "additionalProperties": false,
           "properties": {
             "schema_version": {
-              "const": "investigation-knowledge-v1.1",
-              "default": "investigation-knowledge-v1.1",
+              "const": "investigation-knowledge-v1.2",
+              "default": "investigation-knowledge-v1.2",
               "title": "Schema Version"
             },
             "evidence_spans": {
@@ -2776,6 +3168,9 @@
               "title": "Hypotheses",
               "type": "array"
             },
+            "participant_registry": {
+              "$ref": "#/$defs/ParticipantRegistry"
+            },
             "provenance": {
               "$ref": "#/$defs/KnowledgeProvenance"
             },
@@ -2798,6 +3193,7 @@
             "relationships",
             "timeline",
             "hypotheses",
+            "participant_registry",
             "provenance",
             "quality",
             "retention",
@@ -3071,6 +3467,19 @@
               "title": "Statement",
               "type": "string"
             },
+            "actor": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Actor"
+            },
             "status": {
               "default": "reported",
               "enum": [
@@ -3185,8 +3594,8 @@
               "type": "array"
             },
             "prompt_version": {
-              "const": "investigation-context-v2.4-typed-summary",
-              "default": "investigation-context-v2.4-typed-summary",
+              "const": "investigation-context-v2.7-participant-safe-ledger",
+              "default": "investigation-context-v2.7-participant-safe-ledger",
               "title": "Prompt Version"
             },
             "model_id": {
@@ -3464,6 +3873,213 @@
           "title": "OpenQuestionItem",
           "type": "object"
         },
+        "ParticipantReference": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Evidence Ids",
+              "type": "array"
+            },
+            "participant_id": {
+              "minLength": 1,
+              "title": "Participant Id",
+              "type": "string"
+            },
+            "participant_kind": {
+              "enum": [
+                "speaker",
+                "mentioned_person"
+              ],
+              "title": "Participant Kind",
+              "type": "string"
+            },
+            "source_speaker_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Source Speaker Ids",
+              "type": "array"
+            },
+            "speaker_binding_state": {
+              "enum": [
+                "verified_cluster",
+                "degraded_unresolved",
+                "unavailable",
+                "not_applicable"
+              ],
+              "title": "Speaker Binding State",
+              "type": "string"
+            },
+            "entity_id": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Entity Id"
+            },
+            "display_name": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Display Name"
+            },
+            "grounded_roles": {
+              "items": {
+                "$ref": "#/$defs/GroundedParticipantRole"
+              },
+              "title": "Grounded Roles",
+              "type": "array"
+            },
+            "identity_basis": {
+              "enum": [
+                "self_identified",
+                "source_attributed",
+                "conversation_role",
+                "anonymous"
+              ],
+              "title": "Identity Basis",
+              "type": "string"
+            },
+            "public_actor_label": {
+              "minLength": 1,
+              "title": "Public Actor Label",
+              "type": "string"
+            },
+            "allowed_reference_forms": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "title": "Allowed Reference Forms",
+              "type": "array"
+            },
+            "withheld_identity_reason": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "diarization_degraded",
+                    "diarization_unavailable",
+                    "identity_conflict",
+                    "insufficient_relation_evidence"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Withheld Identity Reason"
+            },
+            "attribution_required": {
+              "default": false,
+              "title": "Attribution Required",
+              "type": "boolean"
+            },
+            "verification_status": {
+              "default": "unverified",
+              "enum": [
+                "unverified",
+                "human_verified"
+              ],
+              "title": "Verification Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidence_ids",
+            "participant_id",
+            "participant_kind",
+            "speaker_binding_state",
+            "identity_basis",
+            "public_actor_label",
+            "allowed_reference_forms"
+          ],
+          "title": "ParticipantReference",
+          "type": "object"
+        },
+        "ParticipantRegistry": {
+          "additionalProperties": false,
+          "properties": {
+            "source_metadata_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Source Metadata Sha256",
+              "type": "string"
+            },
+            "diarization_status": {
+              "enum": [
+                "success",
+                "degraded",
+                "failed",
+                "unavailable",
+                "disabled"
+              ],
+              "title": "Diarization Status",
+              "type": "string"
+            },
+            "speaker_count_release_status": {
+              "enum": [
+                "verified",
+                "withheld"
+              ],
+              "title": "Speaker Count Release Status",
+              "type": "string"
+            },
+            "verified_speaker_count": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Verified Speaker Count"
+            },
+            "degraded_reasons": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Degraded Reasons",
+              "type": "array"
+            },
+            "participants": {
+              "items": {
+                "$ref": "#/$defs/ParticipantReference"
+              },
+              "minItems": 1,
+              "title": "Participants",
+              "type": "array"
+            }
+          },
+          "required": [
+            "source_metadata_sha256",
+            "diarization_status",
+            "speaker_count_release_status",
+            "participants"
+          ],
+          "title": "ParticipantRegistry",
+          "type": "object"
+        },
         "RelationshipItem": {
           "additionalProperties": false,
           "properties": {
@@ -3570,6 +4186,45 @@
               "pattern": "^[0-9a-f]{64}$",
               "title": "Source Sha256",
               "type": "string"
+            },
+            "start_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Start Seconds"
+            },
+            "end_seconds": {
+              "anyOf": [
+                {
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "End Seconds"
+            },
+            "speaker_id": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Speaker Id"
             }
           },
           "required": [
@@ -3620,6 +4275,20 @@
         "summary": {
           "minLength": 1,
           "title": "Summary",
+          "type": "string"
+        },
+        "scenario_profile": {
+          "default": "general",
+          "enum": [
+            "general",
+            "financial_asset",
+            "coordination_planning",
+            "threat_coercion",
+            "goods_transport",
+            "public_administration",
+            "incident_conflict"
+          ],
+          "title": "Scenario Profile",
           "type": "string"
         },
         "summary_sentences": {
@@ -3712,8 +4381,8 @@
           "title": "Analysis Status"
         },
         "prompt_version": {
-          "const": "investigation-context-v2.4-typed-summary",
-          "default": "investigation-context-v2.4-typed-summary",
+          "const": "investigation-context-v2.7-participant-safe-ledger",
+          "default": "investigation-context-v2.7-participant-safe-ledger",
           "title": "Prompt Version"
         },
         "model_generated": {
@@ -3727,16 +4396,16 @@
           "title": "Requires Human Verification"
         },
         "schema_version": {
-          "const": "grounded-context-v1.0",
-          "default": "grounded-context-v1.0",
+          "const": "grounded-context-v1.1",
+          "default": "grounded-context-v1.1",
           "title": "Schema Version"
         },
         "investigation_knowledge": {
           "$ref": "#/$defs/InvestigationKnowledge"
         },
         "summary_projection_source": {
-          "const": "summary_sentence_evidence_quotes",
-          "default": "summary_sentence_evidence_quotes",
+          "const": "grounded_summary_sentence_text",
+          "default": "grounded_summary_sentence_text",
           "title": "Summary Projection Source"
         },
         "compatibility": {
@@ -3761,6 +4430,8 @@
       "source_hash_manifest_bound": true,
       "raw_model_summary_is_release_authority": false,
       "raw_model_sentence_text_released": false,
+      "grounded_model_sentence_text_released": true,
+      "grounded_model_sentence_text_requires_grounding_gate": true,
       "final_envelope_revalidated": true,
       "legacy_coercion_in_provider_path": false,
       "per_claim_semantic_attestation_complete": false,

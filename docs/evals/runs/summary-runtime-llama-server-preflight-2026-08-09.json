@@ -1,0 +1,141 @@
+{
+  "generated_at": "2026-08-09T06:28:28.864981+00:00",
+  "protocol": "local-summary-runtime-v1",
+  "quality_claim": "SYNTHETIC_RUNTIME_GATE_ONLY_NO_PRODUCTION_QUALITY_CLAIM",
+  "config": {
+    "cases": "tests\\eval\\context_cases.jsonl",
+    "models": [
+      "speechintel-qwen3-8b-q4_k_m"
+    ],
+    "provider": "llama_cpp_server",
+    "base_url": "http://127.0.0.1:8088",
+    "case_ids": null,
+    "max_cases": null,
+    "warmup": 1,
+    "repetitions": 3,
+    "load_states": [
+      "warm"
+    ],
+    "summary_type": "investigation",
+    "summary_max_length": 240,
+    "summary_min_length": 60,
+    "min_free_vram_mib": null,
+    "min_remaining_vram_mib": 1024,
+    "safety_headroom_mib": 1536,
+    "resource_poll_seconds": 0.25,
+    "lease_timeout_seconds": 5.0,
+    "preflight_only": true,
+    "measure_ttft": false,
+    "output": "docs\\evals\\runs\\summary-runtime-llama-server-preflight-2026-08-09.json"
+  },
+  "runtime": {
+    "python": "3.11.9",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "logical_cpu_count": 16,
+    "git": {
+      "revision": "674ca91d40d3b64d929ade41653fa45f5cc7aef0",
+      "tracked_worktree_dirty": true
+    }
+  },
+  "provenance": {
+    "fixture": {
+      "path": "tests\\eval\\context_cases.jsonl",
+      "size_bytes": 9365,
+      "sha256": "bbf49670ea25c44e534f20e3fc6ea75d48bdd838bfbfbb84efba43a868fcb3c9"
+    },
+    "prompt_versions": {
+      "context": "investigation-context-v2.2-adaptive-sparse",
+      "summary": "investigation-summary-v2.1-bounded"
+    },
+    "schema_versions": {
+      "investigation_knowledge": "investigation-knowledge-v1.0",
+      "context_schema_sha256": "b8bc03d5da117363af86daa79429dd823503269a974523d81e6e1381ba9ec37c"
+    },
+    "source_sha256": {
+      "llm_manager": "c0f99903b16e7a57e31e318f7009db33b37b01840ee8c0fb3cac63f366ad4f59",
+      "summary_service": "a83fd4013aa1830c1b7cf5fbff5746796b91c1aa415727e5e418a273d1a52cbc",
+      "context_evaluator": "7133cec9e4935f5963bbf92d0e3b98e2c019219931ca5ad5c92465725dd6ac9b",
+      "benchmark": "54fc2fdf35f4b873d65c5302fe7578e9ea1de27fa0c11591e5fde01b8346969e"
+    }
+  },
+  "dataset": {
+    "case_count": 8,
+    "case_ids": [
+      "benign_schedule",
+      "explicit_transfer",
+      "ambiguous_metaphor",
+      "missing_evidence",
+      "conflicting_times",
+      "negated_transfer",
+      "prompt_injection",
+      "vi_en_code_switch"
+    ],
+    "categories": [
+      "ambiguous",
+      "benign",
+      "code_switching",
+      "conflict",
+      "explicit_absence",
+      "financial_account",
+      "negation",
+      "prompt_injection"
+    ]
+  },
+  "preflight": {
+    "status": "FAIL_PRECONDITION",
+    "failures": [
+      "LLAMA_SERVER_UNAVAILABLE",
+      "MODEL_NOT_LOADED:speechintel-qwen3-8b-q4_k_m"
+    ],
+    "resource_blocks": [],
+    "provider": "llama_cpp_server",
+    "gpu": {
+      "available": true,
+      "gpus": [
+        {
+          "index": 0,
+          "name": "NVIDIA GeForce RTX 4070 SUPER",
+          "memory_total_mib": 12282,
+          "memory_used_mib": 9338,
+          "memory_free_mib": 2660,
+          "utilization_percent": 22
+        }
+      ]
+    },
+    "runtime": {
+      "available": false,
+      "base_url": "http://127.0.0.1:8088",
+      "models": {
+        "speechintel-qwen3-8b-q4_k_m": {
+          "installed": false,
+          "binding_verified": false,
+          "digest": null,
+          "size_bytes": null,
+          "template_sha256": null,
+          "owned_by": null
+        }
+      },
+      "errors": [
+        "health:ConnectionError"
+      ],
+      "props": {
+        "model_path_binding_verified": false
+      }
+    },
+    "models": {
+      "speechintel-qwen3-8b-q4_k_m": {
+        "installed": false,
+        "loaded": false,
+        "required_free_vram_mib": 1024,
+        "observed_free_vram_mib": 2660,
+        "resource_ready": false,
+        "binding_verified": false,
+        "digest": null,
+        "size_bytes": null,
+        "template_sha256": null
+      }
+    }
+  },
+  "models": {},
+  "overall_status": "FAIL_PRECONDITION"
+}

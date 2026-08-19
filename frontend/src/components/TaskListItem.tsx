@@ -34,6 +34,7 @@ import 'react-h5-audio-player/lib/styles.css';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { useState } from 'react';
 import { projectInvestigationSummaryContext } from '../utils/investigationProjection';
+import { sanitizeSummaryDisplayText } from '../utils/summaryDisplay';
 
 interface Task {
   id: string;
@@ -109,6 +110,9 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
 }) => {
   const transcript = task.result?.transcription || task.result?.text || task.transcript || '';
   const summary = task.result?.summary || task.summary || '';
+  const displaySummary = task.result?.summary_state === 'grounded_transcript_only'
+    ? ''
+    : sanitizeSummaryDisplayText(summary);
   const requestedEngine = task.result?.requested_engine;
   const engineUsed = task.result?.engine_used;
   const fallbackReason = task.result?.fallback_reason;
@@ -178,7 +182,7 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
           </Grid>
           <Grid item xs={12} sm={3} md={3} lg={3}>
             <Typography variant="body2" color="primary" fontWeight={500}>Tóm tắt:</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap', maxHeight: 120, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical' }}>{summary || 'Không có tóm tắt'}</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap', maxHeight: 120, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical' }}>{displaySummary || 'Không có tóm tắt'}</Typography>
           </Grid>
           <Grid item xs={12} sm={2} md={2} lg={2}>
             <Tooltip title="Xem chi tiết">
@@ -204,7 +208,12 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
             <Tab label="Nội dung đầy đủ" />
           </Tabs>
           {tab === 0 && (
-            <InvestigationSummaryCard summary={task.result?.summary} contextAnalysis={safeContextAnalysis} taskId={task.result?.task_id || task.id} />
+            <InvestigationSummaryCard
+              summary={task.result?.summary}
+              contextAnalysis={safeContextAnalysis}
+              taskId={task.result?.task_id || task.id}
+              summaryState={task.result?.summary_state}
+            />
           )}
           {tab === 1 && (
             <Grid container spacing={2}>
@@ -216,7 +225,7 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
                       <SummarizeIcon sx={{ mr: 1, color: '#1976d2' }} />Tóm tắt chi tiết
                     </Typography>
                     <Tooltip title={copiedSummary ? 'Đã copy!' : 'Copy summary'}>
-                      <Button size="small" variant="outlined" color={copiedSummary ? 'success' : 'primary'} sx={{ ml: 2 }} startIcon={<ContentCopyIcon />} onClick={() => { navigator.clipboard.writeText(summary); setCopiedSummary(true); setTimeout(() => setCopiedSummary(false), 1500); }}>{copiedSummary ? 'Đã copy' : 'Copy'}</Button>
+                      <Button size="small" variant="outlined" color={copiedSummary ? 'success' : 'primary'} sx={{ ml: 2 }} startIcon={<ContentCopyIcon />} onClick={() => { navigator.clipboard.writeText(displaySummary); setCopiedSummary(true); setTimeout(() => setCopiedSummary(false), 1500); }}>{copiedSummary ? 'Đã copy' : 'Copy'}</Button>
                     </Tooltip>
                   </Box>
                   <Typography
@@ -224,7 +233,7 @@ const TaskListItem: React.FC<TaskListItemProps> = ({
                     color="text.primary"
                     sx={{ whiteSpace: 'pre-wrap', fontWeight: 500, fontSize: 16 }}
                   >
-                    {summary || 'Không có tóm tắt'}
+                    {displaySummary || 'Không có tóm tắt'}
                   </Typography>
                 </Card>
               </Grid>

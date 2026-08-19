@@ -1,3 +1,34 @@
+x-ai-runtime-environment: &ai-runtime-environment
+  LOCAL_LLM_PROVIDER: llama_cpp_server
+  LLAMA_SERVER_BASE_URL: ${CONTAINER_LLAMA_SERVER_BASE_URL:?CONTAINER_LLAMA_SERVER_BASE_URL is required}
+  LLAMA_SERVER_MODEL: ${LLAMA_SERVER_MODEL:-speechintel-qwen3-8b-q4_k_m}
+  LLAMA_SERVER_MODEL_PATH: ${CONTAINER_LLAMA_SERVER_MODEL_PATH:?CONTAINER_LLAMA_SERVER_MODEL_PATH is required and must match the sidecar /props model_path}
+  LLAMA_SERVER_API_KEY: ${LLAMA_SERVER_API_KEY:?LLAMA_SERVER_API_KEY is required for a container-reachable llama-server}
+  LLAMA_SERVER_CONTEXT_SIZE: ${LLAMA_SERVER_CONTEXT_SIZE:-12288}
+  LLAMA_SERVER_MINIMUM_FREE_VRAM_MIB: ${LLAMA_SERVER_MINIMUM_FREE_VRAM_MIB:-7000}
+  LLAMA_SERVER_SLEEP_IDLE_SECONDS: ${LLAMA_SERVER_SLEEP_IDLE_SECONDS:-2}
+  LLAMA_SERVER_SLEEP_WAIT_SECONDS: ${LLAMA_SERVER_SLEEP_WAIT_SECONDS:-15}
+  OFFLINE_STRICT: ${OFFLINE_STRICT:-true}
+  HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
+  TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-1}
+  LLM_SEED: ${LLM_SEED:-42}
+  LLM_CONNECT_TIMEOUT_SECONDS: ${LLM_CONNECT_TIMEOUT_SECONDS:-10}
+  LLM_READ_TIMEOUT_SECONDS: ${LLM_READ_TIMEOUT_SECONDS:-600}
+  LLM_HEALTH_CACHE_SECONDS: ${LLM_HEALTH_CACHE_SECONDS:-10}
+  SUMMARY_SINGLE_PASS_INVESTIGATION: ${SUMMARY_SINGLE_PASS_INVESTIGATION:-true}
+  GPU_LEASE_ENABLED: ${GPU_LEASE_ENABLED:-true}
+  GPU_LEASE_PATH: ${GPU_LEASE_PATH:-logs/runtime/gpu.lock}
+  GPU_LEASE_TIMEOUT_SECONDS: ${GPU_LEASE_TIMEOUT_SECONDS:-900}
+  UNLOAD_MODELS_AFTER_TASK: ${UNLOAD_MODELS_AFTER_TASK:-true}
+  TRANSCRIPTION_ENGINE: ${TRANSCRIPTION_ENGINE:-legacy}
+  WHISPER_MODEL: ${WHISPER_MODEL:-large-v2}
+  WHISPER_USE_LOCAL: ${WHISPER_USE_LOCAL:-true}
+  WHISPER_MODEL_PATH: ${WHISPER_MODEL_PATH:-models/whisper}
+  WHISPER_FAST_MODE: ${WHISPER_FAST_MODE:-false}
+  WHISPER_DEVICE: ${WHISPER_DEVICE:-cuda}
+  WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-float16}
+  WHISPER_BEAM_SIZE: ${WHISPER_BEAM_SIZE:-10}
+
 services:
   backend:
     build:
@@ -7,10 +38,12 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - .:/app
-      - ./models:/app/models
+      - ./models:/app/models:ro
+      - ./models:/models:ro
       - ./uploads:/app/uploads
       - ./storage/audio:/app/storage/audio
     environment:
+      <<: *ai-runtime-environment
       BACKEND_HOST: 0.0.0.0
       BACKEND_PORT: 8000
       ENVIRONMENT: ${ENVIRONMENT:-development}
@@ -30,7 +63,6 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:8000}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
-      TRANSCRIPTION_ENGINE: ${TRANSCRIPTION_ENGINE:-auto}
       ENABLE_HIGH_RISK_AI_FIELDS: ${ENABLE_HIGH_RISK_AI_FIELDS:-false}
       STORE_RAW_LLM_RESPONSES: ${STORE_RAW_LLM_RESPONSES:-false}
       AI_CONTEXT_RETENTION_DAYS: ${AI_CONTEXT_RETENTION_DAYS:-90}
@@ -71,13 +103,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    command: celery -A src.worker worker --loglevel=info
+    command: python -m celery -A src.worker.worker worker --pool=solo --concurrency=1 --loglevel=info --without-heartbeat --without-gossip --without-mingle
     volumes:
       - .:/app
-      - ./models:/app/models
+      - ./models:/app/models:ro
+      - ./models:/models:ro
       - ./uploads:/app/uploads
       - ./storage/audio:/app/storage/audio
     environment:
+      <<: *ai-runtime-environment
       ENVIRONMENT: ${ENVIRONMENT:-development}
       DEBUG: ${DEBUG:-true}
       AUTH_ENABLED: ${AUTH_ENABLED:-true}
@@ -89,7 +123,6 @@ services:
       REDIS_PORT: 6379
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
-      TRANSCRIPTION_ENGINE: ${TRANSCRIPTION_ENGINE:-auto}
       ENABLE_HIGH_RISK_AI_FIELDS: ${ENABLE_HIGH_RISK_AI_FIELDS:-false}
       STORE_RAW_LLM_RESPONSES: ${STORE_RAW_LLM_RESPONSES:-false}
       AI_CONTEXT_RETENTION_DAYS: ${AI_CONTEXT_RETENTION_DAYS:-90}

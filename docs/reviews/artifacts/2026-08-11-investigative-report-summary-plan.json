@@ -1,0 +1,161 @@
+{
+  "schema_version": "rtk-evidence-v1",
+  "artifact_id": "2026-08-11-investigative-report-summary-plan",
+  "observed_at": "2026-08-11T22:17:31.2491270+07:00",
+  "verdict": "PASS",
+  "verdict_scope": "research, current-state audit, and implementation plan only; S2 product implementation remains blocked",
+  "workspace": "E:\\research\\STT",
+  "git": {
+    "branch": "feature/architecture-refactor",
+    "head": "a6acc3398378706201c229647ece496d5f9cd594",
+    "upstream_ahead": 0,
+    "upstream_behind": 0,
+    "worktree_dirty": true
+  },
+  "runtime": {
+    "backend_health": 200,
+    "frontend_http": 200,
+    "celery_nodes": 1,
+    "celery_ping": "pong",
+    "postgres_listener": true,
+    "redis_listener": true,
+    "canonical_workspace_only": true
+  },
+  "plan": {
+    "path": "docs/plans/2026-08-11-investigative-summary-product-implementation-plan.md",
+    "sha256": "ad166d8d39e5c89592307c2da9126c47593bef14e906ae80bd790cea4f435e60",
+    "bytes": 25071,
+    "required_sections_present": true,
+    "trailing_whitespace_count": 0
+  },
+  "current_implementation": {
+    "writer_path": "src/services/summarization/bulletin_writer.py",
+    "writer_sha256": "ccd33248f1d497c65b131e1037f528b18e9007ba4001b91563207d67e62c6bee",
+    "writer_test_sha256": "d286287be4f8439a645355c48c6b28650bbe821f06d44057aab8370c2cb2e1d7",
+    "public_validator_accepts_first_person_samples": 3,
+    "targeted_positive_tests_preserving_dialogue_voice": {
+      "passed": 3,
+      "failed": 0
+    },
+    "live_task_d592": {
+      "status": "summarized",
+      "writer_status": "accepted",
+      "summary_words": 248,
+      "sentence_records": 14,
+      "records_with_dialogue_markers": 11,
+      "exact_normalized_source_substrings": 3,
+      "records_with_at_least_80_percent_bound_evidence_token_copy": 11
+    },
+    "live_task_cd6": {
+      "status": "failed",
+      "typed_code": "INVESTIGATION_WRITER_REJECTED",
+      "llm_calls": 2,
+      "expected_recovery_calls": 3,
+      "delta_repair_reached": false
+    }
+  },
+  "root_causes": [
+    "No positive third-person report-voice contract at the release gate.",
+    "Grounding allows conversational pronouns but does not provide host-owned public actor labels with provenance.",
+    "Planner produces row-like short slots instead of multi-obligation narrative packets.",
+    "No chronology, entity-continuity, punctuation, or anti-copy critic.",
+    "Replay verification proves availability and state but not report quality.",
+    "Raw-keyword scenario routing has Vietnamese diacritic-collision false positives."
+  ],
+  "independent_review": {
+    "research_agent": "summary_model_research",
+    "audit_agent": "summary_analysis_debug",
+    "both_read_only": true,
+    "agreement": "root cause is host planning and deterministic release gates, not only prompt wording or model size",
+    "first_plan_audit": "FAIL",
+    "corrections_applied": [
+      "R0 now reports report_quality as NOT_EVALUATED or BLOCKED until the R5 shared validator exists.",
+      "Packet count is adaptive; 3-5 is a normal target rather than a global invariant.",
+      "R8 now freezes corpus paths, 48-case composition, hashes, rubric, three reviewers, adjudication, inter-rater agreement, repeats, seeds, and promotion tie rules.",
+      "R3 now defines duration, chunk, context, latency, RAM, VRAM, and OOM benchmark ceilings.",
+      "S2 completion now requires R0 through R9."
+    ]
+  },
+  "local_primary_sources": [
+    {
+      "id": "UNODC_CRIMINAL_INTELLIGENCE",
+      "path": "output/research/analysis-visualization-20260810/sources/UNODC-Criminal-Intelligence-for-Analysts.pdf",
+      "sha256": "46c5be43ea996cb257cacbc26e7fb5b692d9c0ed7b13de59d338c1b5fb3ab3e5"
+    },
+    {
+      "id": "NIST_AI_RMF",
+      "path": "output/research/analysis-visualization-20260810/sources/NIST-AI-RMF-1.0.pdf",
+      "sha256": "7576edb531d9848825814ee88e28b1795d3a84b435b4b797d3670eafdc4a89f1"
+    }
+  ],
+  "online_sources_verified": [
+    {
+      "id": "Qwen/Qwen3-8B-GGUF",
+      "url": "https://huggingface.co/api/models/Qwen/Qwen3-8B-GGUF",
+      "status": 200,
+      "revision": "7c41481f57cb95916b40956ab2f0b139b296d974",
+      "license": "apache-2.0"
+    },
+    {
+      "id": "google/gemma-4-E4B-it-qat-q4_0-gguf",
+      "url": "https://huggingface.co/api/models/google/gemma-4-E4B-it-qat-q4_0-gguf",
+      "status": 200,
+      "revision": "4b4a2c1d584be7264f87aac328a1bc739ce81b6c",
+      "license": "apache-2.0"
+    },
+    {
+      "id": "google/gemma-4-12B-it-qat-q4_0-gguf",
+      "url": "https://huggingface.co/api/models/google/gemma-4-12B-it-qat-q4_0-gguf",
+      "status": 200,
+      "revision": "29d097773436b69ff9feafd636ab4cf873786537",
+      "license": "apache-2.0"
+    },
+    {
+      "id": "Qwen/Qwen3.5-9B",
+      "url": "https://huggingface.co/api/models/Qwen/Qwen3.5-9B",
+      "status": 200,
+      "revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
+      "license": "apache-2.0"
+    },
+    {
+      "id": "llama.cpp server README",
+      "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/README.md",
+      "status": 200,
+      "sha256": "8a5e9d2182943087e3d8d090b01b79df7d6f1381f74e6e09501f761755255a37",
+      "verified_capability": "grammar and JSON-schema constrained generation"
+    },
+    {
+      "id": "Microsoft GraphRAG query overview",
+      "url": "https://microsoft.github.io/graphrag/query/overview/",
+      "status": 200,
+      "sha256": "ff573b190a91e325b672e7b2c9524cb20e3562020cbaa07d41f0e590f58b5054"
+    }
+  ],
+  "research_techniques": [
+    "plan-before-realization",
+    "entity-chain and guided generation",
+    "hierarchical map-merge summarization",
+    "atomic factual support evaluation",
+    "entity-density planning",
+    "long-context middle-position coverage",
+    "schema-constrained output"
+  ],
+  "verification_commands": [
+    "Get-Content docs/handoffs/2026-08-09-new-workspace-handoff.md -Raw",
+    "Get-Content docs/reviews/2026-08-09-workspace-migration-audit.md -Raw",
+    "git -c safe.directory=E:/research/STT status --short --branch",
+    "Invoke-RestMethod https://huggingface.co/api/models/<model-id>",
+    "Invoke-WebRequest https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/README.md",
+    "Invoke-WebRequest https://microsoft.github.io/graphrag/query/overview/",
+    ".\\venv\\Scripts\\python.exe -m pytest -q -p no:cacheprovider tests/test_investigative_bulletin_quality.py::test_writer_accepts_report_paraphrase_with_phone_spacing_and_number_aliases tests/test_investigative_bulletin_quality.py::test_writer_resolves_service_pronoun_from_grounded_participant_context tests/test_investigative_bulletin_quality.py::test_writer_keeps_future_scoped_after_discourse_transition",
+    "git -c safe.directory=E:/research/STT diff --check"
+  ],
+  "next_task": "S2-R0: expose safe scoped apply diagnostics, enable bounded delta repair, and report quality as NOT_EVALUATED or BLOCKED until the R5 shared report validator exists",
+  "residual_uncertainty": [
+    "No new writer implementation or live LLM quality run was performed in this planning task.",
+    "Anti-copy thresholds are initial values and must be calibrated on the frozen Vietnamese product corpus.",
+    "Diarization quality remains a separate blocker and affects confidence in participant labels.",
+    "Human CAND-style report review corpus and blinded reviewer gate are not yet available.",
+    "Existing S2 PASS artifacts do not bind the current writer hash and cannot prove third-person report quality."
+  ]
+}

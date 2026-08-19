@@ -31,7 +31,7 @@ from src.services.investigation.evidence_selector import (
     verify_evidence_selector_artifact,
 )
 from src.services.investigation.run_contracts import (
-    build_trusted_investigation_validation_context_from_artifacts,
+    _build_trusted_investigation_validation_context_from_artifacts,
 )
 from src.services.investigation.source_revision import (
     NORMALIZATION_VERSION,
@@ -836,7 +836,7 @@ def test_only_replayed_artifact_builds_production_trusted_selector_context():
     _, revision = _duplicate_revision()
     artifact = _artifact(revision)
     verified = verify_evidence_selector_artifact(artifact, revision)
-    context = build_trusted_investigation_validation_context_from_artifacts(
+    context = _build_trusted_investigation_validation_context_from_artifacts(
         selector_artifacts={"ver-1": verified},
         relationship_selector_artifacts={},
         risk_assessments={},
@@ -880,7 +880,7 @@ def test_only_replayed_artifact_builds_production_trusted_selector_context():
                 provenance.model_copy(update={"segment_count": "one"})
             )
     with pytest.raises(TypeError, match="verified T2 artifact"):
-        build_trusted_investigation_validation_context_from_artifacts(
+        _build_trusted_investigation_validation_context_from_artifacts(
             selector_artifacts={"ver-1": artifact},  # type: ignore[dict-item]
             relationship_selector_artifacts={},
             risk_assessments={},
@@ -907,7 +907,7 @@ def test_relationship_artifact_uses_separate_trusted_registry_and_kind_gate():
         requests=[_request(revision)],
     )
     verified = verify_evidence_selector_artifact(relationship_artifact, revision)
-    context = build_trusted_investigation_validation_context_from_artifacts(
+    context = _build_trusted_investigation_validation_context_from_artifacts(
         selector_artifacts={},
         relationship_selector_artifacts={"rel-1": verified},
         risk_assessments={},
@@ -920,7 +920,7 @@ def test_relationship_artifact_uses_separate_trusted_registry_and_kind_gate():
         relationship_artifact.artifact_id
     )
     with pytest.raises(ValueError, match="subject kind mismatch"):
-        build_trusted_investigation_validation_context_from_artifacts(
+        _build_trusted_investigation_validation_context_from_artifacts(
             selector_artifacts={"rel-1": verified},
             relationship_selector_artifacts={},
             risk_assessments={},
@@ -929,7 +929,7 @@ def test_relationship_artifact_uses_separate_trusted_registry_and_kind_gate():
             manifest_sha256="0" * 64,
         )
     with pytest.raises(ValueError, match="subject_ref does not match"):
-        build_trusted_investigation_validation_context_from_artifacts(
+        _build_trusted_investigation_validation_context_from_artifacts(
             selector_artifacts={},
             relationship_selector_artifacts={"rel-other": verified},
             risk_assessments={},

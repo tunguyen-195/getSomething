@@ -1,0 +1,17 @@
+npm warn deprecated react-flow-renderer@10.3.17: react-flow-renderer has been renamed to reactflow, please use this package from now on https://reactflow.dev/docs/guides/migrate-to-v11/
+npm warn deprecated @mui/base@5.0.0-beta.40-1: This package has been replaced by @base-ui-components/react
+
+added 322 packages, and audited 323 packages in 26s
+
+59 packages are looking for funding
+  run `npm fund` for details
+
+18 vulnerabilities (1 low, 3 moderate, 14 high)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.

@@ -1,0 +1,116 @@
+﻿{
+    "schema_version":  1,
+    "gate":  "new-machine-development-staging-preflight",
+    "generated_at_utc":  "2026-08-13T19:40:28.1684304Z",
+    "repo_root":  "E:\\research\\STT-release-candidate-final2-20260814",
+    "hardware_profile":  "cpu",
+    "production_offline_bundle_status":  "BLOCKED",
+    "status":  "FAIL",
+    "required_failures":  3,
+    "checks":  [
+                   {
+                       "name":  "python.venv",
+                       "status":  "FAIL",
+                       "required":  true,
+                       "expected":  "venv\\Scripts\\python.exe exists",
+                       "observed":  "E:\\research\\STT-release-candidate-final2-20260814\\venv\\Scripts\\python.exe",
+                       "remediation":  "Create the venv with Python 3.11 and install the pinned dependencies."
+                   },
+                   {
+                       "name":  "frontend.node",
+                       "status":  "PASS",
+                       "required":  true,
+                       "expected":  "Node.js 22.x (validated: 22.22.2)",
+                       "observed":  "v22.22.2",
+                       "remediation":  ""
+                   },
+                   {
+                       "name":  "frontend.npm",
+                       "status":  "PASS",
+                       "required":  true,
+                       "expected":  "npm 10+ (validated: 11.17.0)",
+                       "observed":  "11.17.0",
+                       "remediation":  ""
+                   },
+                   {
+                       "name":  "frontend.node_modules",
+                       "status":  "PASS",
+                       "required":  true,
+                       "expected":  "frontend\\node_modules created by npm ci",
+                       "observed":  "E:\\research\\STT-release-candidate-final2-20260814\\frontend\\node_modules",
+                       "remediation":  ""
+                   },
+                   {
+                       "name":  "media.ffmpeg",
+                       "status":  "PASS",
+                       "required":  true,
+                       "expected":  "ffmpeg is available in PATH",
+                       "observed":  "C:\\Users\\Admin\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-7.1.1-full_build\\bin\\ffmpeg.exe",
+                       "remediation":  ""
+                   },
+                   {
+                       "name":  "media.ffprobe",
+                       "status":  "PASS",
+                       "required":  true,
+                       "expected":  "ffprobe is available in PATH",
+                       "observed":  "C:\\Users\\Admin\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-7.1.1-full_build\\bin\\ffprobe.exe",
+                       "remediation":  ""
+                   },
+                   {
+                       "name":  "storage.free-space",
+                       "status":  "PASS",
+                       "required":  true,
+                       "expected":  "at least 4 GiB operational headroom after artifact installation",
+                       "observed":  "1,054.86 GiB",
+                       "remediation":  ""
+                   },
+                   {
+                       "name":  "config.env-file",
+                       "status":  "FAIL",
+                       "required":  true,
+                       "expected":  ".env exists",
+                       "observed":  "E:\\research\\STT-release-candidate-final2-20260814\\.env",
+                       "remediation":  "Copy .env.example to .env and set local secrets/endpoints."
+                   },
+                   {
+                       "name":  "service.postgresql",
+                       "status":  "PASS",
+                       "required":  true,
+                       "expected":  "PostgreSQL listens on 127.0.0.1:5432",
+                       "observed":  "listening",
+                       "remediation":  ""
+                   },
+                   {
+                       "name":  "service.redis",
+                       "status":  "PASS",
+                       "required":  true,
+                       "expected":  "Redis/Memurai listens on 127.0.0.1:6379",
+                       "observed":  "listening",
+                       "remediation":  ""
+                   },
+                   {
+                       "name":  "port.8088",
+                       "status":  "FAIL",
+                       "required":  true,
+                       "expected":  "pinned alias, model path and context binding pass",
+                       "observed":  "models=speechintel-qwen3-8b-q4_k_m; props_ctx=12288; model_ctx=12288; train_ctx=40960; slots=12288",
+                       "remediation":  "Restart the pinned llama-server through scripts/start_llama_server.ps1 so alias, path and context match .env."
+                   },
+                   {
+                       "name":  "port.8000",
+                       "status":  "PASS",
+                       "required":  true,
+                       "expected":  "port free, or backend /api/v1/health responds",
+                       "observed":  "backend health responded",
+                       "remediation":  ""
+                   },
+                   {
+                       "name":  "port.3000",
+                       "status":  "PASS",
+                       "required":  true,
+                       "expected":  "port free, or frontend returns HTTP 200",
+                       "observed":  "HTTP 200",
+                       "remediation":  ""
+                   }
+               ]
+}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,16 +17,25 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-BASELINE_SCHEMA_VERSION = "stt-summary-replay-v1"
-VERIFICATION_SCHEMA_VERSION = "stt-summary-replay-v2"
-GENERIC_FAILURE = "Summary generation failed."
-EXPECTED_FAILURE_CODE = "INVESTIGATION_WRITER_REJECTED"
-NON_DELTA_FAILURE_CODES = frozenset(
-    {
-        "INVESTIGATION_COVERAGE_FAILED",
-        "INVESTIGATION_LENGTH_CONFLICT",
-    }
+from src.services.summarization.adaptive_length import (  # noqa: E402
+    adaptive_compression_ratio,
 )
+from src.services.investigation.chunk_planner import estimate_tokens  # noqa: E402
+from src.core.config import settings  # noqa: E402
+from src.services.summarization.summary_service_v2 import (
+    SUMMARY_COMPLETION_FIXED_HEADROOM_TOKENS,
+    SUMMARY_COMPLETION_TOKENS_PER_WORD,
+    SUMMARY_MAX_COMPLETION_TOKENS,
+    SUMMARY_MIN_COMPLETION_TOKENS,
+    SUMMARY_CONTEXT_SAFETY_RESERVE_TOKENS,
+    SIMPLE_INVESTIGATION_PROMPT_VERSION,
+    build_simple_investigation_prompt,
+    context_window_tokens_for_provider,
+)  # noqa: E402
+
+BASELINE_SCHEMA_VERSION = "stt-summary-replay-v2"
+VERIFICATION_SCHEMA_VERSION = "stt-summary-replay-v3"
+GENERIC_FAILURE = "Summary generation failed."
 
 
 def _canonical_json(value: Any) -> str:
@@ -72,6 +82,7 @@ def capture_task_state(task: Any) -> dict[str, Any]:
     transcription = result.get("transcription")
     segments = result.get("segments")
     context = result.get("context_analysis")
+    context_attestation = result.get("context_analysis_attestation")
     if not isinstance(transcription, str):
         transcription = ""
     if not isinstance(segments, list):
@@ -93,6 +104,15 @@ def capture_task_state(task: Any) -> dict[str, Any]:
         "context_analysis_is_object": isinstance(context, dict),
         "context_analysis_sha256": _sha256_json(context)
         if isinstance(context, dict)
+        else None,
+        "context_analysis_attestation_is_object": isinstance(
+            context_attestation,
+            dict,
+        ),
+        "context_analysis_attestation_sha256": _sha256_json(
+            context_attestation
+        )
+        if isinstance(context_attestation, dict)
         else None,
     }
 
@@ -126,23 +146,17 @@ def verify_task_state(
     runtime = result.get("summary_runtime")
     if not isinstance(runtime, dict):
         runtime = {}
-    budgets = runtime.get("token_budgets")
-    if not isinstance(budgets, list):
-        budgets = []
-    budget_kinds = [
-        item.get("prompt_kind") if isinstance(item, dict) else None
-        for item in budgets
-    ]
+    length_contract = runtime.get("length_contract")
+    if not isinstance(length_contract, dict):
+        length_contract = {}
+    context_budget = runtime.get("context_budget")
+    if not isinstance(context_budget, dict):
+        context_budget = {}
     llm_call_count = runtime.get("llm_call_count")
-    summary_error = result.get("summary_error")
-    if not isinstance(summary_error, dict):
+    raw_summary_error = result.get("summary_error")
+    summary_error = raw_summary_error
+    if not isinstance(raw_summary_error, dict):
         summary_error = {}
-    summary_authority = result.get("summary_authority")
-    if not isinstance(summary_authority, dict):
-        summary_authority = {}
-    summary_preview = result.get("summary_preview")
-    if not isinstance(summary_preview, dict):
-        summary_preview = {}
 
     checks: list[dict[str, Any]] = []
     _add_check(
@@ -189,40 +203,104 @@ def verify_task_state(
     )
     _add_check(
         checks,
-        "context_analysis_is_object",
-        current["context_analysis_is_object"],
+        "context_analysis_shape_unchanged",
+        current["context_analysis_is_object"]
+        == baseline.get("context_analysis_is_object"),
         scope="eligibility",
-        expected=True,
+        expected=baseline.get("context_analysis_is_object"),
         observed=current["context_analysis_is_object"],
+    )
+    _add_check(
+        checks,
+        "context_analysis_hash_unchanged",
+        current["context_analysis_sha256"]
+        == baseline.get("context_analysis_sha256"),
+        scope="eligibility",
+        expected=baseline.get("context_analysis_sha256"),
+        observed=current["context_analysis_sha256"],
+    )
+    _add_check(
+        checks,
+        "context_analysis_attestation_shape_unchanged",
+        current["context_analysis_attestation_is_object"]
+        == baseline.get("context_analysis_attestation_is_object"),
+        scope="eligibility",
+        expected=baseline.get("context_analysis_attestation_is_object"),
+        observed=current["context_analysis_attestation_is_object"],
+    )
+    _add_check(
+        checks,
+        "context_analysis_attestation_hash_unchanged",
+        current["context_analysis_attestation_sha256"]
+        == baseline.get("context_analysis_attestation_sha256"),
+        scope="eligibility",
+        expected=baseline.get("context_analysis_attestation_sha256"),
+        observed=current["context_analysis_attestation_sha256"],
     )
 
     task_status = current["task_status"]
     summary = result.get("summary")
     summary_text = summary if isinstance(summary, str) else ""
-    valid_call_count = (
-        isinstance(llm_call_count, int)
-        and not isinstance(llm_call_count, bool)
-        and 1 <= llm_call_count <= 3
+    summary_words = len(summary_text.split())
+    transcription = result.get("transcription")
+    transcription_text = transcription if isinstance(transcription, str) else ""
+    transcript_segments = result.get("segments")
+    if not isinstance(transcript_segments, list):
+        transcript_segments = []
+    source_words = len(transcription_text.split())
+    expected_ratio = adaptive_compression_ratio(source_words)
+    expected_preferred_words = max(20, math.ceil(source_words * expected_ratio))
+    expected_source_tokens = estimate_tokens(transcription_text)
+    replayed_prompt = build_simple_investigation_prompt(
+        transcription_text,
+        transcript_segments=transcript_segments,
+    )["prompt"]
+    expected_prompt_tokens = estimate_tokens(replayed_prompt)
+    expected_provider = str(settings.LOCAL_LLM_PROVIDER).strip().casefold()
+    expected_context_window_tokens = context_window_tokens_for_provider(
+        expected_provider
     )
-    expected_budget_kinds = (
-        ["initial", "repair", "delta_repair"][:llm_call_count]
-        if valid_call_count
-        else []
+    expected_desired_completion_tokens = min(
+        SUMMARY_MAX_COMPLETION_TOKENS,
+        max(
+            SUMMARY_MIN_COMPLETION_TOKENS,
+            expected_preferred_words * SUMMARY_COMPLETION_TOKENS_PER_WORD
+            + SUMMARY_COMPLETION_FIXED_HEADROOM_TOKENS,
+        ),
     )
-    valid_budget_sequence = (
-        valid_call_count and budget_kinds == expected_budget_kinds
+    context_window_tokens = context_budget.get("context_window_tokens")
+    prompt_token_estimate = context_budget.get("prompt_token_estimate")
+    safety_reserve_tokens = context_budget.get("safety_reserve_tokens")
+    expected_available_completion_tokens = (
+        max(0, context_window_tokens - safety_reserve_tokens - prompt_token_estimate)
+        if all(
+            type(value) is int
+            for value in (
+                context_window_tokens,
+                safety_reserve_tokens,
+                prompt_token_estimate,
+            )
+        )
+        else None
     )
-    generation_path = "invalid_attempt_sequence"
+    expected_completion_token_budget = (
+        min(
+            expected_desired_completion_tokens,
+            expected_available_completion_tokens,
+        )
+        if type(expected_available_completion_tokens) is int
+        else None
+    )
+    generation_path = "invalid_summary_generation"
     outcome = "unexpected_terminal_state"
 
     if task_status == "summarized":
         outcome = "summarized"
-        if valid_budget_sequence:
-            generation_path = {
-                1: "initial_accepted",
-                2: "repair_accepted",
-                3: "delta_repair_accepted",
-            }[llm_call_count]
+        if (
+            runtime.get("summary_generation") == "single_prompt_llm"
+            and llm_call_count == 1
+        ):
+            generation_path = "single_prompt_llm"
         for name, passed, expected, observed in (
             (
                 "top_level_error_cleared",
@@ -238,129 +316,218 @@ def verify_task_state(
             ),
             (
                 "summary_error_absent",
-                not summary_error,
+                raw_summary_error is None
+                or (isinstance(raw_summary_error, dict) and not raw_summary_error),
                 "absent",
-                summary_error.get("code"),
+                {
+                    "type": type(raw_summary_error).__name__,
+                    "code": summary_error.get("code"),
+                },
             ),
             (
                 "summary_state",
-                result.get("summary_state") == "source_grounded_narrative",
-                "source_grounded_narrative",
+                result.get("summary_state") == "generated",
+                "generated",
                 result.get("summary_state"),
             ),
             (
-                "writer_status",
-                runtime.get("writer_status") == "accepted",
-                "accepted",
-                runtime.get("writer_status"),
+                "prompt_version",
+                runtime.get("prompt_version")
+                == SIMPLE_INVESTIGATION_PROMPT_VERSION,
+                SIMPLE_INVESTIGATION_PROMPT_VERSION,
+                runtime.get("prompt_version"),
+            ),
+            (
+                "summary_generation",
+                runtime.get("summary_generation") == "single_prompt_llm",
+                "single_prompt_llm",
+                runtime.get("summary_generation"),
+            ),
+            (
+                "summary_prompt_replayable",
+                runtime.get("provider") == expected_provider
+                and runtime.get("user_prompt_applied") is False,
+                {
+                    "provider": expected_provider,
+                    "user_prompt_applied": False,
+                },
+                {
+                    "provider": runtime.get("provider"),
+                    "user_prompt_applied": runtime.get("user_prompt_applied"),
+                },
             ),
             (
                 "llm_call_count",
-                valid_call_count,
-                "integer from 1 through 3",
+                type(llm_call_count) is int and llm_call_count == 1,
+                1,
                 llm_call_count,
             ),
             (
-                "token_budget_sequence",
-                valid_budget_sequence,
-                expected_budget_kinds,
-                budget_kinds,
+                "adaptive_length_schema",
+                length_contract.get("schema_version")
+                == "summary-length-contract-v2",
+                "summary-length-contract-v2",
+                length_contract.get("schema_version"),
             ),
             (
-                "summary_authority_present",
-                bool(summary_authority),
-                "non-empty object",
-                bool(summary_authority),
+                "adaptive_length_mode",
+                length_contract.get("mode") == "auto",
+                "auto",
+                length_contract.get("mode"),
             ),
             (
-                "summary_authority_not_released",
-                summary_authority.get("world_facts_released") is False,
+                "adaptive_source_word_count",
+                type(length_contract.get("source_word_count")) is int
+                and length_contract.get("source_word_count") == source_words,
+                source_words,
+                length_contract.get("source_word_count"),
+            ),
+            (
+                "adaptive_preferred_words",
+                type(length_contract.get("preferred_words")) is int
+                and length_contract.get("preferred_words")
+                == expected_preferred_words,
+                expected_preferred_words,
+                length_contract.get("preferred_words"),
+            ),
+            (
+                "adaptive_maximum_not_enforced",
+                length_contract.get("maximum_enforced") is False,
                 False,
-                summary_authority.get("world_facts_released"),
+                length_contract.get("maximum_enforced"),
             ),
             (
-                "summary_preview_present",
-                bool(summary_preview),
-                "non-empty object",
-                bool(summary_preview),
+                "length_actual_matches_summary",
+                type(length_contract.get("actual")) is int
+                and length_contract.get("actual") == summary_words,
+                summary_words,
+                length_contract.get("actual"),
             ),
             (
-                "summary_preview_not_released",
-                summary_preview.get("world_facts_released") is False,
-                False,
-                summary_preview.get("world_facts_released"),
-            ),
-        ):
-            _add_check(
-                checks,
-                name,
-                passed,
-                scope="recovery",
-                expected=expected,
-                observed=observed,
-            )
-    elif task_status == "failed" and summary_error.get("code") in {
-        EXPECTED_FAILURE_CODE,
-        *NON_DELTA_FAILURE_CODES,
-    }:
-        outcome = "typed_writer_rejection"
-        failure_code = summary_error.get("code")
-        delta_exhausted = (
-            failure_code == EXPECTED_FAILURE_CODE
-            and llm_call_count == 3
-            and valid_budget_sequence
-        )
-        non_delta_rejection = (
-            failure_code in NON_DELTA_FAILURE_CODES
-            and llm_call_count == 2
-            and budget_kinds == ["initial", "repair"]
-        )
-        if delta_exhausted:
-            generation_path = "all_attempts_rejected"
-        elif non_delta_rejection:
-            generation_path = "bounded_non_delta_rejection"
-        for name, passed, expected, observed in (
-            (
-                "typed_failure_code",
-                failure_code in {EXPECTED_FAILURE_CODE, *NON_DELTA_FAILURE_CODES},
-                sorted({EXPECTED_FAILURE_CODE, *NON_DELTA_FAILURE_CODES}),
-                failure_code,
+                "soft_ratio_recorded",
+                isinstance(length_contract.get("proportional_ratio"), (int, float))
+                and not isinstance(length_contract.get("proportional_ratio"), bool)
+                and float(length_contract["proportional_ratio"])
+                == expected_ratio,
+                expected_ratio,
+                length_contract.get("proportional_ratio"),
             ),
             (
-                "generic_failure_not_used",
-                not current["error_is_generic_failure"],
-                False,
-                current["error_is_generic_failure"],
-            ),
-            (
-                "summary_absent",
-                not summary_text.strip(),
-                "empty",
-                len(summary_text),
-            ),
-            (
-                "summary_state",
-                result.get("summary_state") == "unavailable",
-                "unavailable",
-                result.get("summary_state"),
-            ),
-            (
-                "writer_status",
-                runtime.get("writer_status") == "rejected",
-                "rejected",
-                runtime.get("writer_status"),
-            ),
-            (
-                "bounded_recovery_path",
-                delta_exhausted or non_delta_rejection,
-                (
-                    "three-call delta exhaustion for writer rejection or exactly "
-                    "two calls (initial, repair) for a typed non-delta rejection"
+                "compression_ratio_matches_summary",
+                isinstance(length_contract.get("compression_ratio"), (int, float))
+                and not isinstance(length_contract.get("compression_ratio"), bool)
+                and float(length_contract["compression_ratio"])
+                == (
+                    round(summary_words / source_words, 6)
+                    if source_words
+                    else None
                 ),
+                round(summary_words / source_words, 6) if source_words else None,
+                length_contract.get("compression_ratio"),
+            ),
+            (
+                "adaptive_length_satisfied",
+                length_contract.get("satisfied") is True,
+                True,
+                length_contract.get("satisfied"),
+            ),
+            (
+                "adaptive_length_status",
+                length_contract.get("status") == "accepted",
+                "accepted",
+                length_contract.get("status"),
+            ),
+            (
+                "context_budget_schema",
+                context_budget.get("schema_version")
+                == "summary-context-budget-v1",
+                "summary-context-budget-v1",
+                context_budget.get("schema_version"),
+            ),
+            (
+                "single_full_source_block",
+                context_budget.get("transcript_embedding_mode")
+                == "single_full_source_block"
+                and type(context_budget.get("source_occurrence_count")) is int
+                and context_budget.get("source_occurrence_count") == 1
+                and context_budget.get("full_transcript_included") is True,
                 {
-                    "code": failure_code,
-                    "llm_call_count": llm_call_count,
-                    "token_budget_kinds": budget_kinds,
+                    "transcript_embedding_mode": "single_full_source_block",
+                    "source_occurrence_count": 1,
+                    "full_transcript_included": True,
+                },
+                {
+                    "transcript_embedding_mode": context_budget.get(
+                        "transcript_embedding_mode"
+                    ),
+                    "source_occurrence_count": context_budget.get(
+                        "source_occurrence_count"
+                    ),
+                    "full_transcript_included": context_budget.get(
+                        "full_transcript_included"
+                    ),
+                },
+            ),
+            (
+                "context_budget_fits",
+                context_budget.get("fits_context_window") is True,
+                True,
+                context_budget.get("fits_context_window"),
+            ),
+            (
+                "context_budget_arithmetic",
+                all(
+                    type(context_budget.get(key)) is int
+                    for key in (
+                        "context_window_tokens",
+                        "prompt_token_estimate",
+                        "source_token_estimate",
+                        "desired_completion_tokens",
+                        "available_completion_tokens",
+                        "completion_token_budget",
+                        "safety_reserve_tokens",
+                    )
+                )
+                and context_budget.get("token_counter")
+                == "utf8-bytes-over-2.8-ceiling"
+                and context_budget.get("context_window_tokens")
+                == expected_context_window_tokens
+                and context_budget.get("prompt_token_estimate")
+                == expected_prompt_tokens
+                and context_budget.get("source_token_estimate", 0) > 0
+                and context_budget.get("source_token_estimate")
+                == expected_source_tokens
+                and context_budget.get("desired_completion_tokens")
+                == expected_desired_completion_tokens
+                and context_budget.get("available_completion_tokens")
+                == expected_available_completion_tokens
+                and context_budget.get("available_completion_tokens", -1)
+                >= SUMMARY_MIN_COMPLETION_TOKENS
+                and context_budget.get("completion_token_budget")
+                == expected_completion_token_budget
+                and context_budget.get("completion_token_budget", 0) > 0
+                and context_budget.get("safety_reserve_tokens")
+                == SUMMARY_CONTEXT_SAFETY_RESERVE_TOKENS
+                and type(context_budget.get("completion_budget_clamped")) is bool
+                and context_budget.get("completion_budget_clamped")
+                == (
+                    expected_completion_token_budget
+                    < expected_desired_completion_tokens
+                ),
+                "exact positive one-call context-budget derivation",
+                {
+                    key: context_budget.get(key)
+                    for key in (
+                        "token_counter",
+                        "context_window_tokens",
+                        "prompt_token_estimate",
+                        "source_token_estimate",
+                        "desired_completion_tokens",
+                        "available_completion_tokens",
+                        "completion_token_budget",
+                        "safety_reserve_tokens",
+                        "completion_budget_clamped",
+                    )
                 },
             ),
         ):
@@ -378,7 +545,7 @@ def verify_task_state(
             "terminal_outcome",
             False,
             scope="recovery",
-            expected="summarized or a typed bounded investigation rejection",
+            expected="summarized with a non-empty one-call LLM result",
             observed={
                 "status": task_status,
                 "summary_error_code": summary_error.get("code"),
@@ -444,15 +611,18 @@ def verify_task_state(
             "checks": [],
             "failed_checks": [],
         }
+    product_status = (
+        "PASS" if report_quality.get("status") == "PASS" else "BLOCKED"
+    )
     return {
         "schema_version": VERIFICATION_SCHEMA_VERSION,
         "artifact_type": "summary_replay_verification",
         "verified_at": datetime.now(timezone.utc).isoformat(),
         "task_id": current["task_id"],
         "status": operational_status,
-        "status_scope": "availability_and_recovery_only",
+        "status_scope": "one_call_summary_availability_and_persistence",
         "operational_status": operational_status,
-        "product_status": "BLOCKED",
+        "product_status": product_status,
         "quality_included_in_status": False,
         "quality_included_in_exit_code": False,
         "outcome": outcome,
@@ -478,9 +648,12 @@ def verify_task_state(
             **current,
             "summary_error_code": summary_error.get("code"),
             "summary_state": result.get("summary_state"),
-            "writer_status": runtime.get("writer_status"),
+            "prompt_version": runtime.get("prompt_version"),
+            "summary_generation": runtime.get("summary_generation"),
             "llm_call_count": llm_call_count,
-            "token_budget_kinds": budget_kinds,
+            "length_mode": length_contract.get("mode"),
+            "proportional_ratio": length_contract.get("proportional_ratio"),
+            "maximum_enforced": length_contract.get("maximum_enforced"),
             "summary_sha256": summary_sha256,
             "summary_length": len(summary_text),
             "summary_word_count": len(summary_text.split()),

@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "manifest_version": "1.0.0",
+  "runtime": {
+    "id": "llama.cpp.windows-cuda-12.4-x64",
+    "version": "b10331",
+    "commit": "7ba604f1c",
+    "relative_path": "models/runtimes/llama.cpp/b10331/windows-cuda-12.4-x64",
+    "platform": "windows",
+    "architecture": "x86_64",
+    "accelerator": "cuda-12.4",
+    "source": {
+      "provider": "github",
+      "repository": "ggml-org/llama.cpp",
+      "release_url": "https://github.com/ggml-org/llama.cpp/releases/tag/b10331"
+    },
+    "license": {
+      "spdx": "MIT",
+      "name": "MIT License",
+      "url": "https://github.com/ggml-org/llama.cpp/blob/7ba604f1c/LICENSE"
+    },
+    "probe": {
+      "executable": "bin/llama-server.exe",
+      "version_contains": "version: 10331 (7ba604f1c)",
+      "device_contains": "CUDA0:"
+    },
+    "files": [
+      {
+        "path": "packages/llama-b10331-bin-win-cuda-12.4-x64.zip",
+        "size_bytes": 250680050,
+        "sha256": "77eaf749ea4af9ff72ce989e56e9df9ca173f36189ea25d9633b33998f4f1e21"
+      },
+      {
+        "path": "packages/cudart-llama-bin-win-cuda-12.4-x64.zip",
+        "size_bytes": 391443627,
+        "sha256": "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6"
+      },
+      {
+        "path": "bin/llama-server.exe",
+        "size_bytes": 9216,
+        "sha256": "23f1fa1f7fc673768b10fba736e3bc34ba6ae03187f94c37eb70d9699617ee9d"
+      },
+      {
+        "path": "bin/llama-server-impl.dll",
+        "size_bytes": 10057728,
+        "sha256": "45953d105c1ce5745fdf3242d2c3719affcbc84c0ff3efa85d15e562a87e8eb9"
+      },
+      {
+        "path": "bin/llama.dll",
+        "size_bytes": 2840064,
+        "sha256": "2b63f7fb9f390ab8cde06c6dbb710dd25071687b5ca3b6e40149fd5e737515c1"
+      },
+      {
+        "path": "bin/ggml.dll",
+        "size_bytes": 86016,
+        "sha256": "d30a76f9363c9a6d697277cbac6b0f527de1fd5fc9f18d1f82b00046f163967f"
+      },
+      {
+        "path": "bin/ggml-base.dll",
+        "size_bytes": 773120,
+        "sha256": "81789fc8fe43741b103447d1c7c1e503451d8fcc986000a7c7036e4c1cbe37b1"
+      },
+      {
+        "path": "bin/ggml-cuda.dll",
+        "size_bytes": 537805312,
+        "sha256": "a4cf2ffb25ade7cd70b0fd30fe8a10499efcd624e6d83dbed18687931b7be67f"
+      },
+      {
+        "path": "bin/cudart64_12.dll",
+        "size_bytes": 553984,
+        "sha256": "d28e42265da7462162a54da6b7a99ea4fa2caf8139d862bb500db875d0b32dfc"
+      },
+      {
+        "path": "bin/cublas64_12.dll",
+        "size_bytes": 100033536,
+        "sha256": "e40202fe4223c1cd2d2dce7beec59e1ed61c7801bd827309183be9b50e358f4c"
+      },
+      {
+        "path": "bin/cublasLt64_12.dll",
+        "size_bytes": 473551360,
+        "sha256": "2a896460bef60ed57ef32b0875812f355a6984e671d638bb632f5e8c1d7a831f"
+      }
+    ]
+  }
+}
