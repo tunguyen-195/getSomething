@@ -7,6 +7,81 @@ rang trong buoc cai dat; backend, Celery va UI khong duoc tu download local LLM.
 Production offline bundle hien van **BLOCKED**. Khong dung runbook online nay de
 tuyen bo mot Git clone la production-portable.
 
+Runbook nay co hai pha:
+
+1. **Bootstrap co mang:** cai toolchain, tao venv, cai wheel, tai model/runtime
+   theo manifest va chay hash/preflight.
+2. **Runtime offline:** sau khi tat ca gate PASS, dat cac co offline trong `.env`
+   va Windows process; backend, Celery, ASR va LLM chi doc artifact local, khong
+   tu tai model. Khong xoa artifact sau khi ngat mang.
+
+Neu may dich khong co Internet ngay tu dau, can chuan bi mot goi air-gapped
+   rieng gom installer Windows, Python wheelhouse, npm cache va tat ca artifact
+   trong muc 6, roi copy vao may dich. Repo Git hien **khong** chua goi nay; muc
+   12 la gate trung thuc cho production offline bundle.
+
+## 0. Cai may Windows trang
+
+Mo PowerShell **Run as Administrator** tren may dich, cai Windows Update va
+restart truoc. Khong cai Ollama, WSL, Docker hay CUDA Toolkit de chay baseline;
+llama-server da kem CUDA runtime trong artifact rieng, con PyTorch dung wheel
+`cu121`. Docker Compose chi danh cho profile bridge co sidecar LLM, khong phai
+duong chay native canonical.
+
+### 0.1. Driver va phan cung
+
+May dich theo hai anh: `i9-12900K`, 32 GB RAM, `RTX 3060 12 GB`, Windows 11 Pro
+25H2 x64, con khoang 844 GB. Cau hinh dat profile `gpu12gb` nhung chua co bang
+chung ve driver. Cai NVIDIA Studio/Game Ready driver moi nhat tu NVIDIA, chon
+clean installation neu may sach, restart, roi kiem tra:
+
+```powershell
+nvidia-smi --query-gpu=name,driver_version,memory.total,memory.free `
+  --format=csv,noheader
+```
+
+Phai thay `RTX 3060`, tong VRAM >= `12000 MiB`, va free VRAM >= `7000 MiB` khi
+chay preflight. Neu `nvidia-smi` khong ton tai hoac PyTorch/llama probe fail,
+khong tiep tuc voi GPU profile; sua driver roi chay lai gate. CPU fallback la
+`-HardwareProfile cpu`, nhung khong co cam ket latency.
+
+### 0.2. Toolchain host
+
+Khong dung phien ban moi nhat khong duoc kiem tra. Cac lenh `winget` sau la
+duong cai nhanh; neu catalog da tro sang phien ban khac, agent phai dung
+installer chinh thuc co phien ban trong bang va xac nhan bang lenh version:
+
+| Thanh phan | Phien ban baseline | Lenh/nguon cai |
+| --- | --- | --- |
+| Git | 2.x x64 | `winget install --id Git.Git --exact --source winget` |
+| Python | 3.11.9 x64 | `winget install --id Python.Python.3.11 --exact --source winget` |
+| Node.js | 22.x x64, npm >= 10 | `winget install --id OpenJS.NodeJS.22 --exact --source winget` |
+| Visual Studio Build Tools | 2022, C++ workload | `winget install --id Microsoft.VisualStudio.2022.BuildTools --exact --source winget` |
+| PostgreSQL | 17.x x64 | `winget install --id PostgreSQL.PostgreSQL.17 --exact --source winget` |
+| Redis-compatible queue | Memurai Developer 4.1.x hoac Redis Windows-compatible | `winget install --id Memurai.MemuraiDeveloper --exact --source winget` |
+| FFmpeg | 7.1.1 full build da validate | Tai ban x64 full build tu nguon FFmpeg/Gyan, them `bin` vao `PATH` |
+
+Khi cai Build Tools, chon workload `Desktop development with C++` va Windows
+SDK. Neu dung winget, co the mo installer roi chon workload bang giao dien;
+khong bo qua MSVC vi `llama-cpp-python==0.3.16` can C++ build phu hop. FFmpeg
+khong dung ban `winget` floating neu no da len 8/9; kiem tra:
+
+```powershell
+git --version
+py -3.11 --version
+node --version
+npm --version
+ffmpeg -version | Select-Object -First 1
+ffprobe -version | Select-Object -First 1
+psql --version
+nvidia-smi
+```
+
+PostgreSQL installer can dat password cho user `postgres`; ghi nho password do
+de dien vao `.env`, khong ghi vao Git. Memurai phai duoc cau hinh service tu
+dong khoi dong va lang nghe `127.0.0.1:6379`. Khong de PostgreSQL/Redis bind ra
+Internet.
+
 ## 1. Profile da ho tro
 
 Profile tham chieu da duoc verify:
@@ -19,6 +94,10 @@ Profile tham chieu da duoc verify:
 - FFmpeg va ffprobe trong `PATH` (may tham chieu: 7.1.1).
 - GPU profile: NVIDIA GPU co it nhat 12000 MiB VRAM; profile da do tren RTX
   4070 SUPER 12GB.
+- May dich do user cung cap ngay 20/08/2026: Intel Core i9-12900K, 32 GB RAM,
+  NVIDIA GeForce RTX 3060 12 GB, Windows 11 Pro 25H2 x64 va khoang 844 GB dia
+  trong. Cau hinh nay dat gate dung luong cho profile `gpu12gb`; latency/SLO tren
+  RTX 3060 chua duoc benchmark va anh cau hinh khong cho biet NVIDIA driver.
 - CPU profile: functional fallback, khong co cam ket latency/SLO.
 - It nhat 16 GB dia trong truoc acquisition cho pinned LLM, large-v2, pyannote,
   archive va staging copy; giu toi thieu 4 GB headroom sau khi cai.
@@ -26,6 +105,20 @@ Profile tham chieu da duoc verify:
 Can Visual Studio 2022 Build Tools voi workload `Desktop development with C++`
 de build `llama-cpp-python==0.3.16` cho exact GGUF token counting. Generation
 van chay out-of-process qua pinned `llama-server.exe`.
+
+Tren may RTX 3060, cap nhat NVIDIA Studio/Game Ready driver truoc khi cai model,
+restart Windows, roi chay gate sau trong PowerShell:
+
+```powershell
+nvidia-smi --query-gpu=name,driver_version,memory.total,memory.free `
+  --format=csv,noheader
+```
+
+Ket qua phai nhan dung RTX 3060, tong VRAM it nhat 12000 MiB va it nhat 7000 MiB
+free truoc khi start llama-server. Khong suy doan tu so driver: hai probe bat
+buoc trong `preflight_new_machine.ps1` phai xac nhan ca PyTorch CUDA 12.1 va
+llama.cpp CUDA 12.4. Neu mot probe fail, sua/cap nhat driver va restart; khong
+dung `-SkipResourceCheck` de che loi may dich.
 
 ## 2. Clone va tao cau hinh
 
@@ -36,6 +129,11 @@ git checkout feature/architecture-refactor
 git status -sb
 Copy-Item .env.example .env
 ```
+
+Tai thoi diem ban giao, branch can clone la `feature/architecture-refactor`.
+Sau khi checkout, agent phai xac nhan `git status -sb` sach truoc khi cai
+artifact. Khong copy `.env`, `venv`, `models`, `uploads` hoac database cua may
+nguon vao Git clone.
 
 Tao secret development/staging:
 
@@ -144,6 +242,23 @@ fail-closed cho install/build. Sau do verify dependency resolver:
 venv\Scripts\python.exe -m pip check
 ```
 
+Neu can bootstrap khi van con Internet nhung muon chuyen sang offline sau do,
+giu mot wheelhouse ben ngoai repo:
+
+```powershell
+New-Item -ItemType Directory -Force C:\stt-wheelhouse | Out-Null
+venv\Scripts\python.exe -m pip download --dest C:\stt-wheelhouse `
+  -r requirements-torch-cu121.txt `
+  --index-url https://download.pytorch.org/whl/cu121
+venv\Scripts\python.exe -m pip download --dest C:\stt-wheelhouse `
+  -r requirements.txt
+```
+
+Tren may air-gapped, thay hai lenh cai online bang `--no-index
+--find-links C:\stt-wheelhouse`. Phai co ca wheel CUDA va tat ca closure cua
+`requirements-constraints-py311.txt`; neu wheel thieu, dung lai va bo sung tu
+may co mang, khong cho pip tu truy cap Internet.
+
 Exact staging gate kiem tra:
 
 | Package | Version |
@@ -183,10 +298,52 @@ Neu `createdb` khong o trong `PATH`, tao database bang pgAdmin. Sau khi hai port
 venv\Scripts\python.exe -m src.database.scripts.init_db
 ```
 
+Kiem tra service truoc khi init:
+
+```powershell
+Get-Service postgresql* | Select-Object Status,Name
+Get-Service Memurai,Redis -ErrorAction SilentlyContinue | Select-Object Status,Name
+Test-NetConnection 127.0.0.1 -Port 5432
+Test-NetConnection 127.0.0.1 -Port 6379
+```
+
+Neu `createdb` khong co trong `PATH`, dung SQL Shell/pgAdmin tao database
+`speech_to_information`, sau do dat URL PostgreSQL dung username/password that
+trong `.env`. `INIT_DB_ON_STARTUP=true` chi tao schema/admin lan dau; khong phai
+co che cai PostgreSQL.
+
 ## 6. Operator-run model acquisition
 
 Tat ca model download trong muc nay la lenh cai dat do operator chu dong chay.
 Application startup va task runtime van bi cam download.
+
+Khong can dong goi Qwen3, llama.cpp hay faster-whisper: cac artifact nay tai
+duoc tu nguon chinh thuc bang installer da pin va co hash gate ben duoi. Chi
+pyannote duoc dong goi rieng vi Hugging Face yeu cau chap nhan gated terms va
+read token. Goi pyannote phai duoc giu trong Google Drive rieng tu, chi chia se
+cho operator duoc uy quyen; no khong duoc commit vao Git.
+
+Tren may nguon, tao hai file ban giao pyannote ngoai repo:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\package_gated_pyannote.ps1 `
+  -OutputDirectory E:\research\STT\temp\gated-models
+```
+
+Upload ca hai file `pyannote-3.1-offline-gated-20260826.zip` va
+`pyannote-3.1-offline-gated-20260826.manifest.json` len cung mot folder Drive.
+Tren may dich, tai ca hai vao cung folder, vi du `D:\STT-gated-models`, roi tai
+root cua repo clone chay:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\restore_gated_pyannote.ps1 `
+  -BundleDirectory D:\STT-gated-models
+```
+
+Script verify hash cua ZIP, rang buoc no voi manifest trong clone, extract vao
+`<repo-root>\models\pyannote`, sau do verify lai nam artifact va ba `refs/main`.
+Khong extract ZIP truc tiep vao repo root vi se tao sai path `pyannote` thay vi
+`models\pyannote`. Goi khong chua `HF_TOKEN`, `.env` hoac credential.
 
 ### 6.1. Qwen3 va llama.cpp
 
@@ -220,14 +377,38 @@ Pinned artifacts:
 
 Khong goi installer tu backend startup, Celery task, frontend hoac request path.
 
-### 6.2. faster-whisper large-v2 va pyannote 3.1
+### 6.2. Bang artifact can co truoc khi offline
+
+| Artifact | Bat buoc baseline | Vi tri sau cai | Kich thuoc manifest xap xi |
+| --- | --- | --- | ---: |
+| Qwen3-8B Q4_K_M | Co | `models/qwen3/Qwen3-8B-Q4_K_M.gguf` | 5.03 GB |
+| llama.cpp b10331 CUDA 12.4 | Co | `models/runtimes/llama.cpp/b10331/windows-cuda-12.4-x64` | ~1.77 GB sau extract |
+| faster-whisper large-v2 | Co cho transcription legacy | `models/whisper/models--Systran--faster-whisper-large-v2/snapshots/<revision>` | 3.09 GB |
+| pyannote 3.1 + segmentation + wespeaker | Co neu bat diarization | `models/pyannote/models--.../snapshots/<revision>` | ~31 MB trong manifest, chua tinh cache phu |
+| Silero VAD/PhoWhisper/Cherry models | Khong cho baseline `TRANSCRIPTION_ENGINE=legacy` | chi cai neu chon `TRANSCRIPTION_ENGINE=cherry` | tuy model |
+
+Khong tai `large-v3`, `large-v3-turbo`, PhoWhisper, BART/T5, Vosk hoac Ollama
+neu muc tieu la baseline trong runbook nay. Cac model do la challenger/legacy
+khac va co the lam day VRAM, thay doi ket qua hoac tao download ngoai y muon.
+`TRANSCRIPTION_ENGINE=legacy` su dung faster-whisper large-v2; `pyannote` la
+duong diarization duy nhat da pin cho baseline.
+
+### 6.3. faster-whisper large-v2 va pyannote 3.1
 
 Baseline ASR la `Systran/faster-whisper-large-v2` tai revision immutable
 `f0fe81560cb8b68660e564f55dd99207059c092e`. Script tai bon file trong
 `config/models/faster-whisper-large-v2.manifest.json`, verify size/SHA-256, va
 tao `refs/main` tro chinh xac den revision nay.
 
-Pyannote la gated model. Truoc khi chay, operator phai dang nhap Hugging Face va
+Neu da restore gated bundle o dau muc 6, chi tai large-v2 cong khai:
+
+```powershell
+venv\Scripts\python.exe scripts\install_audio_models_staging.py `
+  --include large-v2
+```
+
+Pyannote la gated model. Neu khong dung private bundle, truoc khi chay operator
+phai dang nhap Hugging Face va
 chap nhan dieu kien truy cap tren hai trang:
 
 - https://huggingface.co/pyannote/speaker-diarization-3.1
@@ -281,6 +462,17 @@ bat buoc fail, va kiem tra:
 
 Khong start app khi report co `status=FAIL`.
 
+Preflight phai duoc chay lai sau moi thay doi `.env`, driver, model, Python venv
+hoac service. Bao cao JSON la artifact ban giao, khong chi dua vao mot lenh
+`--version`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\preflight_new_machine.ps1 `
+  -HardwareProfile gpu12gb `
+  -OutputPath docs\evals\runs\new-machine-preflight.json
+if ($LASTEXITCODE -ne 0) { throw 'Preflight FAIL; do not start services.' }
+```
+
 `entrypoint.bat` co chu y fail-fast vi khong the tu khoi dong va xac minh day du
 PostgreSQL, Redis, model artifacts va llama-server. Dung cac lenh canonical ben
 duoi sau khi preflight PASS.
@@ -295,6 +487,9 @@ llama-server. Mo moi lenh trong mot terminal rieng, theo dung thu tu:
 3. FastAPI backend.
 4. Celery solo worker, concurrency 1.
 5. React/Vite frontend.
+
+Tat ca terminal native deu phai dung thu muc repo. Khong dung `START_ALL_SERVICES.bat`
+cho profile nay vi no khong start llama-server va khong chay day du preflight.
 
 Docker Compose hien la profile development bridge, khong phai offline production
 bundle. Truoc khi dung Compose, provision va verify mot pinned llama-server
@@ -482,3 +677,39 @@ venv\Scripts\python.exe scripts\verify_offline_release_bundle.py `
 
 Khong override gate, khong goi staging installer trong production startup, va
 khong mo outbound network de che lap mot component con thieu.
+
+## 13. Khoa runtime offline sau bootstrap
+
+Sau khi cac model/runtime da hash-verify va preflight PASS:
+
+1. Xoa `HF_TOKEN` khoi process/user environment; khong luu token trong `.env`.
+2. Bao dam `.env` co `OFFLINE_STRICT=true`, `HF_HUB_OFFLINE=1`,
+   `TRANSFORMERS_OFFLINE=1`, `WHISPER_USE_LOCAL=true` va
+   `LOCAL_LLM_PROVIDER=llama_cpp_server`.
+3. Giu `LLAMA_SERVER_BASE_URL=http://127.0.0.1:8088`; khong thay bang endpoint
+   Internet/Ollama. `LLAMA_SERVER_API_KEY` co the de rong cho host loopback, hoac
+   dat secret neu co sidecar/container.
+4. Restart llama-server, backend, Celery sau khi doi `.env`; chay lai preflight.
+5. Trong log phai khong co dong download HF/model. Neu model thieu, task phai
+   fail ro rang `offline strict`, khong tu fallback sang tai Internet.
+
+Neu can chung minh khong co outbound runtime, block outbound cua `python.exe`,
+`llama-server.exe` va Node dev server bang Windows Firewall sau bootstrap, nhung
+van cho phep loopback 127.0.0.1. Chay lai health/model/Celery smoke; khong block
+PostgreSQL/Redis loopback.
+
+### 13.1. Air-gapped transfer checklist
+
+Tren may co mang, copy vao USB/lan noi bo cac nhom sau va ghi checksum:
+
+- Git clone o commit da push va cac file manifest/config.
+- Bo cai Windows: Python 3.11, Git, Node 22, VS Build Tools, PostgreSQL 17,
+  Memurai/Redis, FFmpeg 7.1.1, NVIDIA driver.
+- `C:\stt-wheelhouse` gom wheel CUDA + runtime closure va `frontend` npm cache.
+- Toan bo `models/qwen3`, `models/runtimes/llama.cpp`,
+  `models/whisper`, `models/pyannote` da hash-verify.
+- File `.env` tao moi tren may dich, khong copy secret cua may nguon.
+
+Do repo chua dong goi cac nhom installer/wheelhouse tren, che do air-gapped
+thuc su van nam ngoai release boundary va phai dung gate muc 12. Che do duoc
+ho tro ngay la bootstrap co mang mot lan, sau do runtime offline.

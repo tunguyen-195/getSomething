@@ -21,16 +21,25 @@ powershell -ExecutionPolicy Bypass -File scripts\preflight_new_machine.ps1 `
   -HardwareProfile gpu12gb
 ```
 
-ASR large-v2 va pyannote dung installer rieng vi pyannote can operator chap nhan
-gated terms va cap `HF_TOKEN` tam thoi:
+ASR large-v2 tai cong khai bang installer. Pyannote la artifact gated, nen may
+moi uu tien restore private bundle nho theo runbook; chi tai pyannote bang
+`HF_TOKEN` neu khong co bundle:
 
 ```powershell
 venv\Scripts\python.exe scripts\install_audio_models_staging.py `
-  --include large-v2 --include pyannote --accept-pyannote-terms
+  --include large-v2
+
+powershell -ExecutionPolicy Bypass -File scripts\restore_gated_pyannote.ps1 `
+  -BundleDirectory D:\STT-gated-models
 ```
 
 CPU functional fallback dung `-HardwareProfile cpu`. Thu tu start bat buoc la:
 PostgreSQL + Redis, llama-server, backend, Celery solo worker, frontend.
+
+May dich i9-12900K / 32 GB / RTX 3060 12 GB / Windows 11 Pro 25H2 dung profile
+`gpu12gb`. Truoc khi cai, cap nhat NVIDIA driver va de it nhat 7000 MiB VRAM
+trong; runbook co lenh `nvidia-smi` va probe CUDA bat buoc de phat hien driver
+khong tuong thich.
 
 `START_ALL_SERVICES.bat` khong phai pinned-LLM staging launcher vi hien khong
 start llama-server. Docker Compose cung khong thay the artifact acquisition va

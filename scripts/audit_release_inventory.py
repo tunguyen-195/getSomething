@@ -499,7 +499,9 @@ def _group_paths(
         grouped[key].append(path)
     return [
         {
-            "prefix": key,
+            # A sensitive root-level filename is itself the secret. Keep only a
+            # stable aggregate label when samples are redacted.
+            "prefix": "[REDACTED]" if redact_samples else key,
             "count": len(values),
             "samples": [] if redact_samples else values[:sample_limit],
             "samples_redacted": redact_samples,

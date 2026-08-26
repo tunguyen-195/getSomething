@@ -106,12 +106,32 @@ def test_context_analysis_returns_direct_model_text(monkeypatch, response):
     assert result["runtime"]["llm_call_count"] == 1
     assert result["analysis_text"] == SIMPLE_ANALYSIS
     assert "overview" not in result
-    assert result["key_points"] == []
+    assert result["entities"]
     assert result["participants"] == []
     assert result["events"] == []
     assert result["actions"] == []
     assert result["relationships"] == []
+    assert result["structured_projection"] == {
+        "kind": "deterministic_source_inventory",
+        "version": "v1",
+        "evidence_bound": True,
+    }
     assert result["metrics"]["transcript_word_count"] == len(TRANSCRIPT.split())
+
+
+def test_direct_analysis_adds_evidence_bound_participants_and_events(monkeypatch):
+    manager = LLMManager()
+    analysis_text = "Ông Sơn hẹn Minh lúc 09:00 tại bến xe."
+    transcript = "Ông Sơn hẹn Minh lúc 09:00 tại bến xe."
+    monkeypatch.setattr(manager, "generate", lambda *_args, **_kwargs: analysis_text)
+
+    result = manager.analyze_context(transcript)
+
+    assert result["analysis_text"] == analysis_text
+    assert result["participants"][0]["name"] == "Sơn"
+    assert result["participants"][0]["evidence_quote"] == transcript
+    assert result["events"][0]["description"] == transcript
+    assert result["events"][0]["evidence_quote"] == transcript
 
 
 def test_provider_validation_keeps_raw_summary_non_authoritative():
@@ -635,6 +655,8 @@ def test_simple_analysis_tolerates_missing_optional_categories(monkeypatch):
     assert result["analysis_text"] == '{"overview":"Chỉ có tổng quan."}'
     assert result["key_points"] == []
     assert result["events"] == []
+    assert result["entities"]
+    assert result["structured_projection"]["evidence_bound"] is True
     assert result["relationships"] == []
     assert result["follow_ups"] == []
 

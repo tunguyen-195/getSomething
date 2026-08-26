@@ -621,12 +621,23 @@ export function buildInvestigationVisualization(value: unknown): InvestigationVi
     statuses.set(item.status, (statuses.get(item.status) || 0) + 1);
   });
 
-  const metrics = asRecord(asRecord(analysisContextFromTask(value))?.metrics);
-  const suppliedSpeakerContributions = records(metrics?.speaker_contributions).flatMap(record => {
+  const contextRoot = asRecord(analysisContextFromTask(value));
+  const metrics = asRecord(contextRoot?.metrics);
+  // Direct-text analysis stores this projection at the top level; older
+  // payloads put it below metrics. Accept both shapes so visualization is
+  // compatible with persisted tasks from either release.
+  const suppliedSpeakerContributions = records(
+    contextRoot?.speaker_contributions ?? metrics?.speaker_contributions,
+  ).flatMap(record => {
     const speaker = firstText(record, ['speaker', 'speaker_id']);
     const wordCount = safeNumber(record.word_count);
     const segmentCount = safeNumber(record.segment_count);
-    const percentage = safeNumber(record.percentage);
+    const explicitPercentage = safeNumber(record.percentage);
+    const wordShare = safeNumber(record.word_share);
+    const percentage = explicitPercentage
+      ?? (wordShare !== undefined
+        ? (wordShare <= 1 ? Math.round(wordShare * 100) : Math.round(wordShare))
+        : undefined);
     if (!speaker || wordCount === undefined || segmentCount === undefined) return [];
     return [{
       speaker,
@@ -635,6 +646,17 @@ export function buildInvestigationVisualization(value: unknown): InvestigationVi
       percentage: percentage ?? 0,
     }];
   });
+  if (suppliedSpeakerContributions.length > 0) {
+    const totalWords = suppliedSpeakerContributions.reduce(
+      (total, item) => total + item.word_count,
+      0,
+    );
+    suppliedSpeakerContributions.forEach(item => {
+      if (item.percentage === 0 && totalWords > 0) {
+        item.percentage = Math.round((item.word_count / totalWords) * 100);
+      }
+    });
+  }
 
   return {
     nodes,

@@ -192,16 +192,17 @@ def _staged_llm_manager_contract_check() -> bool:
 
     def fake_generate(*_args, **kwargs):
         observed_calls["model"] += 1
-        if kwargs.get("json_schema") is None:
-            raise AssertionError("strict provider schema was not requested")
+        if kwargs.get("json_mode") is not False:
+            raise AssertionError("direct analysis must not request provider JSON mode")
         return json.dumps(provider_payload)
 
     manager.generate = fake_generate
     result = manager.analyze_context(transcript, model="fixture-model")
-    GroundedContextAnalysisPayload.model_validate(result)
-    if result["summary"] == provider_payload["summary"]:
+    if result.get("analysis_status") != "success":
         return False
-    if result["compatibility"]["raw_model_summary_released"] is not False:
+    if result.get("analysis_text") != json.dumps(provider_payload):
+        return False
+    if result.get("runtime", {}).get("llm_call_count") != 1:
         return False
 
     return observed_calls == {"model": 1, "network": 0}

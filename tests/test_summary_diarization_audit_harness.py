@@ -95,9 +95,11 @@ def test_summary_contract_audits_every_legacy_and_worker_entrypoint() -> None:
             "investigation_scenario": "InvestigationScenario",
         },
         "resummarize_task": {
+            "model_name": "str | None",
             "summary_type": "SummaryType",
             "min_length": "int",
             "max_length": "int",
+            "length_mode": "str",
         },
     }
 

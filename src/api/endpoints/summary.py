@@ -1,11 +1,15 @@
-from fastapi import APIRouter, HTTPException, Depends, Body
-from pydantic import BaseModel, ConfigDict
-from sqlalchemy.orm import Session
-from typing import List, Optional
+import copy
 import hashlib
 import hmac
 import json
+import logging
 import math
+from typing import List, Optional
+
+from fastapi import APIRouter, HTTPException, Depends, Body
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy.orm import Session
+
 from src.database.config.database import get_db
 from src.database.models.models import Summary as DBSummary, Case, AudioFile, User
 from src.database.models.schemas import SummaryCreate, SummaryOut
@@ -17,6 +21,7 @@ from src.services.summarization.context_service import analyze_conversation_cont
 from src.services.summarization.models.context_analysis import (
     ANALYSIS_SCHEMA_VERSION,
     CONTEXT_PROMPT_VERSION,
+    enrich_simple_analysis_with_source_inventory,
 )
 from src.services.summarization.investigation_scenarios import (
     DEFAULT_INVESTIGATION_SCENARIO,
@@ -26,7 +31,6 @@ from src.services.summarization.public_projection import (
     public_context_analysis_payload,
 )
 from src.services.model_runtime import GpuLeaseTimeout, gpu_lease
-import logging
 from src.core.auth import (
     accessible_case_ids,
     assert_case_access,
@@ -425,6 +429,32 @@ def analyze_summary(
         raise HTTPException(status_code=500, detail="Task analysis inputs are invalid") from exc
     cached = _cached_context_analysis(result_data, transcript, task_id)
     if cached is not None:
+        # Older direct-text tasks legitimately contain only ``analysis_text``.
+        # Backfill the optional source-backed collections in-place while keeping
+        # the accepted prose byte-for-byte unchanged.
+        enriched_cached = enrich_simple_analysis_with_source_inventory(
+            copy.deepcopy(cached),
+            transcript=transcript,
+            segments=segments,
+            source_metadata=source_metadata,
+        )
+        if enriched_cached != cached:
+            cached = enriched_cached
+            context_result_patch = {
+                "context_analysis": cached,
+                "context_analysis_attestation": _build_context_analysis_attestation(
+                    cached,
+                    task_id=task_id,
+                    transcript=transcript,
+                    segments=segments,
+                    source_metadata=source_metadata,
+                    model_name=_ANALYSIS_MODEL_NAME,
+                    user_prompt=_ANALYSIS_USER_PROMPT,
+                    investigation_scenario=_ANALYSIS_INVESTIGATION_SCENARIO,
+                ),
+            }
+            if not update_task(task_id, {"result": context_result_patch}):
+                raise HTTPException(status_code=500, detail="Analysis persistence failed")
         logger.info("[SUMMARY_ANALYZE] Reusing grounded analysis | task_id=%s", task_id)
         public_context = public_context_analysis_payload(cached)
         return {

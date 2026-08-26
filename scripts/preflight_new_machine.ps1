@@ -172,10 +172,20 @@ function Invoke-SecurityConfigValidation {
 from src.core.config import validate_security_settings
 
 validate_security_settings()
-print("security_config_valid")
+print(1)
 '@
-            $raw = (& $PythonPath -c $validationCode 2>&1 | Out-String).Trim()
-            $exitCode = $LASTEXITCODE
+            # Native stderr is surfaced as a terminating NativeCommandError when
+            # $ErrorActionPreference=Stop. Capture it as data so one failed
+            # validation produces a report instead of aborting the harness.
+            $previousErrorActionPreference = $ErrorActionPreference
+            try {
+                $ErrorActionPreference = 'Continue'
+                $raw = (& $PythonPath -c $validationCode 2>&1 | Out-String).Trim()
+                $exitCode = $LASTEXITCODE
+            }
+            finally {
+                $ErrorActionPreference = $previousErrorActionPreference
+            }
         }
         finally {
             Pop-Location

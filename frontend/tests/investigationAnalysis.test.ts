@@ -302,6 +302,50 @@ test('derives visualization metrics from persisted Analysis and diarized segment
   assert.deepEqual(view.action_statuses, [{ status: 'completed', count: 1 }]);
 });
 
+test('uses persisted top-level speaker contributions before deriving them from segments', () => {
+  const { buildInvestigationVisualization } = require('../src/utils/investigationAnalysis.ts');
+  const view = buildInvestigationVisualization({
+    context_analysis: {
+      schema_version: 'investigation-analysis-simple-v2',
+      analysis_status: 'success',
+      speaker_contributions: [
+        { speaker: 'SPEAKER_01', word_count: 9, segment_count: 3 },
+        { speaker: 'SPEAKER_00', word_count: 3, segment_count: 1 },
+      ],
+      metrics: {
+        speaker_contributions: [
+          { speaker: 'STALE_METRIC_SHAPE', word_count: 100, segment_count: 1 },
+        ],
+      },
+    },
+    segments: [{ speaker: 'DERIVED_SEGMENT', text: 'không được ưu tiên' }],
+  });
+
+  assert.deepEqual(view.speaker_contributions, [
+    { speaker: 'SPEAKER_01', word_count: 9, segment_count: 3, percentage: 75 },
+    { speaker: 'SPEAKER_00', word_count: 3, segment_count: 1, percentage: 25 },
+  ]);
+});
+
+test('converts persisted fractional word_share to display percentages', () => {
+  const { buildInvestigationVisualization } = require('../src/utils/investigationAnalysis.ts');
+  const view = buildInvestigationVisualization({
+    context_analysis: {
+      schema_version: 'investigation-analysis-simple-v2',
+      analysis_status: 'success',
+      speaker_contributions: [
+        { speaker: 'SPEAKER_00', word_count: 181, segment_count: 25, word_share: 0.5355 },
+        { speaker: 'SPEAKER_01', word_count: 157, segment_count: 26, word_share: 0.4645 },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    view.speaker_contributions.map((item: { percentage: number }) => item.percentage),
+    [54, 46],
+  );
+});
+
 test('Analysis UI exposes investigative content without technical evidence trails', () => {
   const panel = readFileSync(
     resolve(__dirname, '..', 'src', 'components', 'AnalysisPanel.tsx'),

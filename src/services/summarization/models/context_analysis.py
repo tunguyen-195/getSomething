@@ -1332,6 +1332,220 @@ def normalize_simple_analysis(
     warnings = _source_quality_warnings(transcript, segments, source_metadata)
     if warnings:
         result["source_quality_warnings"] = warnings
+    enrich_simple_analysis_with_source_inventory(
+        result,
+        transcript=transcript,
+        segments=segments,
+        source_metadata=source_metadata,
+    )
+    return result
+
+
+def _inventory_entity_rows(inventory: dict[str, Any]) -> list[dict[str, Any]]:
+    """Project deterministic source mentions into the simple public shape."""
+
+    groups = inventory.get("entities")
+    if not isinstance(groups, dict):
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for field, entity_type in (
+        ("people", "person"),
+        ("organizations", "organization"),
+        ("locations", "location"),
+        ("time", "time"),
+    ):
+        values = groups.get(field)
+        if not isinstance(values, list):
+            continue
+        for item in values:
+            if not isinstance(item, dict):
+                continue
+            value = item.get("name") or item.get("value")
+            quote = item.get("evidence_quote")
+            if not isinstance(value, str) or not value.strip():
+                continue
+            if not isinstance(quote, str) or not quote.strip():
+                continue
+            row: dict[str, Any] = {
+                "type": entity_type,
+                "value": value.strip(),
+                "evidence_quote": quote.strip(),
+            }
+            role = item.get("role")
+            if isinstance(role, str) and role.strip():
+                row["role"] = role.strip()
+            rows.append(row)
+
+    contact_info = groups.get("contact_info")
+    if isinstance(contact_info, dict):
+        for field, entity_type in (
+            ("phones", "phone"),
+            ("emails", "email"),
+            ("ids", "identity"),
+            ("bank_accounts", "account"),
+            ("addresses", "address"),
+        ):
+            values = contact_info.get(field)
+            if not isinstance(values, list):
+                continue
+            for item in values:
+                if not isinstance(item, dict):
+                    continue
+                value = item.get("value") or item.get("account_number") or item.get("address")
+                quote = item.get("evidence_quote")
+                if isinstance(value, str) and value.strip() and isinstance(quote, str) and quote.strip():
+                    rows.append({
+                        "type": entity_type,
+                        "value": value.strip(),
+                        "evidence_quote": quote.strip(),
+                    })
+
+    unique: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in rows:
+        unique.setdefault((row["type"], row["value"].casefold()), row)
+    return list(unique.values())
+
+
+def _inventory_participant_rows(inventory: dict[str, Any]) -> list[dict[str, Any]]:
+    groups = inventory.get("entities")
+    people = groups.get("people") if isinstance(groups, dict) else None
+    if not isinstance(people, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in people:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        quote = item.get("evidence_quote")
+        if not isinstance(name, str) or not name.strip() or not isinstance(quote, str) or not quote.strip():
+            continue
+        key = name.casefold().strip()
+        if key in seen:
+            continue
+        seen.add(key)
+        row: dict[str, Any] = {"name": name.strip(), "evidence_quote": quote.strip()}
+        role = item.get("role")
+        if isinstance(role, str) and role.strip():
+            row["role"] = role.strip()
+        rows.append(row)
+    return rows
+
+
+def enrich_simple_analysis_with_source_inventory(
+    result: dict[str, Any],
+    *,
+    transcript: str,
+    segments: list[dict] | None = None,
+    source_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Add source-backed structure without changing the accepted analysis text.
+
+    Direct-text analysis intentionally stores the model prose as-is.  This
+    projection supplies optional fields for the Analysis/Visualization tabs by
+    reusing the deterministic transcript inventory.  Every generated row keeps
+    an ``evidence_quote`` so callers can distinguish source preview data from
+    released findings.
+    """
+
+    if not isinstance(result, dict) or result.get("schema_version") != ANALYSIS_SCHEMA_VERSION:
+        return result
+    if not transcript or not transcript.strip():
+        return result
+
+    try:
+        from ..deterministic_analysis import build_deterministic_transcript_analysis
+
+        inventory = build_deterministic_transcript_analysis(
+            transcript,
+            segments,
+            source_metadata,
+        )
+    except Exception:
+        # Structure is an optional projection; never turn a usable text result
+        # into a failed analysis when the inventory detector is unavailable.
+        return result
+    if not isinstance(inventory, dict):
+        return result
+
+    existing_entities = result.get("entities") if isinstance(result.get("entities"), list) else []
+    inventory_entities = _inventory_entity_rows(inventory)
+    if not existing_entities and inventory_entities:
+        result["entities"] = inventory_entities
+
+    existing_participants = result.get("participants") if isinstance(result.get("participants"), list) else []
+    inventory_participants = _inventory_participant_rows(inventory)
+    if not existing_participants and inventory_participants:
+        result["participants"] = inventory_participants
+
+    existing_events = result.get("events") if isinstance(result.get("events"), list) else []
+    inventory_events = []
+    for item in inventory.get("events", []) if isinstance(inventory.get("events"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        description = item.get("description")
+        quote = item.get("evidence_quote")
+        # Very short ASR fragments such as "Chỉ nhận thôi" are not useful
+        # timeline events unless they carry a date/location/entity signal.
+        if (
+            not isinstance(description, str)
+            or len(description.split()) < 4
+            or not isinstance(quote, str)
+            or not quote.strip()
+        ):
+            continue
+        row = {"description": description.strip(), "evidence_quote": quote.strip()}
+        for key in ("time", "location", "status"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                row[key] = value.strip()
+        actors = item.get("actors")
+        if isinstance(actors, list):
+            row["participants"] = [
+                value.strip()
+                for value in actors
+                if isinstance(value, str) and value.strip()
+            ]
+        inventory_events.append(row)
+    if not existing_events and inventory_events:
+        result["events"] = inventory_events
+
+    existing_relationships = result.get("relationships") if isinstance(result.get("relationships"), list) else []
+    inventory_relationships = [
+        item
+        for item in inventory.get("relationships", [])
+        if isinstance(item, dict)
+        and isinstance(item.get("source"), str)
+        and isinstance(item.get("target"), str)
+        and isinstance(item.get("label"), str)
+        and isinstance(item.get("evidence_quote"), str)
+    ]
+    if not existing_relationships and inventory_relationships:
+        result["relationships"] = inventory_relationships
+
+    existing_follow_ups = result.get("follow_ups") if isinstance(result.get("follow_ups"), list) else []
+    if not existing_follow_ups:
+        follow_ups = []
+        for item in inventory.get("open_questions", []) if isinstance(inventory.get("open_questions"), list) else []:
+            if not isinstance(item, dict):
+                continue
+            question = item.get("question")
+            if isinstance(question, str) and question.strip():
+                follow_ups.append({
+                    "question": question.strip(),
+                    "reason": "Chi tiết cần đối chiếu với transcript/audio.",
+                    "priority": "normal",
+                    "evidence_quote": item.get("evidence_quote"),
+                })
+        if follow_ups:
+            result["follow_ups"] = follow_ups
+
+    result.setdefault("structured_projection", {
+        "kind": "deterministic_source_inventory",
+        "version": "v1",
+        "evidence_bound": True,
+    })
     return result
 
 

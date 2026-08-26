@@ -1150,7 +1150,14 @@ def build_deterministic_transcript_analysis(
                 "evidence_quote": units_by_index[mention.unit_index].text,
             }
         )
-    first_unknown_speaker = next((unit for unit in units if unit.speaker is None), None)
+    # Without diarized segments every sentence is naturally speakerless; that
+    # is not itself a useful follow-up. Only surface this warning when a
+    # segment stream was supplied and at least one segment lacks a speaker.
+    first_unknown_speaker = (
+        next((unit for unit in units if unit.speaker is None), None)
+        if segments
+        else None
+    )
     if first_unknown_speaker is not None:
         open_questions.append(
             {

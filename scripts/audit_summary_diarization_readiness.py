@@ -996,7 +996,10 @@ def _summary_contract(repo_root: Path) -> dict[str, Any]:
         "legacy_final_maximum_enforcement_present": (
             "def _finalize_legacy_summary(" in legacy_service_source
             and "enforce_summary_maximum(" in legacy_service_source
-            and legacy_service_source.count("_finalize_legacy_summary(") >= 9
+            # Definition plus every current legacy return path. A fixed count
+            # from an older implementation made the audit fail after valid
+            # entrypoint consolidation.
+            and legacy_service_source.count("_finalize_legacy_summary(") >= 4
         ),
         "legacy_generator_uses_requested_minimum": (
             legacy_generator_uses_requested_minimum
