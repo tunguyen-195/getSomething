@@ -20,7 +20,7 @@ import VisualizationDialog from './components/VisualizationDialog';
 import AnalysisPanel from './components/AnalysisPanel';
 import DiarizationPanel from './components/DiarizationPanel';
 import DateTimeText from './components/DateTimeText';
-import { apiFetch, getCurrentUser, login, logout } from './api/client';
+import { apiFetch, getCurrentUser, login, logout, normalizeSummaryUserPrompt } from './api/client';
 import type { SummaryDialogOptions } from './api/client';
 import { countTranscriptWords } from './utils/transcriptText';
 import { summaryDisplayText } from './utils/summaryDisplay';
@@ -390,12 +390,14 @@ function App() {
   const handleSummarize = async (options: SummaryDialogOptions) => {
     if (!selectedTaskId) return;
     try {
+      const userPrompt = normalizeSummaryUserPrompt(options.user_prompt);
       const response = await apiFetch(`${API_V2_BASE}/summarize/${selectedTaskId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model_name: options.model_name === 'auto' ? null : options.model_name,
           summary_type: options.summary_type,
+          ...(userPrompt ? { user_prompt: userPrompt } : {}),
           include_context: options.include_context_analysis !== false,
           async_mode: true,
           min_length: options.min_length,

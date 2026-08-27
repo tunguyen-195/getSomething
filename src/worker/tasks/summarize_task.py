@@ -147,11 +147,13 @@ def summarize_transcript_task(
         min_length=min_length,
         max_length=max_length,
         length_mode=length_mode,
+        user_prompt=user_prompt,
     )
     summary_type = options.summary_type
     min_length = options.min_length
     max_length = options.max_length
     length_mode = options.length_mode
+    user_prompt = options.user_prompt
     investigation_scenario = require_investigation_scenario(investigation_scenario)
 
     logger.info(
@@ -340,6 +342,7 @@ def summarize_multi_task(
     min_length: int = DEFAULT_MULTI_SUMMARY_MIN_WORDS,
     max_length: int = DEFAULT_MULTI_SUMMARY_MAX_WORDS,
     length_mode: str = "auto",
+    user_prompt: str = None,
 ):
     """
     Celery task for multi-transcript summarization
@@ -358,11 +361,13 @@ def summarize_multi_task(
         min_length=min_length,
         max_length=max_length,
         length_mode=length_mode,
+        user_prompt=user_prompt,
     )
     summary_type = options.summary_type
     min_length = options.min_length
     max_length = options.max_length
     length_mode = options.length_mode
+    user_prompt = options.user_prompt
 
     logger.info(
         f"[CELERY_MULTI_SUMMARY] Task started | count={len(task_ids)} | "
@@ -397,6 +402,7 @@ def summarize_multi_task(
                 min_length=min_length,
                 max_length=max_length,
                 length_mode=length_mode,
+                user_prompt=user_prompt,
             )
 
         if not result.get("available"):

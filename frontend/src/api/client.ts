@@ -22,10 +22,21 @@ export const DEFAULT_INVESTIGATION_SUMMARY_MIN_LENGTH = 120;
 export const DEFAULT_INVESTIGATION_SUMMARY_MAX_LENGTH = 400;
 export const DEFAULT_MULTI_SUMMARY_MIN_LENGTH = 100;
 export const DEFAULT_MULTI_SUMMARY_MAX_LENGTH = 400;
+export const SUMMARY_USER_PROMPT_MAX_LENGTH = 2000;
+
+export function normalizeSummaryUserPrompt(value: string | null | undefined): string | undefined {
+  const normalized = value?.trim() ?? '';
+  if (!normalized) return undefined;
+  if (Array.from(normalized).length > SUMMARY_USER_PROMPT_MAX_LENGTH) {
+    throw new Error(`Summary prompt must not exceed ${SUMMARY_USER_PROMPT_MAX_LENGTH} characters`);
+  }
+  return normalized;
+}
 
 export interface SummaryDialogOptions {
   model_name: string;
   summary_type: SummaryType;
+  user_prompt?: string;
   include_context_analysis: boolean;
   min_length: number;
   max_length: number;

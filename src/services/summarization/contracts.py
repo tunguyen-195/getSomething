@@ -30,6 +30,7 @@ DEFAULT_SUMMARY_MAX_WORDS: Final[int] = 200
 DEFAULT_MULTI_SUMMARY_MIN_WORDS: Final[int] = 100
 DEFAULT_MULTI_SUMMARY_MAX_WORDS: Final[int] = 400
 MIN_INVESTIGATION_SUMMARY_MAX_WORDS: Final[int] = 20
+SUMMARY_USER_PROMPT_MAX_LENGTH: Final[int] = 2000
 
 # Compatibility aliases for callers that used the first contract draft.
 DEFAULT_SUMMARY_MIN_LENGTH = DEFAULT_SUMMARY_MIN_WORDS
@@ -82,6 +83,32 @@ class InvestigationSummaryMaxTooSmall(SummaryRequestContractError):
         )
 
 
+class InvalidSummaryUserPrompt(SummaryRequestContractError):
+    """Raised when an optional user preference cannot be accepted safely."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "INVALID_SUMMARY_USER_PROMPT",
+            "user_prompt must be a string of at most "
+            f"{SUMMARY_USER_PROMPT_MAX_LENGTH} Unicode characters.",
+        )
+
+
+def normalize_summary_user_prompt(value: object) -> str | None:
+    """Trim one request-scoped prompt and enforce its Unicode character limit."""
+
+    if value is None:
+        return None
+    if type(value) is not str:
+        raise InvalidSummaryUserPrompt()
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if len(normalized) > SUMMARY_USER_PROMPT_MAX_LENGTH:
+        raise InvalidSummaryUserPrompt()
+    return normalized
+
+
 class SummaryMaximumExceeded(ValueError):
     """Raised when final post-processed summary text exceeds the hard maximum."""
 
@@ -107,6 +134,19 @@ class SummaryRequestOptions(BaseModel):
     length_mode: SummaryLengthMode = "auto"
     min_length: int = Field(default=DEFAULT_SUMMARY_MIN_WORDS, ge=0)
     max_length: int = Field(default=DEFAULT_SUMMARY_MAX_WORDS, ge=1)
+    user_prompt: str | None = Field(
+        default=None,
+        max_length=SUMMARY_USER_PROMPT_MAX_LENGTH,
+        description=(
+            "Optional request-scoped focus or formatting preference, limited to "
+            f"{SUMMARY_USER_PROMPT_MAX_LENGTH} Unicode characters."
+        ),
+    )
+
+    @field_validator("user_prompt", mode="before")
+    @classmethod
+    def validate_user_prompt(cls, value: object) -> str | None:
+        return normalize_summary_user_prompt(value)
 
     @model_validator(mode="after")
     def validate_length_order(self) -> "SummaryRequestOptions":
@@ -130,7 +170,6 @@ class SummaryRequest(SummaryRequestOptions):
     model_name: str | None = None
     include_context: bool = False
     async_mode: bool = True
-    user_prompt: str | None = None
     investigation_scenario: InvestigationScenario = DEFAULT_INVESTIGATION_SCENARIO
 
     @model_validator(mode="before")
@@ -156,11 +195,6 @@ class SummaryRequest(SummaryRequestOptions):
         if isinstance(value, str) and value.strip().casefold() == "auto":
             return None
         return value
-
-    @field_validator("user_prompt")
-    @classmethod
-    def normalize_user_prompt(cls, value: str | None) -> str | None:
-        return value or None
 
     @field_validator("investigation_scenario", mode="before")
     @classmethod
@@ -253,6 +287,7 @@ def validate_summary_request_options(
     min_length: int,
     max_length: int,
     length_mode: object = "manual",
+    user_prompt: object = None,
 ) -> SummaryRequestOptions:
     """Validate direct calls before task lookup, GPU acquisition, or model work."""
 
@@ -276,6 +311,7 @@ def validate_summary_request_options(
         length_mode=cast(SummaryLengthMode, length_mode),
         min_length=min_length,
         max_length=max_length,
+        user_prompt=normalize_summary_user_prompt(user_prompt),
     )
 
 
@@ -343,11 +379,13 @@ __all__ = [
     "DEFAULT_SUMMARY_MIN_WORDS",
     "DEFAULT_SUMMARY_TYPE",
     "InvalidSummaryLengthBounds",
+    "InvalidSummaryUserPrompt",
     "InvestigationSummaryMaxTooSmall",
     "MIN_INVESTIGATION_SUMMARY_MAX_WORDS",
     "MultiSummaryRequest",
     "SUMMARY_TYPES",
     "SUMMARY_TYPE_VALUES",
+    "SUMMARY_USER_PROMPT_MAX_LENGTH",
     "SummaryMaximumExceeded",
     "SummaryLengthMode",
     "SummaryRequest",
@@ -358,6 +396,7 @@ __all__ = [
     "build_summary_length_contract",
     "enforce_summary_maximum",
     "evaluate_summary_length",
+    "normalize_summary_user_prompt",
     "require_summary_type",
     "validate_summary_length_bounds",
     "validate_summary_request_options",

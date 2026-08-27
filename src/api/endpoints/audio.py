@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Form, Body, Depends, Request
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import List, Dict, Any
 from src.services.audio_service import summarize_transcript, save_audio_and_create_task, process_task
 from src.services.task_service import (
@@ -37,10 +37,13 @@ from src.services.summarization.contracts import (
     CaseSummaryRequest,
     DEFAULT_SUMMARY_TYPE,
     MultiSummaryRequest,
+    SUMMARY_USER_PROMPT_MAX_LENGTH,
     SummaryMaximumExceeded,
     SummaryRequest,
     SummaryRequestContractError,
+    SummaryRequestOptions,
     SummaryType,
+    normalize_summary_user_prompt,
     validate_summary_request_options,
 )
 from src.services.summarization.investigation_preview import (
@@ -59,7 +62,15 @@ router = APIRouter()
 class TaskContextUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    user_context_prompt: str | None = None
+    user_context_prompt: str | None = Field(
+        default=None,
+        max_length=SUMMARY_USER_PROMPT_MAX_LENGTH,
+    )
+
+    @field_validator("user_context_prompt", mode="before")
+    @classmethod
+    def validate_legacy_user_prompt(cls, value: object) -> str | None:
+        return normalize_summary_user_prompt(value)
 
 
 class VisualizationRequest(BaseModel):
@@ -68,9 +79,9 @@ class VisualizationRequest(BaseModel):
     visualization_type: str = "all"
 
 
-class ResummarizeRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ResummarizeRequest(SummaryRequestOptions):
+    # Preserve the legacy request schema/defaults while inheriting the shared
+    # strict contract, including optional user_prompt validation.
     model_name: str | None = None
     summary_type: SummaryType = "investigation"
     min_length: int = 50
@@ -702,6 +713,7 @@ async def summarize_multi(
             min_length=request.min_length,
             max_length=request.max_length,
             length_mode=request.length_mode,
+            user_prompt=request.user_prompt,
         )
         failure = _summary_output_failure(result)
         if failure is not None:
@@ -744,6 +756,7 @@ def summarize_case(
             min_length=request.min_length,
             max_length=request.max_length,
             length_mode=request.length_mode,
+            user_prompt=request.user_prompt,
         )
         failure = _summary_output_failure(result)
         if failure is not None:
@@ -871,6 +884,7 @@ def resummarize_task(
             min_length=request.min_length,
             max_length=request.max_length,
             length_mode=request.length_mode,
+            user_prompt=request.user_prompt,
         )
     except SummaryRequestContractError as exc:
         raise HTTPException(status_code=422, detail=exc.as_error()) from exc
@@ -882,7 +896,15 @@ def resummarize_task(
     check_rate_limit(f"rl:process:{current_user.id}", settings.PROCESS_RATE_LIMIT_PER_HOUR, 3600)
     result = task.get("result") or {}
     transcript = result.get("transcription") or result.get("text")
-    user_context_prompt = result.get("user_context_prompt")
+    if "user_prompt" in request.model_fields_set:
+        user_prompt = options.user_prompt
+    else:
+        try:
+            user_prompt = normalize_summary_user_prompt(
+                result.get("user_context_prompt")
+            )
+        except SummaryRequestContractError as exc:
+            raise HTTPException(status_code=422, detail=exc.as_error()) from exc
     if not transcript:
         raise HTTPException(status_code=400, detail="No transcript found")
     from src.services.summarization.summary_service_v2 import summarize_transcript_v2
@@ -892,7 +914,7 @@ def resummarize_task(
         model_name=request.model_name,
         summary_type=options.summary_type,
         include_context=False,
-        user_prompt=user_context_prompt,
+        user_prompt=user_prompt,
         min_length=options.min_length,
         max_length=options.max_length,
         length_mode=options.length_mode,

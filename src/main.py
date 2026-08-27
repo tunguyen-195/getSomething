@@ -49,9 +49,22 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 # Exception handlers
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc):
+    # Validation details must never serialize request values (including prompts).
+    safe_errors = []
+    for error in exc.errors():
+        if isinstance(error, dict):
+            safe_errors.append(
+                {
+                    key: value
+                    for key, value in error.items()
+                    if key not in {"input", "ctx", "url"}
+                }
+            )
+        else:
+            safe_errors.append({"type": "validation_error"})
     return JSONResponse(
         status_code=422,
-        content={"detail": str(exc)},
+        content={"detail": safe_errors},
     )
 
 @app.exception_handler(HTTPException)

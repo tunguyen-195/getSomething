@@ -12,7 +12,9 @@ const {
   DEFAULT_SUMMARY_MAX_LENGTH,
   DEFAULT_SUMMARY_MIN_LENGTH,
   DEFAULT_SUMMARY_TYPE,
+  normalizeSummaryUserPrompt,
   SUMMARY_TYPES,
+  SUMMARY_USER_PROMPT_MAX_LENGTH,
 } = require('../src/api/client.ts');
 const { countTranscriptWords } = require('../src/utils/transcriptText.ts');
 
@@ -44,6 +46,8 @@ summaryTest('single-summary request remains typed and propagates both bounds', (
   summaryAssert.match(app, /options: SummaryDialogOptions/);
   summaryAssert.doesNotMatch(app, /handleSummarize = async \(options: any\)/);
   summaryAssert.match(app, /summary_type: options\.summary_type/);
+  summaryAssert.match(app, /normalizeSummaryUserPrompt\(options\.user_prompt\)/);
+  summaryAssert.match(app, /\.\.\.\(userPrompt \? \{ user_prompt: userPrompt \} : \{\}\)/);
   summaryAssert.match(app, /min_length: options\.min_length/);
   summaryAssert.match(app, /max_length: options\.max_length/);
   summaryAssert.match(app, /length_mode: options\.length_mode/);
@@ -54,7 +58,31 @@ summaryTest('single-summary request remains typed and propagates both bounds', (
   summaryAssert.doesNotMatch(dialog, /Maximum words \(enforced\)/);
   summaryAssert.doesNotMatch(dialog, /Include context analysis/);
   summaryAssert.match(dialog, /investigation_scenario: 'auto'/);
+  summaryAssert.match(dialog, /user_prompt: normalizeSummaryUserPrompt\(userPrompt\)/);
+  summaryAssert.match(dialog, /disabled=\{userPromptTooLong\}/);
+  summaryAssert.match(dialog, /multiline/);
+  summaryAssert.match(dialog, /SUMMARY_USER_PROMPT_MAX_LENGTH/);
   summaryAssert.doesNotMatch(dialog, /KỊCH BẢN NGHIỆP VỤ/);
+});
+
+summaryTest('optional summary prompt is trimmed, omitted when blank, and Unicode bounded', () => {
+  summaryAssert.equal(SUMMARY_USER_PROMPT_MAX_LENGTH, 2000);
+  summaryAssert.equal(normalizeSummaryUserPrompt(undefined), undefined);
+  summaryAssert.equal(normalizeSummaryUserPrompt('  \n\t  '), undefined);
+  summaryAssert.equal(
+    normalizeSummaryUserPrompt('  Tập trung vào mốc thời gian.  '),
+    'Tập trung vào mốc thời gian.',
+  );
+  summaryAssert.equal(normalizeSummaryUserPrompt('😀'.repeat(2000)), '😀'.repeat(2000));
+  const blankRequest = JSON.stringify({
+    summary_type: 'investigation',
+    user_prompt: normalizeSummaryUserPrompt('   '),
+  });
+  summaryAssert.doesNotMatch(blankRequest, /user_prompt/);
+  summaryAssert.throws(
+    () => normalizeSummaryUserPrompt('😀'.repeat(2001)),
+    /must not exceed 2000 characters/,
+  );
 });
 
 summaryTest('summary dialog word count uses the selected transcript text', () => {

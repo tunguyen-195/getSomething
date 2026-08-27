@@ -19,6 +19,7 @@ from src.services.summarization.contracts import (
     DEFAULT_SUMMARY_MAX_WORDS,
     DEFAULT_SUMMARY_MIN_WORDS,
     DEFAULT_SUMMARY_TYPE,
+    SummaryRequest,
     SummaryRequestContractError,
     SummaryType,
     validate_summary_request_options,
@@ -44,9 +45,11 @@ from src.services.summarization.public_projection import (
 router = APIRouter()
 
 
-class SummaryV2Request(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class SummaryV2Request(SummaryRequest):
+    """V2 keeps context enabled by default while sharing the canonical contract."""
 
+    # Keep the explicit V2 schema visible to static contract/audit tooling while
+    # inheriting validation (including the optional user_prompt) from the shared model.
     model_name: str | None = None
     summary_type: SummaryType = DEFAULT_SUMMARY_TYPE
     include_context: bool = True
@@ -275,7 +278,7 @@ async def summarize_v2(
                     model_name=model_name,
                     summary_type=summary_type,
                     include_context=include_context,
-                    user_prompt=None,
+                    user_prompt=request.user_prompt,
                     min_length=min_length,
                     max_length=max_length,
                     length_mode=length_mode,
@@ -302,6 +305,7 @@ async def summarize_v2(
                 model_name,
                 summary_type,
                 include_context,
+                user_prompt=request.user_prompt,
                 max_length=max_length,
                 min_length=min_length,
                 transcript_segments=transcript_segments,
