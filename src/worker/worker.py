@@ -9,6 +9,7 @@ celery_app = Celery(
     include=[
         "src.worker.tasks",  # Old tasks for backward compatibility
         "src.worker.tasks.transcribe_task",
+        "src.worker.tasks.batch_task",
         "src.worker.tasks.summarize_task",
         "src.worker.tasks.runtime_contract_task",
         "src.worker.tasks.visualize_task"
@@ -66,6 +67,11 @@ from src.worker.tasks import *  # noqa
 
 # Import new modular tasks
 from src.worker.tasks.transcribe_task import transcribe_audio_task  # noqa
-from src.worker.tasks.summarize_task import summarize_transcript_task, summarize_multi_task  # noqa
+from src.worker.tasks.batch_task import transcribe_audio_batch_task  # noqa
+from src.worker.tasks.summarize_task import (  # noqa
+    summarize_audio_batch_job_task,
+    summarize_multi_task,
+    summarize_transcript_task,
+)
 from src.worker.tasks.runtime_contract_task import worker_runtime_contract_task  # noqa
 from src.worker.tasks.visualize_task import visualize_task  # noqa

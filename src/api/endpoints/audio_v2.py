@@ -1,12 +1,27 @@
 ﻿"""Audio API v2 - Modular"""
-from fastapi import APIRouter, UploadFile, File, HTTPException, Body, Depends, Form, Query
+from fastapi import (
+    APIRouter,
+    UploadFile,
+    File,
+    HTTPException,
+    Body,
+    Depends,
+    Form,
+    Query,
+    status,
+)
 from pydantic import BaseModel, ConfigDict
 from typing import Any
 from src.core.logging import logger
 from src.database.config.database import get_db
 from sqlalchemy.orm import Session
 from src.services.audio_service import save_audio_and_create_task
-from src.core.auth import assert_case_access, assert_task_access, check_rate_limit, get_current_user
+from src.core.auth import (
+    assert_case_access,
+    assert_task_access,
+    check_rate_limit,
+    get_current_user,
+)
 from src.core.config import settings
 from src.database.models.models import AudioFile, User
 from src.core.time import LEGACY_DATABASE_TIMEZONE, utc_isoformat
@@ -41,6 +56,26 @@ from src.services.summarization.public_projection import (
     public_context_analysis_payload,
     public_task_result_payload,
 )
+from src.services.audio_batch_contracts import (
+    AudioBatchAcceptedResponse,
+    AudioBatchContractError,
+    AudioBatchResponse,
+    AudioBatchSummaryJobResponse,
+    AudioBatchSummaryRequest,
+    AudioBatchTranscribeRequest,
+    AudioBatchUploadOptions,
+)
+from src.services.audio_batch_repository import get_owned_audio_batch
+from src.services.audio_batch_service import (
+    AudioBatchServiceError,
+    audio_batch_response,
+    audio_batch_summary_job_response,
+    cancel_audio_batch,
+    create_audio_batch_from_uploads,
+    create_audio_batch_summary_job,
+    get_owned_audio_batch_summary_job,
+    queue_audio_batch_transcription,
+)
 
 router = APIRouter()
 
@@ -64,6 +99,7 @@ class VisualizationV2Request(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     visualization_type: str = "all"
+
 
 _SUMMARY_RESPONSE_FIELDS = frozenset(
     {
@@ -90,9 +126,7 @@ def _summary_response_result(result: dict[str, Any]) -> dict[str, Any]:
     """Expose summary-owned fields without replaying visualization projections."""
 
     response = {
-        key: value
-        for key, value in result.items()
-        if key in _SUMMARY_RESPONSE_FIELDS
+        key: value for key, value in result.items() if key in _SUMMARY_RESPONSE_FIELDS
     }
     response["summary"] = sanitize_legacy_preview_text(response.get("summary"))
     response["summary_preview"] = coerce_public_preview_payload(
@@ -100,6 +134,7 @@ def _summary_response_result(result: dict[str, Any]) -> dict[str, Any]:
     )
     response["context"] = public_context_analysis_payload(response.get("context"))
     return response
+
 
 def _summary_contract_failure(result: Any) -> tuple[str, str] | None:
     if not isinstance(result, dict):
@@ -121,6 +156,245 @@ def _summary_contract_failure(result: Any) -> tuple[str, str] | None:
         return "SUMMARY_EMPTY", "Summarization service returned an empty summary."
     return None
 
+
+def _batch_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, AudioBatchServiceError):
+        return HTTPException(status_code=exc.status_code, detail=exc.as_detail())
+    if isinstance(exc, AudioBatchContractError):
+        return HTTPException(
+            status_code=422,
+            detail={"code": exc.code, "message": exc.message, "retryable": False},
+        )
+    return HTTPException(
+        status_code=500,
+        detail={
+            "code": "AUDIO_BATCH_INTERNAL_ERROR",
+            "message": "Audio batch processing failed.",
+            "retryable": True,
+        },
+    )
+
+
+def _owned_batch_or_404(db: Session, *, batch_id: str, current_user: User, action: str):
+    try:
+        batch = get_owned_audio_batch(db, batch_id=batch_id, user_id=current_user.id)
+    except AudioBatchContractError as exc:
+        raise _batch_http_error(exc) from exc
+    if batch is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "AUDIO_BATCH_NOT_FOUND",
+                "message": "Audio batch not found.",
+                "retryable": False,
+            },
+        )
+    assert_case_access(db, current_user, batch.case_id, action)
+    return batch
+
+
+@router.post(
+    "/batches",
+    response_model=AudioBatchResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_audio_batch_v2(
+    files: list[UploadFile] = File(..., alias="files[]"),
+    case_id: int = Form(...),
+    idempotency_key: str = Form(...),
+    enable_diarization: bool = Form(True),
+    diarization_method: str = Form("pyannote"),
+    language: str = Form("vi"),
+    fast_mode: bool = Form(False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Atomically persist one ordered upload batch after validating every file."""
+
+    try:
+        assert_case_access(db, current_user, case_id, "write")
+        check_rate_limit(
+            f"rl:upload:{current_user.id}",
+            settings.UPLOAD_RATE_LIMIT_PER_HOUR,
+            3600,
+        )
+        options = AudioBatchUploadOptions.model_validate(
+            {
+                "enable_diarization": enable_diarization,
+                "diarization_method": diarization_method,
+                "language": language,
+                "fast_mode": fast_mode,
+            }
+        )
+        batch, _created = create_audio_batch_from_uploads(
+            db,
+            files=files,
+            case_id=case_id,
+            user_id=current_user.id,
+            idempotency_key=idempotency_key,
+            upload_options=options,
+        )
+        return audio_batch_response(batch)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if not isinstance(exc, (AudioBatchServiceError, AudioBatchContractError)):
+            logger.error(
+                "[API_V2_BATCH] Upload failed | error_type=%s", type(exc).__name__
+            )
+        raise _batch_http_error(exc) from exc
+
+
+@router.get("/batches/{batch_id}", response_model=AudioBatchResponse)
+async def get_audio_batch_v2(
+    batch_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        batch = _owned_batch_or_404(
+            db, batch_id=batch_id, current_user=current_user, action="read"
+        )
+        return audio_batch_response(batch)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _batch_http_error(exc) from exc
+
+
+@router.post(
+    "/batches/{batch_id}/transcribe",
+    response_model=AudioBatchAcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def transcribe_audio_batch_v2(
+    batch_id: str,
+    request: AudioBatchTranscribeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        _owned_batch_or_404(
+            db, batch_id=batch_id, current_user=current_user, action="process"
+        )
+        check_rate_limit(
+            f"rl:process:{current_user.id}",
+            settings.PROCESS_RATE_LIMIT_PER_HOUR,
+            3600,
+        )
+        return queue_audio_batch_transcription(
+            db,
+            batch_id=batch_id,
+            user_id=current_user.id,
+            options=request,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if not isinstance(exc, (AudioBatchServiceError, AudioBatchContractError)):
+            logger.error(
+                "[API_V2_BATCH] Transcription queue failed | error_type=%s",
+                type(exc).__name__,
+            )
+        raise _batch_http_error(exc) from exc
+
+
+@router.post(
+    "/batches/{batch_id}/cancel",
+    response_model=AudioBatchAcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def cancel_audio_batch_v2(
+    batch_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        _owned_batch_or_404(
+            db, batch_id=batch_id, current_user=current_user, action="process"
+        )
+        return cancel_audio_batch(db, batch_id=batch_id, user_id=current_user.id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _batch_http_error(exc) from exc
+
+
+@router.post(
+    "/batches/{batch_id}/summary",
+    response_model=AudioBatchSummaryJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def summarize_audio_batch_v2(
+    batch_id: str,
+    request: AudioBatchSummaryRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        _owned_batch_or_404(
+            db, batch_id=batch_id, current_user=current_user, action="process"
+        )
+        check_rate_limit(
+            f"rl:process:{current_user.id}",
+            settings.PROCESS_RATE_LIMIT_PER_HOUR,
+            3600,
+        )
+        job = create_audio_batch_summary_job(
+            db,
+            batch_id=batch_id,
+            user_id=current_user.id,
+            request=request,
+        )
+        return audio_batch_summary_job_response(job)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if not isinstance(exc, (AudioBatchServiceError, AudioBatchContractError)):
+            logger.error(
+                "[API_V2_BATCH] Summary queue failed | error_type=%s",
+                type(exc).__name__,
+            )
+        raise _batch_http_error(exc) from exc
+
+
+@router.get(
+    "/batches/{batch_id}/summary/{summary_job_id}",
+    response_model=AudioBatchSummaryJobResponse,
+)
+async def get_audio_batch_summary_v2(
+    batch_id: str,
+    summary_job_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        _owned_batch_or_404(
+            db, batch_id=batch_id, current_user=current_user, action="read"
+        )
+        job = get_owned_audio_batch_summary_job(
+            db,
+            batch_id=batch_id,
+            summary_job_id=summary_job_id,
+            user_id=current_user.id,
+        )
+        if job is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "BATCH_SUMMARY_JOB_NOT_FOUND",
+                    "message": "Merged summary job not found.",
+                    "retryable": False,
+                },
+            )
+        assert_case_access(db, current_user, job.case_id, "read")
+        return audio_batch_summary_job_response(job)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _batch_http_error(exc) from exc
+
+
 @router.post("/upload")
 async def upload_audio_v2(
     file: UploadFile = File(...),
@@ -132,14 +406,18 @@ async def upload_audio_v2(
         logger.info("[API_V2] Upload audio")
         if case_id:
             assert_case_access(db, current_user, int(case_id), "write")
-        check_rate_limit(f"rl:upload:{current_user.id}", settings.UPLOAD_RATE_LIMIT_PER_HOUR, 3600)
+        check_rate_limit(
+            f"rl:upload:{current_user.id}", settings.UPLOAD_RATE_LIMIT_PER_HOUR, 3600
+        )
         result = save_audio_and_create_task(
             file,
             db,
             case_id=int(case_id) if case_id else None,
             user_id=current_user.id,
         )
-        audio_file = db.query(AudioFile).filter(AudioFile.id == result.get("audio_id")).first()
+        audio_file = (
+            db.query(AudioFile).filter(AudioFile.id == result.get("audio_id")).first()
+        )
         if audio_file:
             result.update(
                 created_at=utc_isoformat(
@@ -158,28 +436,54 @@ async def upload_audio_v2(
         logger.error(f"[API_V2] Upload error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Audio upload failed") from None
 
+
 @router.post("/transcribe/{task_id}")
-async def transcribe_v2(task_id: str, enable_diarization: bool = Body(True), diarization_method: str = Body("pyannote"), language: str = Body("vi"), fast_mode: bool = Body(False), async_mode: bool = Body(True), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def transcribe_v2(
+    task_id: str,
+    enable_diarization: bool = Body(True),
+    diarization_method: str = Body("pyannote"),
+    language: str = Body("vi"),
+    fast_mode: bool = Body(False),
+    async_mode: bool = Body(True),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     try:
         from src.services.task_service import get_task, update_task
+
         task = get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
         assert_task_access(db, current_user, task_id, "process")
-        check_rate_limit(f"rl:process:{current_user.id}", settings.PROCESS_RATE_LIMIT_PER_HOUR, 3600)
+        check_rate_limit(
+            f"rl:process:{current_user.id}", settings.PROCESS_RATE_LIMIT_PER_HOUR, 3600
+        )
         if async_mode:
             from src.worker.tasks.transcribe_task import transcribe_audio_task
-            celery_task = transcribe_audio_task.delay(task_id, enable_diarization, diarization_method, language, fast_mode)
+
+            celery_task = transcribe_audio_task.delay(
+                task_id, enable_diarization, diarization_method, language, fast_mode
+            )
             update_task(task_id, {"status": "transcribing"})
-            return {"task_id": task_id, "celery_task_id": celery_task.id, "status": "transcribing"}
+            return {
+                "task_id": task_id,
+                "celery_task_id": celery_task.id,
+                "status": "transcribing",
+            }
         else:
-            from src.services.transcription.transcribe_service_v2 import transcribe_audio_v2
-            return transcribe_audio_v2(task_id, db, enable_diarization, diarization_method, language, fast_mode)
+            from src.services.transcription.transcribe_service_v2 import (
+                transcribe_audio_v2,
+            )
+
+            return transcribe_audio_v2(
+                task_id, db, enable_diarization, diarization_method, language, fast_mode
+            )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"[API_V2] Transcribe error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Transcription failed") from None
+
 
 @router.post("/summarize/{task_id}")
 async def summarize_v2(
@@ -211,16 +515,17 @@ async def summarize_v2(
         min_length = options.min_length
         max_length = options.max_length
         length_mode = options.length_mode
-        investigation_scenario = require_investigation_scenario(
-            investigation_scenario
-        )
+        investigation_scenario = require_investigation_scenario(investigation_scenario)
 
         from src.services.task_service import get_task, update_task
+
         task = get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
         assert_task_access(db, current_user, task_id, "process")
-        check_rate_limit(f"rl:process:{current_user.id}", settings.PROCESS_RATE_LIMIT_PER_HOUR, 3600)
+        check_rate_limit(
+            f"rl:process:{current_user.id}", settings.PROCESS_RATE_LIMIT_PER_HOUR, 3600
+        )
 
         # Get transcript from task result (standardized to "transcription")
         transcript = None
@@ -243,9 +548,7 @@ async def summarize_v2(
                 has_diarization=task_result.get("has_diarization"),
                 degraded=task_result.get("degraded"),
                 diarization_status=task_result.get("diarization_status"),
-                diarization_method_used=task_result.get(
-                    "diarization_method_used"
-                ),
+                diarization_method_used=task_result.get("diarization_method_used"),
                 diarization_fallback_reason=task_result.get(
                     "diarization_fallback_reason"
                 ),
@@ -256,13 +559,21 @@ async def summarize_v2(
             )
 
         if not transcript or not transcript.strip():
-            logger.warning(f"[API_V2] No transcription found for task {task_id}. Task result keys: {list(task.get('result', {}).keys()) if task.get('result') else 'No result'}")
-            raise HTTPException(status_code=400, detail="No transcription found. Please transcribe the audio first.")
+            logger.warning(
+                f"[API_V2] No transcription found for task {task_id}. Task result keys: {list(task.get('result', {}).keys()) if task.get('result') else 'No result'}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="No transcription found. Please transcribe the audio first.",
+            )
 
-        logger.info(f"[API_V2] Summarize | task_id={task_id} | transcript_length={len(transcript)} | model={model_name}")
+        logger.info(
+            f"[API_V2] Summarize | task_id={task_id} | transcript_length={len(transcript)} | model={model_name}"
+        )
 
         if async_mode:
             from src.worker.tasks.summarize_task import summarize_transcript_task
+
             if not update_task(task_id, {"status": "summarizing"}):
                 raise HTTPException(
                     status_code=500,
@@ -297,9 +608,16 @@ async def summarize_v2(
                         "task_id": task_id,
                     },
                 ) from None
-            return {"task_id": task_id, "status": "summarizing", "celery_task_id": celery_task.id}
+            return {
+                "task_id": task_id,
+                "status": "summarizing",
+                "celery_task_id": celery_task.id,
+            }
         else:
-            from src.services.summarization.summary_service_v2 import summarize_transcript_v2
+            from src.services.summarization.summary_service_v2 import (
+                summarize_transcript_v2,
+            )
+
             result = summarize_transcript_v2(
                 transcript,
                 model_name,
@@ -393,6 +711,7 @@ async def summarize_v2(
         )
         raise HTTPException(status_code=500, detail="Summarization failed") from None
 
+
 @router.get("/tasks/{task_id}/status")
 async def get_status_v2(
     task_id: str,
@@ -419,6 +738,7 @@ async def get_status_v2(
             lightweight_result = authorized_task.result
             if isinstance(lightweight_result, str):
                 import json
+
                 try:
                     lightweight_result = json.loads(lightweight_result)
                 except Exception:
@@ -429,7 +749,9 @@ async def get_status_v2(
             return {
                 "task_id": task_id,
                 "audio_id": audio_id,
-                "download_url": f"/api/v1/audio/{audio_id}/download" if audio_id else None,
+                "download_url": f"/api/v1/audio/{audio_id}/download"
+                if audio_id
+                else None,
                 "status": effective_task_status(
                     authorized_task.status,
                     audio.status if audio else None,
@@ -444,7 +766,9 @@ async def get_status_v2(
                 "uploaded_at": utc_isoformat(
                     audio.uploaded_at,
                     naive_timezone=LEGACY_DATABASE_TIMEZONE,
-                ) if audio else None,
+                )
+                if audio
+                else None,
             }
 
         task = get_task(task_id, db=db)
@@ -455,6 +779,7 @@ async def get_status_v2(
         result_data = public_task_result_payload(task.get("result", {}))
         if isinstance(result_data, str):
             import json
+
             try:
                 result_data = json.loads(result_data)
             except:
@@ -508,11 +833,7 @@ async def get_status_v2(
         response_status = task.get("status")
         if response_status == "visualized" and not has_visualization:
             response_status = (
-                "summarized"
-                if summary
-                else "transcribed"
-                if transcript
-                else "uploaded"
+                "summarized" if summary else "transcribed" if transcript else "uploaded"
             )
 
         # Build comprehensive response
@@ -539,7 +860,9 @@ async def get_status_v2(
             "uploaded_at": utc_isoformat(
                 audio.uploaded_at,
                 naive_timezone=LEGACY_DATABASE_TIMEZONE,
-            ) if audio else None,
+            )
+            if audio
+            else None,
             "requested_engine": requested_engine,
             "engine_used": engine_used,
             "fallback_reason": fallback_reason,
@@ -561,7 +884,9 @@ async def get_status_v2(
         raise
     except Exception as e:
         logger.error(f"[API_V2] Get status error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to read task status") from None
+        raise HTTPException(
+            status_code=500, detail="Failed to read task status"
+        ) from None
 
 
 @router.post("/visualize/{task_id}")
@@ -583,7 +908,9 @@ async def visualize_v2(
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
         assert_task_access(db, current_user, task_id, "process")
-        check_rate_limit(f"rl:process:{current_user.id}", settings.PROCESS_RATE_LIMIT_PER_HOUR, 3600)
+        check_rate_limit(
+            f"rl:process:{current_user.id}", settings.PROCESS_RATE_LIMIT_PER_HOUR, 3600
+        )
 
         task_result = task.get("result") if isinstance(task.get("result"), dict) else {}
         released_run = task_result.get("released_investigation_run")
@@ -591,7 +918,9 @@ async def visualize_v2(
         try:
             result = generate_visualization(released_run, visualization_type)
         except VisualizationProjectionError as exc:
-            status_code = 409 if exc.code == "VISUALIZATION_RELEASED_RUN_REQUIRED" else 412
+            status_code = (
+                409 if exc.code == "VISUALIZATION_RELEASED_RUN_REQUIRED" else 412
+            )
             raise HTTPException(
                 status_code=status_code,
                 detail={"code": exc.code, "message": str(exc), "task_id": task_id},

@@ -3,6 +3,12 @@
 Ung dung FastAPI + React de upload audio, chuyen giong noi thanh van ban, tom tat
 va phan tich du lieu dieu tra bang local AI.
 
+Workflow V2 ho tro upload toi da 20 file trong mot batch, chon tap file de
+transcript theo thu tu, tao mot merged summary tu source manifest bat bien, va
+nhan `user_prompt` tuy chon de dieu chinh trong tam tom tat. Prompt chi la du
+lieu khong tin cay; no khong duoc ghi vao batch/job response va khong the bo qua
+grounding hay release gate.
+
 ## Clean-clone development/staging
 
 Runbook canonical tren Windows:
@@ -35,6 +41,9 @@ powershell -ExecutionPolicy Bypass -File scripts\restore_gated_pyannote.ps1 `
 
 CPU functional fallback dung `-HardwareProfile cpu`. Thu tu start bat buoc la:
 PostgreSQL + Redis, llama-server, backend, Celery solo worker, frontend.
+
+Sau khi start, API batch canonical nam tai `/api/v1/audio/v2/batches`; OpenAPI
+tai `http://127.0.0.1:8000/docs` va UI tai `http://127.0.0.1:3000`.
 
 May dich i9-12900K / 32 GB / RTX 3060 12 GB / Windows 11 Pro 25H2 dung profile
 `gpu12gb`. Truoc khi cai, cap nhat NVIDIA driver va de it nhat 7000 MiB VRAM

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ThemeProvider, CssBaseline, Box, AppBar, Toolbar, Typography, Paper, Drawer, List, ListItem, ListItemText, Divider, IconButton, InputBase, Button, CircularProgress, Tabs, Tab, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Accordion, AccordionSummary, AccordionDetails, Snackbar, Alert, Tooltip, Chip, Menu, MenuItem, Pagination, useMediaQuery } from '@mui/material';
+import { ThemeProvider, CssBaseline, Box, AppBar, Toolbar, Typography, Paper, Drawer, List, ListItem, ListItemText, Divider, IconButton, InputBase, Button, CircularProgress, LinearProgress, Tabs, Tab, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Accordion, AccordionSummary, AccordionDetails, Snackbar, Alert, Tooltip, Chip, Menu, MenuItem, Pagination, useMediaQuery } from '@mui/material';
 import { lightTheme, darkTheme } from './theme';
 import DarkModeToggle from './components/DarkModeToggle';
 import SearchIcon from '@mui/icons-material/Search';
@@ -11,17 +11,40 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import SortIcon from '@mui/icons-material/Sort';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import FolderIcon from '@mui/icons-material/Folder';
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import FileCard from './components/FileCard';
 import TranscribeDialog from './components/TranscribeDialog';
 import SummarizeDialog from './components/SummarizeDialog';
 import CompactUploader from './components/CompactUploader';
 import FileTable from './components/FileTable';
+import BatchSummaryDialog from './components/BatchSummaryDialog';
 import VisualizationDialog from './components/VisualizationDialog';
 import AnalysisPanel from './components/AnalysisPanel';
 import DiarizationPanel from './components/DiarizationPanel';
 import DateTimeText from './components/DateTimeText';
-import { apiFetch, getCurrentUser, login, logout, normalizeSummaryUserPrompt } from './api/client';
-import type { SummaryDialogOptions } from './api/client';
+import {
+  apiFetch,
+  AudioBatchApiError,
+  audioBatchResumeStorageKey,
+  cancelAudioBatch,
+  getAudioBatch,
+  getAudioBatchSummary,
+  getCurrentUser,
+  isAudioBatchSummaryTerminal,
+  isAudioBatchProcessing,
+  isAudioBatchTerminal,
+  login,
+  logout,
+  normalizeSummaryUserPrompt,
+  orderTaskIdsByBatch,
+  parseAudioBatchResumeRecord,
+  transcribeAudioBatch,
+} from './api/client';
+import type {
+  AudioBatchResponse,
+  AudioBatchSummaryJob,
+  SummaryDialogOptions,
+} from './api/client';
 import { countTranscriptWords } from './utils/transcriptText';
 import { summaryDisplayText } from './utils/summaryDisplay';
 
@@ -37,6 +60,90 @@ interface Case {
   updated_at?: string;
   summaries?: string[];
   transcripts?: string[];
+}
+
+const batchStatusLabel: Record<string, string> = {
+  created: 'Đã upload',
+  queued: 'Đang chờ',
+  processing: 'Đang xử lý',
+  partially_succeeded: 'Hoàn tất một phần',
+  succeeded: 'Hoàn tất',
+  failed: 'Thất bại',
+  cancel_requested: 'Đang hủy',
+  cancelled: 'Đã hủy',
+  uploaded: 'Đã upload',
+  transcribing: 'Đang chuyển biên',
+  transcribed: 'Đã chuyển biên',
+};
+
+function BatchProgressRegion({
+  batch,
+  errorCode,
+  cancelling,
+  onCancel,
+}: {
+  batch: AudioBatchResponse;
+  errorCode: string | null;
+  cancelling: boolean;
+  onCancel: () => void;
+}) {
+  const terminalCount = batch.completed_count + batch.failed_count + batch.cancelled_count;
+  const progress = Math.round((terminalCount / batch.requested_count) * 100);
+  return (
+    <Box
+      aria-label="Tiến độ batch audio"
+      sx={{ py: 2, my: 2, borderTop: '1px solid', borderBottom: '1px solid', borderColor: 'divider' }}
+    >
+      <Box display="flex" alignItems="center" gap={1} flexWrap="wrap" mb={1}>
+        <Typography variant="subtitle2" fontWeight={700}>Batch đang hoạt động</Typography>
+        <Chip size="small" label={batchStatusLabel[batch.status] ?? batch.status} />
+        <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+          {batch.id}
+        </Typography>
+        <Box flex={1} />
+        {!isAudioBatchTerminal(batch.status) && batch.status !== 'cancel_requested' && (
+          <Button
+            size="small"
+            color="error"
+            variant="outlined"
+            startIcon={<CancelOutlinedIcon />}
+            disabled={cancelling}
+            onClick={onCancel}
+          >
+            {cancelling ? 'Đang hủy...' : 'Hủy batch'}
+          </Button>
+        )}
+      </Box>
+      <LinearProgress variant="determinate" value={progress} sx={{ mb: 0.75 }} />
+      <Typography variant="caption" color="text.secondary">
+        {terminalCount}/{batch.requested_count} kết thúc · {batch.completed_count} thành công · {batch.failed_count} lỗi · {batch.cancelled_count} hủy
+      </Typography>
+      {(errorCode || batch.error_code) && (
+        <Alert severity="error" sx={{ mt: 1 }}>
+          Batch chưa thể hoàn tất ({errorCode ?? batch.error_code}).
+        </Alert>
+      )}
+      <Box
+        component="ol"
+        sx={{ m: 0, mt: 1.5, pl: 3, display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 0.75 }}
+      >
+        {batch.items.map(item => (
+          <Box component="li" key={item.task_id} sx={{ minWidth: 0, pr: 1 }}>
+            <Box display="flex" alignItems="center" gap={1} minWidth={0}>
+              <Typography variant="body2" noWrap title={item.original_filename} flex={1}>
+                {item.original_filename}
+              </Typography>
+              <Chip
+                size="small"
+                label={batchStatusLabel[item.status] ?? item.status}
+                color={item.status === 'failed' ? 'error' : item.status === 'transcribed' ? 'success' : 'default'}
+              />
+            </Box>
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  );
 }
 
 const drawerWidth = 320;
@@ -102,7 +209,16 @@ function App() {
   const [visualizeTaskId, setVisualizeTaskId] = useState<string | null>(null);
   const pollingIntervalsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const pollingRequestsRef = useRef<Set<string>>(new Set());
+  const batchContextVersionRef = useRef(0);
   const [files, setFiles] = useState<any[]>([]);
+  const [activeBatch, setActiveBatch] = useState<AudioBatchResponse | null>(null);
+  const [batchErrorCode, setBatchErrorCode] = useState<string | null>(null);
+  const [batchActionBusy, setBatchActionBusy] = useState(false);
+  const [batchSelectedTaskIds, setBatchSelectedTaskIds] = useState<string[]>([]);
+  const [pendingBatchTranscribeTaskIds, setPendingBatchTranscribeTaskIds] = useState<string[]>([]);
+  const [batchSummaryDialogOpen, setBatchSummaryDialogOpen] = useState(false);
+  const [batchSummaryJob, setBatchSummaryJob] = useState<AudioBatchSummaryJob | null>(null);
+  const [batchSummaryErrorCode, setBatchSummaryErrorCode] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' as 'success' | 'error' | 'info' | 'warning' });
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -143,6 +259,8 @@ function App() {
     context_analysis: f.context_analysis,
     created_at: f.created_at,
     download_url: f.download_url,
+    updated_at: f.updated_at,
+    batch_id: f.batch_id,
   });
 
   useEffect(() => {
@@ -255,6 +373,158 @@ function App() {
     fetchFiles();
   }, [selectedCase]);
 
+  const batchStorageKey = selectedCase && currentUser
+    ? audioBatchResumeStorageKey(currentUser.id ?? currentUser.username, selectedCase.id)
+    : null;
+
+  useEffect(() => {
+    const contextVersion = ++batchContextVersionRef.current;
+    setActiveBatch(null);
+    setBatchSelectedTaskIds([]);
+    setBatchSummaryJob(null);
+    setBatchErrorCode(null);
+    setBatchSummaryErrorCode(null);
+    setBatchSummaryDialogOpen(false);
+    setPendingBatchTranscribeTaskIds([]);
+    if (!batchStorageKey || !selectedCase) return;
+
+    const rawRecord = window.localStorage.getItem(batchStorageKey);
+    const resumeRecord = parseAudioBatchResumeRecord(rawRecord);
+    if (!resumeRecord) {
+      if (rawRecord !== null) window.localStorage.removeItem(batchStorageKey);
+      return;
+    }
+
+    const restore = async () => {
+      try {
+        const restoredBatch = await getAudioBatch(resumeRecord.batch_id);
+        if (batchContextVersionRef.current !== contextVersion) return;
+        if (String(restoredBatch.case_id) !== String(selectedCase.id)) {
+          window.localStorage.removeItem(batchStorageKey);
+          setBatchErrorCode('BATCH_CASE_MISMATCH');
+          return;
+        }
+        setActiveBatch(restoredBatch);
+        setBatchSelectedTaskIds(orderTaskIdsByBatch(restoredBatch, resumeRecord.selected_task_ids ?? []));
+
+        if (resumeRecord.summary_job_id) {
+          try {
+            const restoredSummary = await getAudioBatchSummary(restoredBatch.id, resumeRecord.summary_job_id);
+            if (batchContextVersionRef.current === contextVersion) setBatchSummaryJob(restoredSummary);
+          } catch (error) {
+            if (batchContextVersionRef.current !== contextVersion) return;
+            const code = error instanceof AudioBatchApiError ? error.code : 'BATCH_SUMMARY_STATUS_UNAVAILABLE';
+            setBatchSummaryErrorCode(code);
+            if (error instanceof AudioBatchApiError && [400, 403, 404].includes(error.status)) {
+              window.localStorage.setItem(batchStorageKey, JSON.stringify({
+                batch_id: restoredBatch.id,
+                selected_task_ids: resumeRecord.selected_task_ids ?? [],
+              }));
+            }
+          }
+        }
+      } catch (error) {
+        if (batchContextVersionRef.current !== contextVersion) return;
+        const code = error instanceof AudioBatchApiError ? error.code : 'BATCH_STATUS_UNAVAILABLE';
+        setBatchErrorCode(code);
+        if (error instanceof AudioBatchApiError && [400, 403, 404].includes(error.status)) {
+          window.localStorage.removeItem(batchStorageKey);
+        }
+      }
+    };
+    void restore();
+  }, [batchStorageKey, selectedCase?.id]);
+
+  useEffect(() => {
+    if (!activeBatch) return;
+    const itemByTaskId = new Map(activeBatch.items.map(item => [item.task_id, item]));
+    setFiles(current => current.map(file => {
+      const item = itemByTaskId.get(file.task_id);
+      return item ? { ...file, batch_id: activeBatch.id, status: item.status } : file;
+    }));
+  }, [activeBatch]);
+
+  useEffect(() => {
+    if (!batchStorageKey || !activeBatch) return;
+    const previous = parseAudioBatchResumeRecord(window.localStorage.getItem(batchStorageKey));
+    window.localStorage.setItem(batchStorageKey, JSON.stringify({
+      batch_id: activeBatch.id,
+      ...(previous?.summary_job_id ? { summary_job_id: previous.summary_job_id } : {}),
+      selected_task_ids: orderTaskIdsByBatch(activeBatch, batchSelectedTaskIds),
+    }));
+  }, [activeBatch?.id, batchSelectedTaskIds, batchStorageKey]);
+
+  useEffect(() => {
+    if (!activeBatch || !isAudioBatchProcessing(activeBatch.status)) return;
+    let stopped = false;
+    let timer: number | undefined;
+    let failureCount = 0;
+    let completedCount = activeBatch.completed_count;
+
+    const schedule = (delay: number) => {
+      if (!stopped) timer = window.setTimeout(() => void poll(), delay);
+    };
+    const poll = async () => {
+      try {
+        const nextBatch = await getAudioBatch(activeBatch.id);
+        if (stopped) return;
+        failureCount = 0;
+        setBatchErrorCode(null);
+        setActiveBatch(nextBatch);
+        if (nextBatch.completed_count > completedCount || isAudioBatchTerminal(nextBatch.status)) {
+          completedCount = nextBatch.completed_count;
+          void fetchFiles();
+        }
+        if (isAudioBatchProcessing(nextBatch.status)) schedule(2000);
+      } catch (error) {
+        if (stopped) return;
+        const code = error instanceof AudioBatchApiError ? error.code : 'BATCH_STATUS_UNAVAILABLE';
+        setBatchErrorCode(code);
+        if (error instanceof AudioBatchApiError && [400, 403, 404].includes(error.status)) {
+          if (batchStorageKey) window.localStorage.removeItem(batchStorageKey);
+          return;
+        }
+        failureCount += 1;
+        schedule(Math.min(15000, 2000 * (2 ** Math.min(failureCount, 3))));
+      }
+    };
+    schedule(1500);
+    return () => {
+      stopped = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [activeBatch?.id, activeBatch?.status, batchStorageKey]);
+
+  useEffect(() => {
+    if (!batchSummaryJob || isAudioBatchSummaryTerminal(batchSummaryJob.status)) return;
+    let stopped = false;
+    let timer: number | undefined;
+    let failureCount = 0;
+    const poll = async () => {
+      try {
+        const nextJob = await getAudioBatchSummary(batchSummaryJob.batch_id, batchSummaryJob.summary_job_id);
+        if (stopped) return;
+        failureCount = 0;
+        setBatchSummaryErrorCode(null);
+        setBatchSummaryJob(nextJob);
+        if (!isAudioBatchSummaryTerminal(nextJob.status)) {
+          timer = window.setTimeout(() => void poll(), 2000);
+        }
+      } catch (error) {
+        if (stopped) return;
+        setBatchSummaryErrorCode(error instanceof AudioBatchApiError ? error.code : 'BATCH_SUMMARY_STATUS_UNAVAILABLE');
+        if (error instanceof AudioBatchApiError && [400, 403, 404].includes(error.status)) return;
+        failureCount += 1;
+        timer = window.setTimeout(() => void poll(), Math.min(15000, 2000 * (2 ** Math.min(failureCount, 3))));
+      }
+    };
+    timer = window.setTimeout(() => void poll(), 1500);
+    return () => {
+      stopped = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [batchSummaryJob?.batch_id, batchSummaryJob?.summary_job_id, batchSummaryJob?.status]);
+
   const filteredCases = Array.isArray(cases) ? cases : [];
 
   const toggleMode = () => setMode(prev => (prev === 'light' ? 'dark' : 'light'));
@@ -361,6 +631,46 @@ function App() {
 
   // V2 API handlers
   const handleTranscribe = async (options: any) => {
+    if (pendingBatchTranscribeTaskIds.length > 0) {
+      if (!activeBatch) {
+        setSnackbar({ open: true, message: 'Batch không còn khả dụng.', severity: 'error' });
+        return;
+      }
+      const orderedTaskIds = orderTaskIdsByBatch(activeBatch, pendingBatchTranscribeTaskIds);
+      const eligibleTaskIds = new Set(
+        activeBatch.items.filter(item => ['uploaded', 'failed'].includes(item.status)).map(item => item.task_id),
+      );
+      if (orderedTaskIds.length !== pendingBatchTranscribeTaskIds.length
+        || orderedTaskIds.some(taskId => !eligibleTaskIds.has(taskId))) {
+        setSnackbar({ open: true, message: 'Selection đã thay đổi. Hãy chọn lại các file có thể chuyển biên.', severity: 'warning' });
+        setPendingBatchTranscribeTaskIds([]);
+        return;
+      }
+      setBatchActionBusy(true);
+      try {
+        const accepted = await transcribeAudioBatch(activeBatch.id, {
+          task_ids: orderedTaskIds,
+          language: 'vi',
+          enable_diarization: options.enable_diarization,
+          diarization_method: options.diarization_method === 'simple_vad' ? 'simple' : options.diarization_method || 'pyannote',
+          fast_mode: options.fast_mode,
+        });
+        const selected = new Set(orderedTaskIds);
+        setActiveBatch(current => current ? {
+          ...current,
+          status: accepted.status,
+          items: current.items.map(item => selected.has(item.task_id) ? { ...item, status: 'queued' } : item),
+        } : current);
+        setPendingBatchTranscribeTaskIds([]);
+        setSnackbar({ open: true, message: `Đã xếp hàng chuyển biên ${orderedTaskIds.length} file.`, severity: 'info' });
+      } catch (error) {
+        const code = error instanceof AudioBatchApiError ? error.code : 'BATCH_TRANSCRIBE_FAILED';
+        setSnackbar({ open: true, message: `Không thể chuyển biên batch (${code}).`, severity: 'error' });
+      } finally {
+        setBatchActionBusy(false);
+      }
+      return;
+    }
     if (!selectedTaskId) return;
     try {
       const response = await apiFetch(`${API_V2_BASE}/transcribe/${selectedTaskId}`, {
@@ -375,7 +685,7 @@ function App() {
         })
       });
       if (!response.ok) throw new Error('Failed');
-      const result = await response.json();
+      await response.json();
       setFiles(prev => prev.map(f => f.task_id === selectedTaskId ? { ...f, status: 'transcribing' } : f));
       setTranscribeDialogOpen(false);
       setSnackbar({ open: true, message: '🎙️ Transcription started! Please wait...', severity: 'info' });
@@ -415,6 +725,95 @@ function App() {
       startPolling(selectedTaskId, 'summarizing');
     } catch (error) {
       setSnackbar({ open: true, message: 'Failed to start', severity: 'error' });
+    }
+  };
+
+  const handleBatchUploadComplete = (batch: AudioBatchResponse) => {
+    if (!currentUser) return;
+    const uploadedBatchStorageKey = audioBatchResumeStorageKey(
+      currentUser.id ?? currentUser.username,
+      batch.case_id,
+    );
+    window.localStorage.setItem(uploadedBatchStorageKey, JSON.stringify({
+      batch_id: batch.id,
+      selected_task_ids: [],
+    }));
+    if (!selectedCase || String(batch.case_id) !== String(selectedCase.id)) {
+      return;
+    }
+    setActiveBatch(batch);
+    setBatchSelectedTaskIds([]);
+    setBatchSummaryJob(null);
+    setBatchSummaryErrorCode(null);
+    void fetchFiles();
+    setSnackbar({ open: true, message: `Đã tạo batch ${batch.requested_count} file.`, severity: 'success' });
+  };
+
+  const handleBatchSelectionChange = (taskIds: string[]) => {
+    if (!activeBatch) {
+      setBatchSelectedTaskIds([]);
+      return;
+    }
+    setBatchSelectedTaskIds(orderTaskIdsByBatch(activeBatch, taskIds));
+  };
+
+  const handleBulkTranscribe = (taskIds: string[]) => {
+    if (!activeBatch || batchActionBusy) return;
+    const orderedTaskIds = orderTaskIdsByBatch(activeBatch, taskIds);
+    if (orderedTaskIds.length === 0 || orderedTaskIds.length !== taskIds.length) {
+      setSnackbar({ open: true, message: 'Selection không hợp lệ cho batch hiện tại.', severity: 'warning' });
+      return;
+    }
+    setBatchSelectedTaskIds(orderedTaskIds);
+    setPendingBatchTranscribeTaskIds(orderedTaskIds);
+    setTranscribeDialogOpen(true);
+  };
+
+  const handleBulkSummarize = (taskIds: string[]) => {
+    if (!activeBatch || batchActionBusy) return;
+    const orderedTaskIds = orderTaskIdsByBatch(activeBatch, taskIds);
+    const fileByTaskId = new Map(files.map(file => [file.task_id, file]));
+    if (orderedTaskIds.length === 0
+      || orderedTaskIds.length !== taskIds.length
+      || orderedTaskIds.some(taskId => !fileByTaskId.get(taskId)?.transcript)) {
+      setSnackbar({ open: true, message: 'Merged summary yêu cầu mọi file đã chọn có transcript.', severity: 'warning' });
+      return;
+    }
+    setBatchSelectedTaskIds(orderedTaskIds);
+    setBatchSummaryDialogOpen(true);
+  };
+
+  const handleBatchSummarySubmitted = (job: AudioBatchSummaryJob) => {
+    if (!activeBatch || job.batch_id !== activeBatch.id) {
+      setBatchSummaryErrorCode('BATCH_SUMMARY_PARENT_MISMATCH');
+      return;
+    }
+    setBatchSummaryJob(job);
+    setBatchSummaryErrorCode(null);
+    setBatchSummaryDialogOpen(false);
+    if (batchStorageKey) {
+      window.localStorage.setItem(batchStorageKey, JSON.stringify({
+        batch_id: activeBatch.id,
+        summary_job_id: job.summary_job_id,
+        selected_task_ids: batchSelectedTaskIds,
+      }));
+    }
+    setTab(3);
+    setSnackbar({ open: true, message: 'Merged summary đã được xếp hàng.', severity: 'info' });
+  };
+
+  const handleCancelBatch = async () => {
+    if (!activeBatch || isAudioBatchTerminal(activeBatch.status) || batchActionBusy) return;
+    setBatchActionBusy(true);
+    try {
+      const accepted = await cancelAudioBatch(activeBatch.id);
+      setActiveBatch(current => current ? { ...current, status: accepted.status } : current);
+      setSnackbar({ open: true, message: 'Đã yêu cầu hủy batch.', severity: 'info' });
+    } catch (error) {
+      const code = error instanceof AudioBatchApiError ? error.code : 'BATCH_CANCEL_FAILED';
+      setSnackbar({ open: true, message: `Không thể hủy batch (${code}).`, severity: 'error' });
+    } finally {
+      setBatchActionBusy(false);
     }
   };
 
@@ -540,6 +939,18 @@ function App() {
   const selectedSummaryTranscriptLength = countTranscriptWords(
     files.find(file => file.task_id === selectedTaskId)?.transcript,
   );
+  const batchFileByTaskId = new Map(files.map(file => [file.task_id, file]));
+  const batchSummarySources = activeBatch
+    ? orderTaskIdsByBatch(activeBatch, batchSelectedTaskIds).map(taskId => ({
+      task_id: taskId,
+      filename: batchFileByTaskId.get(taskId)?.filename
+        ?? activeBatch.items.find(item => item.task_id === taskId)?.original_filename
+        ?? 'Audio source',
+      transcriptReady: Boolean(batchFileByTaskId.get(taskId)?.transcript),
+    }))
+    : [];
+  const renderedMergedSources = batchSummaryJob?.source_manifest
+    ?? batchSummarySources.map((source, position) => ({ position, task_id: source.task_id, filename: source.filename }));
 
   return (
     <ThemeProvider theme={mode === 'light' ? lightTheme : darkTheme}>
@@ -811,16 +1222,30 @@ function App() {
                 {/* Compact Upload Bar */}
                 <CompactUploader
                   caseId={selectedCase.id}
-                  onUploadComplete={() => {
-                    fetchFiles();
-                    setSnackbar({ open: true, message: '✅ Upload successful!', severity: 'success' });
-                  }}
+                  disabled={Boolean(activeBatch && !isAudioBatchTerminal(activeBatch.status))}
+                  onUploadComplete={handleBatchUploadComplete}
                 />
+
+                {activeBatch && (
+                  <BatchProgressRegion
+                    batch={activeBatch}
+                    errorCode={batchErrorCode}
+                    cancelling={batchActionBusy}
+                    onCancel={handleCancelBatch}
+                  />
+                )}
 
                 {/* File Table */}
                 <FileTable
                   files={files}
+                  selectableTaskIds={activeBatch?.items.map(item => item.task_id)}
+                  selectedTaskIds={activeBatch ? batchSelectedTaskIds : undefined}
+                  onSelectionChange={activeBatch ? handleBatchSelectionChange : undefined}
+                  onBulkTranscribe={activeBatch ? handleBulkTranscribe : undefined}
+                  onBulkSummarize={activeBatch ? handleBulkSummarize : undefined}
+                  bulkProcessing={batchActionBusy}
                   onTranscribe={(taskId) => {
+                    setPendingBatchTranscribeTaskIds([]);
                     setSelectedTaskId(taskId);
                     setTranscribeDialogOpen(true);
                   }}
@@ -858,11 +1283,16 @@ function App() {
                   onDelete={async (taskId) => {
                     const file = files.find(f => f.task_id === taskId);
                     if (!file || !window.confirm(`Xóa file "${file.filename}"?`)) return;
+                    if (activeBatch?.items.some(item => item.task_id === taskId) && !isAudioBatchTerminal(activeBatch.status)) {
+                      setSnackbar({ open: true, message: 'Không thể xóa file khi batch đang xử lý.', severity: 'warning' });
+                      return;
+                    }
                     try {
-                      await apiFetch(`/api/v1/audio/${file.audio_id || taskId}`, { method: 'DELETE' });
-                      fetchFiles();
+                      const response = await apiFetch(`/api/v1/audio/${file.audio_id || taskId}`, { method: 'DELETE' });
+                      if (!response.ok) throw new Error('DELETE_REJECTED');
+                      void fetchFiles();
                       setSnackbar({ open: true, message: '✅ File deleted', severity: 'success' });
-                    } catch (err: any) {
+                    } catch {
                       setSnackbar({ open: true, message: `❌ Delete failed`, severity: 'error' });
                     }
                   }}
@@ -870,8 +1300,17 @@ function App() {
               </Box>
             )}
             {tab === 1 ? (
-              files.filter(f => f.transcript).length > 0 ? (
-                <Box>
+              <Box>
+                {activeBatch && (
+                  <BatchProgressRegion
+                    batch={activeBatch}
+                    errorCode={batchErrorCode}
+                    cancelling={batchActionBusy}
+                    onCancel={handleCancelBatch}
+                  />
+                )}
+                {files.filter(f => f.transcript).length > 0 ? (
+                  <Box>
                   <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
                     <Typography variant="h6" fontWeight={700}>📝 Transcript các file</Typography>
                     <Chip
@@ -922,12 +1361,13 @@ function App() {
                       </Typography>
                     </Box>
                   )}
-                </Box>
-              ) : (
-                <Paper sx={{ p: 4, textAlign: 'center', borderRadius: '16px' }}>
-                  <Typography color="text.secondary">Chưa có transcript nào. Hãy chạy Transcribe cho các file audio.</Typography>
-                </Paper>
-              )
+                  </Box>
+                ) : (
+                  <Paper sx={{ p: 4, textAlign: 'center', borderRadius: '8px' }}>
+                    <Typography color="text.secondary">Chưa có transcript nào. Hãy chạy Transcribe cho các file audio.</Typography>
+                  </Paper>
+                )}
+              </Box>
             ) : null}
             {/* Diarization Tab (tab 2) */}
             {tab === 2 && (
@@ -938,53 +1378,93 @@ function App() {
             )}
             {/* Summary Tab (tab 3) */}
             {tab === 3 && (
-              files.filter(f => summaryDisplayText(f)).length > 0 ? (
-                <Box>
-                  <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                    <Typography variant="h6" fontWeight={700}>📋 Summary các file</Typography>
-                    <Chip
-                      label={`${files.filter(f => summaryDisplayText(f)).length} file(s)`}
-                      size="small"
-                      sx={{ bgcolor: '#ff9800', color: '#fff' }}
-                    />
-                  </Box>
-                  {files.filter(f => summaryDisplayText(f)).map((file, idx) => (
-                    <Accordion key={file.task_id} defaultExpanded={idx === 0} sx={{ mb: 2, borderRadius: '12px !important', border: '1px solid rgba(255, 152, 0, 0.3)', '&:before': { display: 'none' } }}>
-                      <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: 'rgba(255, 152, 0, 0.05)', borderRadius: '12px 12px 0 0' }}>
-                        <Box display="flex" alignItems="center" gap={2} width="100%">
-                          <Typography fontWeight={600} flex={1}>📄 {file.filename}</Typography>
-                          {file.num_speakers && (
-                            <Chip label={`${file.num_speakers} speakers`} size="small" variant="outlined" />
-                          )}
-                        </Box>
-                      </AccordionSummary>
-                      <AccordionDetails sx={{ pt: 2 }}>
+              <Box>
+                {batchSummaryJob && (
+                  <Box sx={{ pb: 2, mb: 3, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Box display="flex" alignItems="center" gap={1} flexWrap="wrap" mb={1.5}>
+                      <Typography variant="h6" fontWeight={700}>Merged summary</Typography>
+                      <Chip size="small" label={batchStatusLabel[batchSummaryJob.status] ?? batchSummaryJob.status} />
+                      {batchSummaryJob.user_prompt_applied && (
+                        <Chip size="small" variant="outlined" label="Prompt tùy chọn đã áp dụng" />
+                      )}
+                    </Box>
+                    {!isAudioBatchSummaryTerminal(batchSummaryJob.status) && <LinearProgress sx={{ mb: 1.5 }} />}
+                    {(batchSummaryErrorCode || batchSummaryJob.error) && (
+                      <Alert severity="error" sx={{ mb: 1.5 }}>
+                        Merged summary chưa thể hoàn tất ({batchSummaryErrorCode ?? batchSummaryJob.error?.code}).
+                      </Alert>
+                    )}
+                    <Typography variant="subtitle2" fontWeight={700}>Nguồn theo thứ tự</Typography>
+                    <Box component="ol" sx={{ mt: 0.5, mb: 1.5, pl: 3 }}>
+                      {renderedMergedSources.map(source => (
+                        <Typography component="li" variant="body2" key={`${source.position}-${source.task_id}`}>
+                          {source.filename}
+                        </Typography>
+                      ))}
+                    </Box>
+                    {batchSummaryJob.status === 'succeeded' && batchSummaryJob.summary && (
+                      <Box>
                         <Box display="flex" justifyContent="flex-end" mb={1}>
                           <Button
                             size="small"
                             variant="outlined"
                             startIcon={<ContentCopyIcon />}
                             onClick={() => {
-                              navigator.clipboard.writeText(summaryDisplayText(file));
-                              setSnackbar({ open: true, message: '✅ Nội dung đã được copy!', severity: 'success' });
+                              navigator.clipboard.writeText(batchSummaryJob.summary ?? '');
+                              setSnackbar({ open: true, message: 'Đã copy merged summary.', severity: 'success' });
                             }}
-                            sx={{ borderRadius: '8px', textTransform: 'none', color: '#ff9800', borderColor: '#ff9800' }}
                           >
                             Copy
                           </Button>
                         </Box>
-                        <Paper sx={{ p: 2, bgcolor: 'rgba(255, 152, 0, 0.03)', borderRadius: '12px', maxHeight: 400, overflow: 'auto' }}>
-                          <Typography sx={{ whiteSpace: 'pre-line', lineHeight: 1.8 }}>{summaryDisplayText(file)}</Typography>
-                        </Paper>
-                      </AccordionDetails>
-                    </Accordion>
-                  ))}
-                </Box>
-              ) : (
-                <Paper sx={{ p: 4, textAlign: 'center', borderRadius: '16px' }}>
-                  <Typography color="text.secondary">Chưa có summary nào. Hãy chạy Summarize cho các file đã transcribe.</Typography>
-                </Paper>
-              )
+                        <Typography sx={{ whiteSpace: 'pre-line', lineHeight: 1.8, overflowWrap: 'anywhere' }}>
+                          {batchSummaryJob.summary}
+                        </Typography>
+                      </Box>
+                    )}
+                  </Box>
+                )}
+
+                {files.filter(f => summaryDisplayText(f)).length > 0 && (
+                  <Box>
+                    <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} gap={1} flexWrap="wrap">
+                      <Typography variant="h6" fontWeight={700}>Summary từng file</Typography>
+                      <Chip label={`${files.filter(f => summaryDisplayText(f)).length} file`} size="small" />
+                    </Box>
+                    {files.filter(f => summaryDisplayText(f)).map((file, idx) => (
+                      <Accordion key={file.task_id} defaultExpanded={!batchSummaryJob && idx === 0} sx={{ mb: 2, borderRadius: '8px !important', border: '1px solid', borderColor: 'divider', '&:before': { display: 'none' } }}>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                          <Typography fontWeight={600} sx={{ overflowWrap: 'anywhere' }}>{file.filename}</Typography>
+                        </AccordionSummary>
+                        <AccordionDetails sx={{ pt: 1 }}>
+                          <Box display="flex" justifyContent="flex-end" mb={1}>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              startIcon={<ContentCopyIcon />}
+                              onClick={() => {
+                                navigator.clipboard.writeText(summaryDisplayText(file));
+                                setSnackbar({ open: true, message: 'Đã copy nội dung.', severity: 'success' });
+                              }}
+                            >
+                              Copy
+                            </Button>
+                          </Box>
+                          <Typography sx={{ whiteSpace: 'pre-line', lineHeight: 1.8, overflowWrap: 'anywhere' }}>
+                            {summaryDisplayText(file)}
+                          </Typography>
+                        </AccordionDetails>
+                      </Accordion>
+                    ))}
+                  </Box>
+                )}
+
+                {!batchSummaryJob && files.filter(f => summaryDisplayText(f)).length === 0 && (
+                  <Paper sx={{ p: 4, textAlign: 'center', borderRadius: '8px' }}>
+                    <Typography color="text.secondary">Chưa có summary nào. Hãy chọn các transcript đã hoàn tất để tạo summary.</Typography>
+                  </Paper>
+                )}
+              </Box>
             )}
             {/* Analysis Tab (tab 4) */}
             {tab === 4 && (
@@ -1071,9 +1551,14 @@ function App() {
       {/* V2 API - Transcribe Dialog */}
       <TranscribeDialog
         open={transcribeDialogOpen}
-        onClose={() => setTranscribeDialogOpen(false)}
+        onClose={() => {
+          setTranscribeDialogOpen(false);
+          if (!batchActionBusy) setPendingBatchTranscribeTaskIds([]);
+        }}
         onConfirm={handleTranscribe}
-        filename={selectedTaskId || ''}
+        filename={pendingBatchTranscribeTaskIds.length > 0
+          ? `${pendingBatchTranscribeTaskIds.length} file đã chọn`
+          : selectedTaskId || ''}
       />
 
       {/* V2 API - Summarize Dialog */}
@@ -1083,6 +1568,16 @@ function App() {
         onConfirm={handleSummarize}
         transcriptLength={selectedSummaryTranscriptLength}
       />
+
+      {activeBatch && (
+        <BatchSummaryDialog
+          open={batchSummaryDialogOpen}
+          batchId={activeBatch.id}
+          sources={batchSummarySources}
+          onClose={() => setBatchSummaryDialogOpen(false)}
+          onSubmitted={handleBatchSummarySubmitted}
+        />
+      )}
 
       {/* V2 API - Visualization Dialog */}
       <VisualizationDialog

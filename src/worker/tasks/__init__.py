@@ -4,7 +4,12 @@ Each task handles one specific operation
 """
 # New modular tasks
 from .transcribe_task import transcribe_audio_task
-from .summarize_task import summarize_transcript_task, summarize_multi_task
+from .batch_task import transcribe_audio_batch_task
+from .summarize_task import (
+    summarize_audio_batch_job_task,
+    summarize_multi_task,
+    summarize_transcript_task,
+)
 from .visualize_task import visualize_task
 
 # Old task from tasks.py for backward compatibility (v1 API)
@@ -17,6 +22,8 @@ process_task_async = old_tasks.process_task_async
 
 __all__ = [
     'transcribe_audio_task',
+    'transcribe_audio_batch_task',
+    'summarize_audio_batch_job_task',
     'summarize_transcript_task',
     'summarize_multi_task',
     'visualize_task',

@@ -3,8 +3,10 @@
 **Date:** 2026-08-27
 **Repository:** `https://github.com/tunguyen-195/getSomething`
 **Branch:** `feature/architecture-refactor`
-**RTK goal:** `01a019fa-ef7f-7022-be50-7e5eb1c69908`
-**Status:** Research and implementation plan; no multi-file implementation is approved by this document alone.
+**RTK goal:** `01a047a2-7e3b-7312-a0e0-0640c9547545`
+**Status:** Implemented and verified on 2026-08-28; see
+`docs/reviews/2026-08-28-multi-file-release-verification.md` for executed gates
+and remaining release assumptions.
 
 ## 1. Goal
 
@@ -302,7 +304,10 @@ The feature is complete only when all of these are true:
 - the staged tree has no secrets, raw case artifacts, generated browser state, or undeclared runtime imports;
 - the pushed commit reproduces the same gates from an independent clone.
 
-Until these checks pass, the honest status is “single-file flow functional; multi-file feature in planned implementation,” not “multi-file production ready.”
+The local release gates above passed on 2026-08-28. Independent clean-clone
+rehearsal remains a target-machine acceptance gate because model acquisition,
+NVIDIA driver compatibility and gated pyannote access are properties of that
+machine, not facts that can be established by this checkout.
 
 ## 12. Primary Sources Used
 

@@ -51,6 +51,8 @@ def plan_one_call_context_budget(
     completion_source_ratio: float | None,
     safety_reserve_tokens: int,
     desired_completion_tokens: int | None = None,
+    source_frame_open: str = "<transcript>",
+    source_frame_close: str = "</transcript>",
 ) -> dict[str, int | float | str | bool]:
     """Plan a deterministic full-source prompt and one completion call."""
 
@@ -68,7 +70,7 @@ def plan_one_call_context_budget(
 
     prompt_tokens = estimate_tokens(prompt)
     source_tokens = estimate_tokens(source_text)
-    framed_source = f"<transcript>\n{source_text}\n</transcript>"
+    framed_source = f"{source_frame_open}\n{source_text}\n{source_frame_close}"
     source_occurrence_count = prompt.count(framed_source) if source_text else 0
     resolved_desired_completion_tokens = min(
         max_completion_tokens,

@@ -25,6 +25,9 @@ SAFE_SUMMARY_MESSAGES = {
         "The investigation summary writer is unavailable."
     ),
     "LLM_UNAVAILABLE": "The summarization service is unavailable.",
+    "MULTI_SUMMARY_SOURCE_INVALID": (
+        "Every selected transcript must be present and non-empty."
+    ),
     "SUMMARY_CONTEXT_WINDOW_EXCEEDED": (
         "The complete transcript exceeds the verified model context window."
     ),
@@ -44,6 +47,7 @@ SAFE_SUMMARY_MESSAGES = {
 }
 
 NON_RETRYABLE_SUMMARY_ERRORS = {
+    "MULTI_SUMMARY_SOURCE_INVALID",
     "SUMMARY_CONTEXT_WINDOW_EXCEEDED",
     "SUMMARY_PROMPT_SOURCE_INVARIANT_FAILED",
 }

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, JSON, Text, DateTime, func, Index, UniqueConstraint, CheckConstraint, Float
+from sqlalchemy import Column, Integer, BigInteger, String, Boolean, ForeignKey, JSON, Text, DateTime, func, Index, UniqueConstraint, CheckConstraint, Float
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declared_attr
 from .base import BaseModel
@@ -31,6 +31,7 @@ class User(BaseModel):
     # Relationships
     cases = relationship("Case", back_populates="created_by_user")
     audio_files = relationship("AudioFile", back_populates="uploaded_by_user")
+    audio_batches = relationship("AudioBatch", back_populates="user")
     activities = relationship("ActivityLog", back_populates="user")
 
     # Indexes
@@ -91,6 +92,7 @@ class Case(BaseModel):
     created_by_user = relationship("User", back_populates="cases")
     participants = relationship("CaseParticipant", back_populates="case")
     audio_files = relationship("AudioFile", back_populates="case")
+    audio_batches = relationship("AudioBatch", back_populates="case")
     notes = relationship("CaseNote", back_populates="case")
     activities = relationship("ActivityLog", back_populates="case")
     summaries = relationship("Summary", back_populates="case", cascade="all, delete-orphan")
@@ -211,6 +213,7 @@ class AudioFile(BaseModel):
     language = relationship("Language")
     uploaded_by_user = relationship("User", back_populates="audio_files")
     activities = relationship("ActivityLog", back_populates="audio_file")
+    batch_items = relationship("AudioBatchItem", back_populates="audio_file")
 
     # Indexes
     __table_args__ = (
@@ -482,6 +485,7 @@ class Task(BaseModel):
 
     audio_files = relationship("AudioFile", back_populates="task")
     activities = relationship("ActivityLog", back_populates="task")
+    batch_items = relationship("AudioBatchItem", back_populates="task")
 
     # Indexes
     __table_args__ = (
@@ -490,6 +494,221 @@ class Task(BaseModel):
         Index('idx_task_user', 'user_id'),
         Index('idx_task_created_at', 'created_at'),
         Index('idx_task_updated_at', 'updated_at'),
+    )
+
+
+class AudioBatch(BaseModel):
+    """Durable parent for one ordered, idempotent multi-audio request."""
+
+    __tablename__ = "audio_batches"
+
+    id = Column(String(36), primary_key=True)
+    case_id = Column(Integer, ForeignKey("cases.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    status = Column(String(32), nullable=False, default="created")
+    requested_count = Column(Integer, nullable=False)
+    completed_count = Column(Integer, nullable=False, default=0)
+    failed_count = Column(Integer, nullable=False, default=0)
+    cancelled_count = Column(Integer, nullable=False, default=0)
+    total_size_bytes = Column(BigInteger, nullable=False)
+    upload_options = Column(JSON, nullable=False, default=dict)
+    transcription_task_ids = Column(JSON, nullable=False, default=list)
+    idempotency_key = Column(String(128), nullable=False)
+    request_fingerprint_sha256 = Column(String(64), nullable=False)
+    error_code = Column(String(80), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    case = relationship("Case", back_populates="audio_batches")
+    user = relationship("User", back_populates="audio_batches")
+    items = relationship(
+        "AudioBatchItem",
+        back_populates="batch",
+        cascade="all, delete-orphan",
+        order_by="AudioBatchItem.position",
+    )
+    summary_jobs = relationship(
+        "AudioBatchSummaryJob",
+        back_populates="batch",
+        cascade="all, delete-orphan",
+        order_by="AudioBatchSummaryJob.created_at",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "case_id",
+            "idempotency_key",
+            name="uq_audio_batch_owner_case_idempotency",
+        ),
+        CheckConstraint(
+            "status IN ('created', 'queued', 'processing', "
+            "'partially_succeeded', 'succeeded', 'failed', "
+            "'cancel_requested', 'cancelled')",
+            name="check_audio_batch_status",
+        ),
+        CheckConstraint(
+            "requested_count BETWEEN 1 AND 20",
+            name="check_audio_batch_requested_count",
+        ),
+        CheckConstraint("completed_count >= 0", name="check_audio_batch_completed_count"),
+        CheckConstraint("failed_count >= 0", name="check_audio_batch_failed_count"),
+        CheckConstraint("cancelled_count >= 0", name="check_audio_batch_cancelled_count"),
+        CheckConstraint(
+            "completed_count + failed_count + cancelled_count <= requested_count",
+            name="check_audio_batch_terminal_counts",
+        ),
+        CheckConstraint(
+            "status <> 'succeeded' OR (completed_count = requested_count AND "
+            "failed_count = 0 AND cancelled_count = 0)",
+            name="check_audio_batch_succeeded_counts",
+        ),
+        CheckConstraint(
+            "status <> 'cancelled' OR cancelled_count = requested_count",
+            name="check_audio_batch_cancelled_counts",
+        ),
+        CheckConstraint(
+            "total_size_bytes BETWEEN 1 AND 1000000000",
+            name="check_audio_batch_total_size",
+        ),
+        CheckConstraint(
+            "char_length(idempotency_key) BETWEEN 1 AND 128",
+            name="check_audio_batch_idempotency_length",
+        ),
+        CheckConstraint(
+            "request_fingerprint_sha256 ~ '^[0-9a-f]{64}$'",
+            name="check_audio_batch_fingerprint",
+        ),
+        CheckConstraint(
+            "error_code IS NULL OR error_code ~ '^[A-Z0-9_]{1,80}$'",
+            name="check_audio_batch_error_code",
+        ),
+        Index("idx_audio_batch_owner_created", "user_id", "created_at", "id"),
+        Index("idx_audio_batch_case_created", "case_id", "created_at", "id"),
+        Index("idx_audio_batch_status", "status"),
+    )
+
+
+class AudioBatchItem(BaseModel):
+    """One immutable source position and its task/audio persistence binding."""
+
+    __tablename__ = "audio_batch_items"
+
+    batch_id = Column(
+        String(36), ForeignKey("audio_batches.id", ondelete="CASCADE"), nullable=False
+    )
+    task_id = Column(String, ForeignKey("tasks.id", ondelete="RESTRICT"), nullable=False)
+    audio_id = Column(
+        Integer, ForeignKey("audio_files.id", ondelete="RESTRICT"), nullable=False
+    )
+    position = Column(Integer, nullable=False)
+    original_filename = Column(String(255), nullable=False)
+    verified_audio_sha256 = Column(String(64), nullable=False)
+    status = Column(String(32), nullable=False, default="uploaded")
+    error_code = Column(String(80), nullable=True)
+    celery_task_id = Column(String(255), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    batch = relationship("AudioBatch", back_populates="items")
+    task = relationship("Task", back_populates="batch_items")
+    audio_file = relationship("AudioFile", back_populates="batch_items")
+
+    __table_args__ = (
+        UniqueConstraint("batch_id", "position", name="uq_audio_batch_item_position"),
+        UniqueConstraint("batch_id", "task_id", name="uq_audio_batch_item_task"),
+        UniqueConstraint("batch_id", "audio_id", name="uq_audio_batch_item_audio"),
+        CheckConstraint("position >= 0", name="check_audio_batch_item_position"),
+        CheckConstraint(
+            "status IN ('uploaded', 'queued', 'transcribing', 'transcribed', "
+            "'failed', 'cancel_requested', 'cancelled')",
+            name="check_audio_batch_item_status",
+        ),
+        CheckConstraint(
+            "verified_audio_sha256 ~ '^[0-9a-f]{64}$'",
+            name="check_audio_batch_item_sha256",
+        ),
+        CheckConstraint(
+            "error_code IS NULL OR error_code ~ '^[A-Z0-9_]{1,80}$'",
+            name="check_audio_batch_item_error_code",
+        ),
+        Index("idx_audio_batch_item_batch_status", "batch_id", "status", "position"),
+        Index("idx_audio_batch_item_task", "task_id"),
+        Index("idx_audio_batch_item_audio", "audio_id"),
+    )
+
+
+class AudioBatchSummaryJob(BaseModel):
+    """Hash-bound, ordered merged-summary request for one durable audio batch."""
+
+    __tablename__ = "audio_batch_summary_jobs"
+
+    id = Column(String(36), primary_key=True)
+    batch_id = Column(
+        String(36), ForeignKey("audio_batches.id", ondelete="CASCADE"), nullable=False
+    )
+    case_id = Column(Integer, ForeignKey("cases.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    status = Column(String(32), nullable=False, default="queued")
+    selected_count = Column(Integer, nullable=False)
+    source_manifest = Column(JSON, nullable=False)
+    source_manifest_sha256 = Column(String(64), nullable=False)
+    summary_options = Column(JSON, nullable=False, default=dict)
+    user_prompt_applied = Column(Boolean, nullable=False, default=False)
+    celery_task_id = Column(String(255), nullable=True)
+    summary_id = Column(
+        Integer, ForeignKey("summaries.id", ondelete="SET NULL"), nullable=True
+    )
+    error_code = Column(String(80), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    batch = relationship("AudioBatch", back_populates="summary_jobs")
+    summary = relationship("Summary", back_populates="batch_summary_jobs")
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'processing', 'succeeded', 'failed', "
+            "'cancel_requested', 'cancelled')",
+            name="check_audio_batch_summary_job_status",
+        ),
+        CheckConstraint(
+            "selected_count BETWEEN 1 AND 20",
+            name="check_audio_batch_summary_job_selected_count",
+        ),
+        CheckConstraint(
+            "source_manifest_sha256 ~ '^[0-9a-f]{64}$'",
+            name="check_audio_batch_summary_job_manifest_sha256",
+        ),
+        CheckConstraint(
+            "error_code IS NULL OR error_code ~ '^[A-Z0-9_]{1,80}$'",
+            name="check_audio_batch_summary_job_error_code",
+        ),
+        Index(
+            "idx_audio_batch_summary_job_batch_created",
+            "batch_id",
+            "created_at",
+            "id",
+        ),
+        Index(
+            "idx_audio_batch_summary_job_owner_created",
+            "user_id",
+            "created_at",
+            "id",
+        ),
+        Index("idx_audio_batch_summary_job_status", "status"),
     )
 
 class Summary(BaseModel):
@@ -502,6 +721,7 @@ class Summary(BaseModel):
     content = Column(Text, nullable=False)
 
     case = relationship('Case', back_populates='summaries')
+    batch_summary_jobs = relationship('AudioBatchSummaryJob', back_populates='summary')
 
     # Indexes
     __table_args__ = (

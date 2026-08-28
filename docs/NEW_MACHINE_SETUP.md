@@ -291,14 +291,8 @@ Start PostgreSQL va Redis/Memurai truoc. Tao database neu chua co:
 createdb -h 127.0.0.1 -U postgres speech_to_information
 ```
 
-Neu `createdb` khong o trong `PATH`, tao database bang pgAdmin. Sau khi hai port
-5432/6379 san sang:
-
-```powershell
-venv\Scripts\python.exe -m src.database.scripts.init_db
-```
-
-Kiem tra service truoc khi init:
+Neu `createdb` khong o trong `PATH`, tao database bang pgAdmin. Kiem tra service
+truoc khi migrate va seed:
 
 ```powershell
 Get-Service postgresql* | Select-Object Status,Name
@@ -307,10 +301,22 @@ Test-NetConnection 127.0.0.1 -Port 5432
 Test-NetConnection 127.0.0.1 -Port 6379
 ```
 
+Ap dung toan bo migration truoc khi seed lookup/admin. `init_db` khong tao
+schema trong profile runtime canonical:
+
+```powershell
+venv\Scripts\python.exe -m alembic upgrade head
+$CurrentRevision = venv\Scripts\python.exe -m alembic current
+if ($LASTEXITCODE -ne 0 -or $CurrentRevision -notmatch 'f7a8b9c0d3 \(head\)') {
+  throw "Alembic schema is not at f7a8b9c0d3 (head): $CurrentRevision"
+}
+venv\Scripts\python.exe -m src.database.scripts.init_db
+```
+
 Neu `createdb` khong co trong `PATH`, dung SQL Shell/pgAdmin tao database
 `speech_to_information`, sau do dat URL PostgreSQL dung username/password that
-trong `.env`. `INIT_DB_ON_STARTUP=true` chi tao schema/admin lan dau; khong phai
-co che cai PostgreSQL.
+trong `.env`. `INIT_DB_ON_STARTUP=true` chi seed idempotent lookup/admin sau khi
+schema da duoc migrate; no khong cai PostgreSQL va khong thay the Alembic.
 
 ## 6. Operator-run model acquisition
 
@@ -631,13 +637,29 @@ tat dieu tra.
 
 Mo `http://127.0.0.1:3000` va chay mot flow day du:
 
-1. Upload mot audio test khong nhay cam.
-2. Tao transcription va doi task sang completed.
-3. Mo transcript, tao `investigation` summary.
-4. Xac nhan Summary va Analysis hien du lieu cua cung task, khong co fallback
-   sang Ollama/model khac, khong co download trong backend/Celery log.
+1. Chon cung luc 2 audio test khong nhay cam. Uploader phai hien dung thu tu va
+   gui mot request den `POST /api/v1/audio/v2/batches`.
+2. Chon hai item `uploaded`, bam bulk Transcribe, va doi den khi tung item co
+   trang thai `transcribed`; refresh trang va xac nhan batch van khoi phuc.
+3. Chon dung hai transcript, mo merged-summary dialog, thu mot lan de trong
+   prompt va mot lan voi prompt ngan. Xac nhan source filename/order giong lua
+   chon va response chi co `user_prompt_applied`, khong co raw prompt.
+4. Mo Transcript, Summary va Analysis. Xac nhan Summary/Analysis hien du lieu
+   cua dung source, chart/section co du lieu noi dung, khong fallback sang
+   Ollama/model khac, va backend/Celery log khong co download runtime.
 5. Xac nhan model alias trong log/artifact la
    `speechintel-qwen3-8b-q4_k_m` va cac failure hien ro thay vi silent fallback.
+
+API contract smoke sau khi dang nhap co the doi chieu voi sau endpoint canonical:
+
+```text
+POST /api/v1/audio/v2/batches
+GET  /api/v1/audio/v2/batches/{batch_id}
+POST /api/v1/audio/v2/batches/{batch_id}/transcribe
+POST /api/v1/audio/v2/batches/{batch_id}/cancel
+POST /api/v1/audio/v2/batches/{batch_id}/summary
+GET  /api/v1/audio/v2/batches/{batch_id}/summary/{summary_job_id}
+```
 
 Full transcription smoke chi duoc danh `PASS` khi preflight da verify large-v2 va
 pyannote. Neu gated access hoac artifact chua san sang, ghi

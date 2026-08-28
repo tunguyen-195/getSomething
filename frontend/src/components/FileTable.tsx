@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
     Box,
     Table,
@@ -13,6 +13,7 @@ import {
     Collapse,
     Typography,
     Button,
+    Checkbox,
     Tooltip,
     LinearProgress,
     TableSortLabel,
@@ -34,7 +35,7 @@ import {
 import DateTimeText from './DateTimeText';
 import { apiDateTimeToEpoch } from '../utils/dateTime';
 
-interface FileData {
+export interface FileData {
     task_id: string;
     audio_id?: string | number;
     filename: string;
@@ -49,16 +50,23 @@ interface FileData {
     updated_at?: string;
     uploaded_at?: string;
     download_url?: string;
+    batch_id?: string;
 }
 
-interface FileTableProps {
+export interface FileTableProps {
     files: FileData[];
     onTranscribe: (taskId: string) => void;
     onSummarize: (taskId: string) => void;
     onAnalyze: (taskId: string) => void;
     onVisualize: (taskId: string) => void;
     onDelete: (taskId: string) => void;
+    onBulkTranscribe?: (taskIds: string[]) => void | Promise<void>;
+    onBulkSummarize?: (taskIds: string[]) => void | Promise<void>;
+    onSelectionChange?: (taskIds: string[]) => void;
+    selectableTaskIds?: string[];
+    selectedTaskIds?: string[];
     processingTaskId?: string;
+    bulkProcessing?: boolean;
 }
 
 const getStatusChip = (status: string) => {
@@ -68,6 +76,7 @@ const getStatusChip = (status: string) => {
         case 'transcribing':
         case 'summarizing':
         case 'processing':
+        case 'queued':
             return <Chip label="Processing" size="small" color="warning" icon={<PendingIcon />} />;
         case 'transcribed':
             return <Chip label="Transcribed" size="small" color="info" icon={<CheckIcon />} />;
@@ -76,7 +85,12 @@ const getStatusChip = (status: string) => {
         case 'visualized':
             return <Chip label="Analyzed" size="small" color="secondary" icon={<CheckIcon />} />;
         case 'error':
+        case 'failed':
             return <Chip label="Error" size="small" color="error" icon={<ErrorIcon />} />;
+        case 'cancel_requested':
+            return <Chip label="Cancelling" size="small" color="warning" icon={<PendingIcon />} />;
+        case 'cancelled':
+            return <Chip label="Cancelled" size="small" color="default" />;
         default:
             return <Chip label={status} size="small" />;
     }
@@ -91,11 +105,19 @@ const FileTable: React.FC<FileTableProps> = ({
     onAnalyze,
     onVisualize,
     onDelete,
+    onBulkTranscribe,
+    onBulkSummarize,
+    onSelectionChange,
+    selectableTaskIds,
+    selectedTaskIds: controlledSelectedTaskIds,
     processingTaskId,
+    bulkProcessing = false,
 }) => {
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [order, setOrder] = useState<Order>('desc');
     const [orderBy, setOrderBy] = useState<keyof FileData>('created_at');
+    const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>(controlledSelectedTaskIds ?? []);
+    const [localBulkAction, setLocalBulkAction] = useState<'transcribe' | 'summary' | null>(null);
 
     const handleRequestSort = (property: keyof FileData) => {
         const isAsc = orderBy === property && order === 'asc';
@@ -134,6 +156,86 @@ const FileTable: React.FC<FileTableProps> = ({
         });
     }, [files, order, orderBy]);
 
+    useEffect(() => {
+        const fileIds = new Set(files.map(file => file.task_id));
+        const currentIds = new Set((selectableTaskIds ?? Array.from(fileIds)).filter(taskId => fileIds.has(taskId)));
+        setSelectedTaskIds(current => {
+            const next = current.filter(taskId => currentIds.has(taskId));
+            if (next.length === current.length) return current;
+            onSelectionChange?.(next);
+            return next;
+        });
+    }, [files, selectableTaskIds?.join('\u0000')]);
+
+    useEffect(() => {
+        if (!controlledSelectedTaskIds) return;
+        const allowed = new Set(selectableTaskIds ?? files.map(file => file.task_id));
+        const next = controlledSelectedTaskIds.filter(taskId => allowed.has(taskId));
+        setSelectedTaskIds(current => (
+            current.length === next.length && current.every((taskId, index) => taskId === next[index])
+                ? current
+                : next
+        ));
+    }, [controlledSelectedTaskIds?.join('\u0000'), files, selectableTaskIds?.join('\u0000')]);
+
+    const fileByTaskId = new Map(files.map(file => [file.task_id, file]));
+    const canonicalFiles = (selectableTaskIds ?? sortedFiles.map(file => file.task_id))
+        .map(taskId => fileByTaskId.get(taskId))
+        .filter((file): file is FileData => Boolean(file));
+    const selectableFiles = canonicalFiles.filter(file => ![
+        'queued',
+        'transcribing',
+        'summarizing',
+        'processing',
+        'cancel_requested',
+        'cancelled',
+    ].includes(file.status));
+    const selectedSet = new Set(selectedTaskIds);
+    const orderedSelectedFiles = canonicalFiles.filter(file => selectedSet.has(file.task_id));
+    const orderedSelectedTaskIds = orderedSelectedFiles.map(file => file.task_id);
+    const transcribableTaskIds = orderedSelectedFiles
+        .filter(file => !file.transcript && ['uploaded', 'failed'].includes(file.status))
+        .map(file => file.task_id);
+    const incompleteSummaryCount = orderedSelectedFiles.filter(file => !file.transcript).length;
+    const bulkEnabled = Boolean(onBulkTranscribe || onBulkSummarize || onSelectionChange);
+    const allSelectableSelected = selectableFiles.length > 0
+        && selectableFiles.every(file => selectedSet.has(file.task_id));
+    const someSelectableSelected = selectableFiles.some(file => selectedSet.has(file.task_id));
+    const isBulkBusy = bulkProcessing || localBulkAction !== null;
+
+    const commitSelection = (taskIds: string[]) => {
+        setSelectedTaskIds(taskIds);
+        onSelectionChange?.(taskIds);
+    };
+
+    const toggleSelection = (taskId: string) => {
+        const requested = selectedSet.has(taskId)
+            ? new Set(selectedTaskIds.filter(id => id !== taskId))
+            : new Set([...selectedTaskIds, taskId]);
+        const next = canonicalFiles
+            .filter(file => requested.has(file.task_id))
+            .map(file => file.task_id);
+        commitSelection(next);
+    };
+
+    const toggleAll = () => {
+        commitSelection(allSelectableSelected ? [] : selectableFiles.map(file => file.task_id));
+    };
+
+    const runBulkAction = async (
+        action: 'transcribe' | 'summary',
+        callback: ((taskIds: string[]) => void | Promise<void>) | undefined,
+        taskIds: string[],
+    ) => {
+        if (!callback || taskIds.length === 0 || isBulkBusy) return;
+        setLocalBulkAction(action);
+        try {
+            await callback(taskIds);
+        } finally {
+            setLocalBulkAction(null);
+        }
+    };
+
     if (files.length === 0) {
         return (
             <Paper sx={{ p: 3, textAlign: 'center', borderRadius: '12px' }}>
@@ -145,10 +247,83 @@ const FileTable: React.FC<FileTableProps> = ({
     }
 
     return (
-        <TableContainer component={Paper} sx={{ borderRadius: '12px', overflowX: 'auto' }}>
+        <Box>
+            {bulkEnabled && (
+                <Paper
+                    variant="outlined"
+                    sx={{
+                        minHeight: 52,
+                        px: 1.5,
+                        py: 1,
+                        mb: 1,
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        flexWrap: 'wrap',
+                    }}
+                >
+                    <Typography variant="body2" fontWeight={600} sx={{ minWidth: 100 }}>
+                        Đã chọn {orderedSelectedTaskIds.length}
+                    </Typography>
+                    <Button
+                        size="small"
+                        onClick={() => commitSelection([])}
+                        disabled={orderedSelectedTaskIds.length === 0 || isBulkBusy}
+                    >
+                        Bỏ chọn
+                    </Button>
+                    <Box sx={{ flex: { xs: '0 0 100%', sm: 1 }, height: { xs: 0, sm: 'auto' } }} />
+                    {incompleteSummaryCount > 0 && orderedSelectedTaskIds.length > 0 && (
+                        <Typography variant="caption" color="warning.main">
+                            {incompleteSummaryCount} file chưa có transcript
+                        </Typography>
+                    )}
+                    {onBulkTranscribe && (
+                        <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<TranscribeIcon />}
+                            disabled={transcribableTaskIds.length === 0 || isBulkBusy}
+                            onClick={() => runBulkAction('transcribe', onBulkTranscribe, transcribableTaskIds)}
+                            sx={{ textTransform: 'none', flex: { xs: '1 1 100%', sm: '0 0 auto' } }}
+                        >
+                            {localBulkAction === 'transcribe' ? 'Đang gửi...' : `Transcribe (${transcribableTaskIds.length})`}
+                        </Button>
+                    )}
+                    {onBulkSummarize && (
+                        <Tooltip title={incompleteSummaryCount > 0 ? 'Tất cả file đã chọn phải có transcript' : ''}>
+                            <span>
+                                <Button
+                                    size="small"
+                                    variant="contained"
+                                    startIcon={<SummarizeIcon />}
+                                    disabled={orderedSelectedTaskIds.length === 0 || incompleteSummaryCount > 0 || isBulkBusy}
+                                    onClick={() => runBulkAction('summary', onBulkSummarize, orderedSelectedTaskIds)}
+                                    sx={{ textTransform: 'none', width: { xs: '100%', sm: 'auto' } }}
+                                >
+                                    {localBulkAction === 'summary' ? 'Đang mở...' : `Merged summary (${orderedSelectedTaskIds.length})`}
+                                </Button>
+                            </span>
+                        </Tooltip>
+                    )}
+                </Paper>
+            )}
+            <TableContainer component={Paper} sx={{ borderRadius: '8px', overflowX: 'auto' }}>
             <Table size="small" sx={{ minWidth: 720 }}>
                 <TableHead>
                     <TableRow sx={{ bgcolor: 'rgba(0,0,0,0.02)' }}>
+                        {bulkEnabled && (
+                            <TableCell padding="checkbox">
+                                <Checkbox
+                                    size="small"
+                                    checked={allSelectableSelected}
+                                    indeterminate={!allSelectableSelected && someSelectableSelected}
+                                    onChange={toggleAll}
+                                    inputProps={{ 'aria-label': 'Chọn tất cả file khả dụng' }}
+                                />
+                            </TableCell>
+                        )}
                         <TableCell width={40}></TableCell>
                         <TableCell>
                             <TableSortLabel
@@ -198,6 +373,17 @@ const FileTable: React.FC<FileTableProps> = ({
                                     }}
                                     onClick={() => toggleRow(file.task_id)}
                                 >
+                                    {bulkEnabled && (
+                                        <TableCell padding="checkbox" onClick={(event) => event.stopPropagation()}>
+                                            <Checkbox
+                                                size="small"
+                                                checked={selectedSet.has(file.task_id)}
+                                                disabled={!selectableFiles.some(item => item.task_id === file.task_id)}
+                                                onChange={() => toggleSelection(file.task_id)}
+                                                inputProps={{ 'aria-label': `Chọn ${file.filename}` }}
+                                            />
+                                        </TableCell>
+                                    )}
                                     <TableCell>
                                         <IconButton size="small">
                                             {isExpanded ? <CollapseIcon /> : <ExpandIcon />}
@@ -240,7 +426,7 @@ const FileTable: React.FC<FileTableProps> = ({
 
                                 {/* Expanded Row */}
                                 <TableRow>
-                                    <TableCell colSpan={6} sx={{ p: 0 }}>
+                                    <TableCell colSpan={bulkEnabled ? 7 : 6} sx={{ p: 0 }}>
                                         <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                                             <Box sx={{ p: 2, bgcolor: 'rgba(0,0,0,0.01)' }}>
                                                 {isProcessing && (
@@ -315,7 +501,8 @@ const FileTable: React.FC<FileTableProps> = ({
                     })}
                 </TableBody>
             </Table>
-        </TableContainer>
+            </TableContainer>
+        </Box>
     );
 };
 
