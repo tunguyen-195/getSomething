@@ -44,6 +44,14 @@ web_interface.log
 output/
 .planning/
 .playwright-cli/
+/tmp/
+
+# Local innovation application sources and generation harness. These files may
+# contain official/internal material and must not be published accidentally.
+/docs/000Quy che xet, cong nhan sang kien 2026/
+/scripts/generate_innovation_forms_2026.py
+/scripts/export_docx_pdf_word.ps1
+/scripts/render_innovation_forms_2026.ps1
 
 # Environment
 .env
