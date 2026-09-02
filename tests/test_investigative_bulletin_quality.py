@@ -5149,6 +5149,11 @@ def test_summary_service_persists_privacy_safe_writer_rejection_stage(
     monkeypatch.setattr(summary_service_v2, "get_llm_manager", AvailableManager)
     monkeypatch.setattr(
         summary_service_v2,
+        "build_pinned_model_token_counter",
+        lambda: (lambda value: len(value.split())),
+    )
+    monkeypatch.setattr(
+        summary_service_v2,
         "synthesize_bulletin_context",
         reject_writer,
     )

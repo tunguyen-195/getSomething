@@ -157,15 +157,12 @@ const FileTable: React.FC<FileTableProps> = ({
     }, [files, order, orderBy]);
 
     useEffect(() => {
-        const fileIds = new Set(files.map(file => file.task_id));
-        const currentIds = new Set((selectableTaskIds ?? Array.from(fileIds)).filter(taskId => fileIds.has(taskId)));
-        setSelectedTaskIds(current => {
-            const next = current.filter(taskId => currentIds.has(taskId));
-            if (next.length === current.length) return current;
-            onSelectionChange?.(next);
-            return next;
-        });
-    }, [files, selectableTaskIds?.join('\u0000')]);
+        const currentIds = new Set(selectableTaskIds ?? files.map(file => file.task_id));
+        const next = selectedTaskIds.filter(taskId => currentIds.has(taskId));
+        if (next.length === selectedTaskIds.length) return;
+        setSelectedTaskIds(next);
+        onSelectionChange?.(next);
+    }, [files, onSelectionChange, selectableTaskIds?.join('\u0000'), selectedTaskIds.join('\u0000')]);
 
     useEffect(() => {
         if (!controlledSelectedTaskIds) return;

@@ -22,6 +22,8 @@ export const DEFAULT_INVESTIGATION_SUMMARY_MIN_LENGTH = 120;
 export const DEFAULT_INVESTIGATION_SUMMARY_MAX_LENGTH = 400;
 export const DEFAULT_MULTI_SUMMARY_MIN_LENGTH = 100;
 export const DEFAULT_MULTI_SUMMARY_MAX_LENGTH = 400;
+export type AudioBatchSummaryType = 'brief' | 'detailed';
+export const DEFAULT_BATCH_SUMMARY_TYPE: AudioBatchSummaryType = 'detailed';
 export const SUMMARY_USER_PROMPT_MAX_LENGTH = 2000;
 
 export function normalizeSummaryUserPrompt(value: string | null | undefined): string | undefined {
@@ -126,7 +128,7 @@ export interface AudioBatchAcceptedResponse {
 export interface AudioBatchSummaryRequest {
   task_ids: string[];
   model_name?: string | null;
-  summary_type: SummaryType;
+  summary_type: AudioBatchSummaryType;
   min_length: number;
   max_length: number;
   length_mode: SummaryLengthMode;

@@ -39,4 +39,14 @@ test('case navigation keeps the Analysis tab reachable on narrow screens', () =>
   assert.match(app, /ml: isDesktopViewport && sidebarOpen/);
   assert.match(app, /if \(!isDesktopViewport\) setSidebarOpen\(false\)/);
 });
+
+test('Analysis file headers stack on mobile without clipping long status labels', () => {
+  const analysisPanel = source('components/AnalysisPanel.tsx');
+
+  assert.match(analysisPanel, /MuiAccordionSummary-content': \{ minWidth: 0 \}/);
+  assert.match(analysisPanel, /flexDirection=\{\{ xs: 'column', sm: 'row' \}\}/);
+  assert.match(analysisPanel, /alignItems=\{\{ xs: 'flex-start', sm: 'center' \}\}/);
+  assert.match(analysisPanel, /width=\{\{ xs: '100%', sm: 'auto' \}\} minWidth=\{0\}/);
+  assert.match(analysisPanel, /sx=\{\{ maxWidth: '100%' \}\}/);
+});
 }

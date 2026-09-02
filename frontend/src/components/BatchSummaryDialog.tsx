@@ -16,9 +16,7 @@ import {
 } from '@mui/material';
 import { Close, Summarize } from '@mui/icons-material';
 import {
-    DEFAULT_INTERACTIVE_SUMMARY_TYPE,
-    DEFAULT_INVESTIGATION_SUMMARY_MAX_LENGTH,
-    DEFAULT_INVESTIGATION_SUMMARY_MIN_LENGTH,
+    DEFAULT_BATCH_SUMMARY_TYPE,
     DEFAULT_MULTI_SUMMARY_MAX_LENGTH,
     DEFAULT_MULTI_SUMMARY_MIN_LENGTH,
     AUDIO_BATCH_MAX_FILES,
@@ -27,7 +25,7 @@ import {
     submitAudioBatchSummary,
     SUMMARY_USER_PROMPT_MAX_LENGTH,
 } from '../api/client';
-import type { AudioBatchSummaryJob, SummaryType } from '../api/client';
+import type { AudioBatchSummaryJob, AudioBatchSummaryType } from '../api/client';
 
 export interface BatchSummarySource {
     task_id: string;
@@ -51,7 +49,7 @@ const BatchSummaryDialog: React.FC<BatchSummaryDialogProps> = ({
     onSubmitted,
 }) => {
     const fullScreen = useMediaQuery('(max-width:600px)');
-    const [summaryType, setSummaryType] = useState<SummaryType>(DEFAULT_INTERACTIVE_SUMMARY_TYPE);
+    const [summaryType, setSummaryType] = useState<AudioBatchSummaryType>(DEFAULT_BATCH_SUMMARY_TYPE);
     const [userPrompt, setUserPrompt] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [requestErrorCode, setRequestErrorCode] = useState<string | null>(null);
@@ -72,6 +70,7 @@ const BatchSummaryDialog: React.FC<BatchSummaryDialogProps> = ({
 
     const handleClose = () => {
         if (submitting) return;
+        setSummaryType(DEFAULT_BATCH_SUMMARY_TYPE);
         setUserPrompt('');
         setRequestErrorCode(null);
         onClose();
@@ -79,15 +78,14 @@ const BatchSummaryDialog: React.FC<BatchSummaryDialogProps> = ({
 
     const handleSubmit = async () => {
         if (!canSubmit) return;
-        const investigation = summaryType === 'investigation';
         setSubmitting(true);
         setRequestErrorCode(null);
         try {
             const job = await submitAudioBatchSummary(batchId, {
                 task_ids: sources.map(source => source.task_id),
                 summary_type: summaryType,
-                min_length: investigation ? DEFAULT_INVESTIGATION_SUMMARY_MIN_LENGTH : DEFAULT_MULTI_SUMMARY_MIN_LENGTH,
-                max_length: investigation ? DEFAULT_INVESTIGATION_SUMMARY_MAX_LENGTH : DEFAULT_MULTI_SUMMARY_MAX_LENGTH,
+                min_length: DEFAULT_MULTI_SUMMARY_MIN_LENGTH,
+                max_length: DEFAULT_MULTI_SUMMARY_MAX_LENGTH,
                 length_mode: 'auto',
                 user_prompt: normalizeSummaryUserPrompt(userPrompt),
             });
@@ -136,12 +134,10 @@ const BatchSummaryDialog: React.FC<BatchSummaryDialogProps> = ({
                     <Select
                         size="small"
                         value={summaryType}
-                        onChange={event => setSummaryType(event.target.value as SummaryType)}
+                        onChange={event => setSummaryType(event.target.value as AudioBatchSummaryType)}
                     >
                         <MenuItem value="brief">Brief</MenuItem>
                         <MenuItem value="detailed">Detailed</MenuItem>
-                        <MenuItem value="investigation">Investigation</MenuItem>
-                        <MenuItem value="forensic">Forensic</MenuItem>
                     </Select>
                 </FormControl>
                 <Typography variant="subtitle2" fontWeight={700} mb={1}>YÊU CẦU TÓM TẮT (TÙY CHỌN)</Typography>

@@ -983,6 +983,7 @@ def _run_summary_job_execution(
                 max_length=options.max_length,
                 length_mode=options.length_mode,
                 user_prompt=options.user_prompt,
+                gpu_owner=f"summary_job:{summary_job_id}",
             )
     except UnsafeGpuHandoff as exc:
         raise SafeAudioBatchSummaryJobError(

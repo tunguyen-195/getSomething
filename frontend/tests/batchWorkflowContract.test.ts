@@ -126,13 +126,26 @@ test('file table bulk summary fails closed until every selected transcript is re
   assert.match(table, /aria-label': 'Chọn tất cả file khả dụng'/);
 });
 
+test('file table never notifies the parent from inside a React state updater', () => {
+  const table = source('components/FileTable.tsx');
+  assert.doesNotMatch(
+    table,
+    /setSelectedTaskIds\s*\(\s*current\s*=>\s*\{[\s\S]*?onSelectionChange\?\.\(/,
+  );
+  assert.match(table, /setSelectedTaskIds\(next\);\s+onSelectionChange\?\.\(next\);/);
+  assert.match(table, /new Set\(selectableTaskIds \?\? files\.map\(file => file\.task_id\)\)/);
+  assert.doesNotMatch(table, /selectableTaskIds \?\? Array\.from\(fileIds\)/);
+});
+
 test('merged summary dialog preserves source order and reuses optional prompt bounds', () => {
   const dialog = source('components/BatchSummaryDialog.tsx');
+  assert.match(dialog, /useState<AudioBatchSummaryType>\(DEFAULT_BATCH_SUMMARY_TYPE\)/);
   assert.match(dialog, /task_ids: sources\.map\(source => source\.task_id\)/);
   assert.match(dialog, /incompleteCount === 0/);
   assert.match(dialog, /SUMMARY_USER_PROMPT_MAX_LENGTH/);
   assert.match(dialog, /normalizeSummaryUserPrompt\(userPrompt\)/);
   assert.match(dialog, /user_prompt: normalizeSummaryUserPrompt\(userPrompt\)/);
+  assert.doesNotMatch(dialog, /value="investigation"|value="forensic"/);
   assert.doesNotMatch(dialog, /error\.message|response\.detail|provider/i);
 });
 

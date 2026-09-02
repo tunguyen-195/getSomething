@@ -32,7 +32,7 @@ except ModuleNotFoundError:  # Direct script execution puts scripts/ on sys.path
     )
 
 
-SCHEMA_VERSION = "stt-release-candidate-rehearsal-v4"
+SCHEMA_VERSION = "stt-release-candidate-rehearsal-v5"
 AUTOMATIC_RELEASE_CLASSES = {
     "CONFIG_MANIFEST",
     "DOC_REQUIRED",
@@ -51,6 +51,7 @@ EXPLICIT_RELEASE_PATHS = {
     "docker-compose.test.yml",
     "docker-compose.yml",
     "Dockerfile.backend",
+    "entrypoint.bat",
     "frontend/Dockerfile",
     "frontend/index.html",
     "frontend/nginx.conf",
@@ -130,11 +131,13 @@ def _run_git(
     *args: str,
     env: dict[str, str] | None = None,
     check: bool = True,
+    input_bytes: bytes | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(
         ["git", "-C", str(root), *args],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        input=input_bytes,
         env=env,
         check=check,
     )
@@ -173,6 +176,39 @@ def _file_digest(path: Path) -> tuple[int | None, str | None]:
     except OSError:
         return None, None
     return len(content), hashlib.sha256(content).hexdigest()
+
+
+def _git_clean_blob_oid(root: Path, path: str, target: Path) -> str | None:
+    """Hash bytes through the repository's clean filters for a candidate path."""
+
+    try:
+        content = target.read_bytes()
+    except OSError:
+        return None
+    result = _run_git(
+        root,
+        "hash-object",
+        f"--path={path}",
+        "--stdin",
+        input_bytes=content,
+    ).stdout.decode().strip()
+    return result if re.fullmatch(r"[0-9a-f]{40,64}", result) else None
+
+
+def _temporary_index_blob_oids(root: Path, env: dict[str, str]) -> dict[str, str]:
+    entries: dict[str, str] = {}
+    for record in _run_git(root, "ls-files", "--stage", "-z", env=env).stdout.split(
+        b"\0"
+    ):
+        if not record:
+            continue
+        metadata, raw_path = record.split(b"\t", 1)
+        fields = metadata.split()
+        if len(fields) != 3 or fields[2] != b"0":
+            raise RuntimeError("Temporary candidate index contains an invalid stage")
+        path = _normalize(raw_path.decode("utf-8", errors="surrogateescape"))
+        entries[path] = fields[1].decode("ascii")
+    return entries
 
 
 def _release_selection(
@@ -536,6 +572,7 @@ def _candidate_manifest(
     untracked_included: list[str],
     document_script_paths: set[str],
     dependency_added_paths: set[str],
+    candidate_tree_blob_oids: dict[str, str],
 ) -> dict:
     tracked_paths = set(_paths(_run_git(root, "ls-files", "-z").stdout))
     untracked_paths = set(untracked_included)
@@ -545,6 +582,17 @@ def _candidate_manifest(
         candidate_size, candidate_sha256 = _file_digest(
             candidate_root / Path(*path.split("/"))
         )
+        source_git_clean_blob_oid = _git_clean_blob_oid(
+            root,
+            path,
+            root / Path(*path.split("/")),
+        )
+        candidate_git_clean_blob_oid = _git_clean_blob_oid(
+            root,
+            path,
+            candidate_root / Path(*path.split("/")),
+        )
+        candidate_tree_blob_oid = candidate_tree_blob_oids.get(path)
         classification, disposition, rationale = classify_path(path)
         selected, selection_reason, _classification, _ = _release_selection(
             path,
@@ -574,10 +622,21 @@ def _candidate_manifest(
                 "source_sha256": source_sha256,
                 "candidate_size_bytes": candidate_size,
                 "candidate_sha256": candidate_sha256,
-                "source_candidate_match": (
+                "source_candidate_raw_match": (
                     source_sha256 is not None
                     and source_sha256 == candidate_sha256
                     and source_size == candidate_size
+                ),
+                "source_git_clean_blob_oid": source_git_clean_blob_oid,
+                "candidate_git_clean_blob_oid": candidate_git_clean_blob_oid,
+                "candidate_tree_blob_oid": candidate_tree_blob_oid,
+                "source_candidate_match_basis": (
+                    "git_clean_blob_oid_and_candidate_tree_blob_oid"
+                ),
+                "source_candidate_match": (
+                    source_git_clean_blob_oid is not None
+                    and source_git_clean_blob_oid == candidate_git_clean_blob_oid
+                    and source_git_clean_blob_oid == candidate_tree_blob_oid
                 ),
             }
         )
@@ -585,11 +644,15 @@ def _candidate_manifest(
     origin_counts = Counter(item["origin"] for item in entries)
     pending_count = sum(item["review_required"] for item in entries)
     mismatch_count = sum(not item["source_candidate_match"] for item in entries)
+    raw_mismatch_count = sum(
+        not item["source_candidate_raw_match"] for item in entries
+    )
     return {
         "verdict": "BLOCKED" if pending_count or mismatch_count else "PASS",
         "entry_count": len(entries),
         "pending_review_count": pending_count,
         "source_candidate_mismatch_count": mismatch_count,
+        "source_candidate_raw_mismatch_count": raw_mismatch_count,
         "classification_counts": dict(sorted(classification_counts.items())),
         "origin_counts": dict(sorted(origin_counts.items())),
         "entries": entries,
@@ -608,6 +671,41 @@ def _temporary_git_environment(root: Path, temporary_root: Path) -> dict[str, st
     env["GIT_OBJECT_DIRECTORY"] = str(object_directory.resolve())
     env["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = str((git_dir / "objects").resolve())
     return env
+
+
+def _initialize_candidate_repository(
+    candidate_root: Path,
+    candidate_paths: list[str],
+    expected_tree_oid: str,
+) -> str:
+    """Create clean-clone Git metadata whose index exactly matches the candidate tree."""
+
+    _run_git(candidate_root, "init", "--quiet")
+    _run_git(candidate_root, "config", "user.name", "STT Release Harness")
+    _run_git(candidate_root, "config", "user.email", "release-harness@example.invalid")
+    if candidate_paths:
+        _run_git(candidate_root, "add", "-f", "--", *candidate_paths)
+    materialized_tree_oid = _run_git(candidate_root, "write-tree").stdout.decode().strip()
+    if materialized_tree_oid != expected_tree_oid:
+        raise RuntimeError(
+            "Materialized candidate repository tree does not match temporary index tree"
+        )
+    commit_env = os.environ.copy()
+    commit_env.update(
+        {
+            "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z",
+            "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z",
+        }
+    )
+    _run_git(
+        candidate_root,
+        "commit",
+        "--quiet",
+        "--message",
+        f"Release candidate tree {expected_tree_oid}",
+        env=commit_env,
+    )
+    return _run_git(candidate_root, "rev-parse", "HEAD").stdout.decode().strip()
 
 
 def build_candidate(repo_root: Path, export_root: Path) -> dict:
@@ -651,6 +749,7 @@ def build_candidate(repo_root: Path, export_root: Path) -> dict:
 
         candidate_tree = _run_git(root, "write-tree", env=env).stdout.decode().strip()
         candidate_paths = _paths(_run_git(root, "ls-files", "-z", env=env).stdout)
+        candidate_tree_blob_oids = _temporary_index_blob_oids(root, env)
         prefix = str(export_root) + os.sep
         _run_git(
             root,
@@ -669,6 +768,12 @@ def build_candidate(repo_root: Path, export_root: Path) -> dict:
         untracked_included,
         document_script_paths,
         dependency_added_paths,
+        candidate_tree_blob_oids,
+    )
+    candidate_repository_revision = _initialize_candidate_repository(
+        export_root,
+        candidate_paths,
+        candidate_tree,
     )
 
     real_index_after = _real_index_fingerprint(root)
@@ -691,11 +796,16 @@ def build_candidate(repo_root: Path, export_root: Path) -> dict:
         },
         "candidate": {
             "tree_oid": candidate_tree,
+            "repository_revision": candidate_repository_revision,
             "export_root": str(export_root),
             "file_count": len(candidate_paths),
             "paths": candidate_paths,
             "workspace_content_fingerprint_sha256": _workspace_fingerprint(
                 root,
+                candidate_paths,
+            ),
+            "materialized_content_fingerprint_sha256": _workspace_fingerprint(
+                export_root,
                 candidate_paths,
             ),
         },
@@ -722,7 +832,9 @@ def build_candidate(repo_root: Path, export_root: Path) -> dict:
             "tracked_excluded": _exclusion_summary(tracked_excluded),
         },
         "limitations": [
-            "The candidate uses current workspace bytes for tracked modifications, not the real staged index.",
+            "The temporary candidate index is built from current workspace content, not the real staged index.",
+            "Raw workspace and materialized fingerprints are bound separately because checkout filters may change line endings; Git-clean blob OIDs bind both forms to the candidate tree.",
+            "The export contains synthetic local Git metadata with a clean root commit whose tree equals candidate.tree_oid; the commit is for clean-clone test behavior, not source-history provenance.",
             "Automatic inclusion does not authorize release; every included path still requires human manifest review.",
             "Generated and sensitive exclusion paths are counted by class but redacted from the report.",
             "Content findings record rule, severity, candidate path, and line only; matched values are never serialized.",

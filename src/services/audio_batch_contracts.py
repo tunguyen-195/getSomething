@@ -17,7 +17,6 @@ from src.services.summarization.contracts import (
     DEFAULT_MULTI_SUMMARY_MIN_WORDS,
     DEFAULT_SUMMARY_TYPE,
     SummaryRequestOptions,
-    SummaryType,
 )
 
 
@@ -46,6 +45,7 @@ AudioBatchItemStatus = Literal[
     "cancel_requested",
     "cancelled",
 ]
+AudioBatchSummaryType = Literal["brief", "detailed"]
 AudioBatchSummaryJobStatus = Literal[
     "queued",
     "processing",
@@ -353,7 +353,7 @@ class AudioBatchSummaryRequest(SummaryRequestOptions):
 
     task_ids: list[str] = Field(min_length=1, max_length=BATCH_MAX_FILES)
     model_name: str | None = None
-    summary_type: SummaryType = DEFAULT_SUMMARY_TYPE
+    summary_type: AudioBatchSummaryType = DEFAULT_SUMMARY_TYPE
     min_length: int = Field(default=DEFAULT_MULTI_SUMMARY_MIN_WORDS, ge=0)
     max_length: int = Field(default=DEFAULT_MULTI_SUMMARY_MAX_WORDS, ge=1)
 

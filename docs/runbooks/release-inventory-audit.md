@@ -57,6 +57,12 @@ aggregate class counts are retained. Treat the candidate as provisional until
 the current Summary/Analysis source is locked and every clean-install gate has
 been rerun from a freshly exported tree.
 
+The export also initializes synthetic local Git metadata with one clean root
+commit whose tree must equal `candidate.tree_oid`. This lets provenance and
+tracked-file tests run under the same Git conditions as a clean clone. The
+synthetic commit does not copy source history and is not the revision pushed to
+the remote repository; `repository.head_revision` remains the source revision.
+
 The rehearsal also scans candidate UTF-8 text for private-key blocks, known
 provider-token formats, high-entropy credential assignments, investigation
 record identifiers, and structured transcript payloads. Findings record only
@@ -83,6 +89,11 @@ recorded under `selection.dependency_closure`; parse errors block the CLI.
 `candidate.workspace_content_fingerprint_sha256` binds the selected path list to
 the current workspace bytes. Recompute a candidate after source lock; evidence
 from an older fingerprint is stale even when its tests previously passed.
+`candidate.materialized_content_fingerprint_sha256` separately binds the bytes
+written to the export. This distinction is required on systems where Git
+checkout filters convert line endings. Per-file Git-clean blob OIDs in the
+candidate manifest must still match the temporary candidate-tree blob, so an
+allowed checkout transformation cannot hide a content change.
 
 ## Backend release-test profile
 
@@ -107,10 +118,10 @@ venv\Scripts\python.exe scripts\verify_release_test_profile.py `
   --output output\audits\backend-release-tests.json
 ```
 
-Before invoking pytest, the verifier recomputes the candidate workspace-content
-fingerprint against both the still-current source workspace and the exported
-candidate bytes. This detects source edits after export as well as an incomplete
-or modified candidate materialization. It also verifies manifest and privacy
+Before invoking pytest, the verifier recomputes the source-workspace fingerprint
+against the still-current source and the materialized-content fingerprint against
+the exported candidate bytes. This detects source edits after export as well as
+an incomplete or modified candidate materialization. It also verifies manifest and privacy
 verdicts, rejects missing documented scripts or dependency parse failures,
 recomputes the current policy-selected release paths plus local dependency
 closure, detects any path absent from the candidate manifest, collects all test

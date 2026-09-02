@@ -153,6 +153,12 @@ def test_summary_selection_and_manifest_hash_are_strict_ordered_contracts() -> N
     assert request.user_prompt == "focus"
     with pytest.raises(ValidationError, match="must not contain duplicates"):
         AudioBatchSummaryRequest(task_ids=["task-1", "task-1"])
+    for unsupported_type in ("investigation", "forensic"):
+        with pytest.raises(ValidationError):
+            AudioBatchSummaryRequest(
+                task_ids=["task-1"],
+                summary_type=unsupported_type,
+            )
 
     manifest = [
         AudioBatchSummaryManifestItem(

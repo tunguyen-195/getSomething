@@ -1677,6 +1677,7 @@ def summarize_multi_transcripts_v2(
     min_length: int = DEFAULT_MULTI_SUMMARY_MIN_WORDS,
     length_mode: SummaryLengthMode = "auto",
     user_prompt: str | None = None,
+    gpu_owner: str | None = None,
 ) -> Dict:
     """Serialize multi-file summarization on the same single-GPU boundary."""
 
@@ -1701,7 +1702,8 @@ def summarize_multi_transcripts_v2(
             case_id=case_id,
         )
 
-    with gpu_lease("multi_summary", f"case:{case_id or 'synchronous'}"):
+    lease_owner = gpu_owner or f"case:{case_id or 'synchronous'}"
+    with gpu_lease("multi_summary", lease_owner):
         try:
             return _summarize_multi_transcripts_v2_unlocked(
                 transcripts=normalized_transcripts,

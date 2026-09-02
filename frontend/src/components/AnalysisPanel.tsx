@@ -190,13 +190,27 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({ files, caseId, onRefresh,
                         defaultExpanded={files.length === 1 || row.file.task_id === focusTaskId}
                         sx={{ mb: 1.25, borderRadius: '12px !important', '&:before': { display: 'none' } }}
                     >
-                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                            <Box display="flex" alignItems="center" gap={1} width="100%" pr={1} minWidth={0}>
-                                <Typography fontWeight={700} flex={1} noWrap>{row.file.filename}</Typography>
+                        <AccordionSummary
+                            expandIcon={<ExpandMoreIcon />}
+                            sx={{ '& .MuiAccordionSummary-content': { minWidth: 0 } }}
+                        >
+                            <Box
+                                display="flex"
+                                flexDirection={{ xs: 'column', sm: 'row' }}
+                                alignItems={{ xs: 'flex-start', sm: 'center' }}
+                                gap={1}
+                                width="100%"
+                                pr={1}
+                                minWidth={0}
+                            >
+                                <Typography fontWeight={700} width={{ xs: '100%', sm: 'auto' }} minWidth={0} flex={1} noWrap>
+                                    {row.file.filename}
+                                </Typography>
                                 <Chip
                                     label={preview.state_label}
                                     size="small"
                                     color={preview.state === 'failed' ? 'error' : preview.state === 'source_preview' ? 'warning' : 'default'}
+                                    sx={{ maxWidth: '100%' }}
                                 />
                             </Box>
                         </AccordionSummary>

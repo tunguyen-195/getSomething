@@ -86,12 +86,21 @@ def _compose_preflight(
         if value is not None:
             command.extend((parameter, value))
     environment = os.environ.copy()
+    values = {
+        "SECRET_KEY": "compose-test-secret-key-with-sufficient-length",
+        "INITIAL_ADMIN_PASSWORD": "compose-test-admin-password",
+        "POSTGRES_USER": "compose_test",
+        "POSTGRES_PASSWORD": "compose-test-database-password",
+        "POSTGRES_DB": "compose_test",
+    }
     for name in (
         "CONTAINER_LLAMA_SERVER_BASE_URL",
         "CONTAINER_LLAMA_SERVER_MODEL_PATH",
         "LLAMA_SERVER_API_KEY",
+        *values,
     ):
         environment.pop(name, None)
+    environment.update(values)
     return subprocess.run(
         command,
         cwd=ROOT,

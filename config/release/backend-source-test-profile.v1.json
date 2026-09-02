@@ -10,7 +10,7 @@
     "release_blocking_rule": "all_collected_tests_except_declared_non_release",
     "non_release_tests": [
       {
-        "nodeid": "tests/test_assert_summary_replay.py::test_s2_r0_evidence_artifact_preserves_historical_sources_and_replays",
+        "nodeid": "tests/test_assert_summary_replay.py::test_s2_r0_evidence_artifact_remains_an_immutable_historical_record",
         "category": "historical_evidence",
         "reason_code": "HISTORICAL_REPLAY_ARTIFACT",
         "rationale": "Attests an earlier replay snapshot and raw replay output that is intentionally absent from the release candidate.",
@@ -131,9 +131,10 @@
   "candidate_binding": {
     "required": true,
     "accepted_rehearsal_schema_versions": [
-      "stt-release-candidate-rehearsal-v4"
+      "stt-release-candidate-rehearsal-v5"
     ],
     "fingerprint_field": "candidate.workspace_content_fingerprint_sha256",
+    "materialized_fingerprint_field": "candidate.materialized_content_fingerprint_sha256",
     "manifest_verdict_required": "PASS",
     "content_scan_blocked_forbidden": true
   },

@@ -663,6 +663,40 @@ def test_generic_and_multi_summary_failures_never_return_provider_details(
     assert secret not in caplog.text
 
 
+def test_multi_summary_uses_explicit_gpu_owner(monkeypatch):
+    leases = []
+
+    class Lease:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, _exc_type, _exc, _traceback):
+            return None
+
+    def capture_lease(stage, owner):
+        leases.append((stage, owner))
+        return Lease()
+
+    monkeypatch.setattr(summary_service_v2, "gpu_lease", capture_lease)
+    monkeypatch.setattr(summary_service_v2.settings, "UNLOAD_MODELS_AFTER_TASK", False)
+    monkeypatch.setattr(
+        summary_service_v2,
+        "_summarize_multi_transcripts_v2_unlocked",
+        lambda **_kwargs: {"available": True, "summary": "Tom tat hop le."},
+    )
+
+    result = summary_service_v2.summarize_multi_transcripts_v2(
+        ["Noi dung thu nhat.", "Noi dung thu hai."],
+        summary_type="brief",
+        min_length=2,
+        max_length=20,
+        gpu_owner="summary_job:test-job-id",
+    )
+
+    assert result["available"] is True
+    assert leases == [("multi_summary", "summary_job:test-job-id")]
+
+
 def test_invalid_caller_length_bounds_fail_before_generation(monkeypatch):
     generic_manager_requested = []
 

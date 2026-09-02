@@ -4,7 +4,11 @@ import json
 import subprocess
 from pathlib import Path
 
-from scripts.rehearse_release_candidate import build_candidate
+from scripts.rehearse_release_candidate import (
+    _candidate_manifest,
+    _git_clean_blob_oid,
+    build_candidate,
+)
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -30,6 +34,7 @@ def _fixture_repo(tmp_path: Path) -> Path:
     _write(repo, "src/__init__.py", "")
     _write(repo, "src/main.py", "VALUE = 1\n")
     _write(repo, "frontend/src/main.ts", "export const value = 1;\n")
+    _write(repo, "entrypoint.bat", "@echo off\r\nexit /b 2\r\n")
     _write(repo, "private.mp3", "sensitive fixture\n")
     _write(repo, "old_backup.py", "VALUE = 0\n")
     _git(repo, "add", ".")
@@ -72,11 +77,12 @@ def test_candidate_uses_workspace_source_without_changing_real_index(
     assert (export_root / "tests/test_runtime.py").is_file()
     assert (export_root / "frontend/.eslintrc.cjs").is_file()
     assert (export_root / "requirements-constraints-py311.txt").is_file()
+    assert (export_root / "entrypoint.bat").is_file()
     assert not (export_root / "notes.md").exists()
     assert not (export_root / "private.mp3").exists()
     assert not (export_root / "old_backup.py").exists()
     assert "src/new_runtime.py" in report["selection"]["untracked_included"]
-    assert report["schema_version"] == "stt-release-candidate-rehearsal-v4"
+    assert report["schema_version"] == "stt-release-candidate-rehearsal-v5"
 
     serialized = json.dumps(report)
     assert "private-case-name" not in serialized
@@ -111,6 +117,68 @@ def test_candidate_uses_workspace_source_without_changing_real_index(
         for item in report["candidate_manifest"]["entries"]
     )
     assert len(report["candidate"]["workspace_content_fingerprint_sha256"]) == 64
+    assert len(report["candidate"]["materialized_content_fingerprint_sha256"]) == 64
+    assert _git(export_root, "status", "--short").stdout == ""
+    assert _git(export_root, "rev-parse", "HEAD").stdout.strip() == report["candidate"][
+        "repository_revision"
+    ]
+    assert _git(export_root, "rev-parse", "HEAD^{tree}").stdout.strip() == report[
+        "candidate"
+    ]["tree_oid"]
+
+
+def test_candidate_manifest_accepts_only_checkout_line_ending_conversion(
+    tmp_path: Path,
+) -> None:
+    repo = _fixture_repo(tmp_path)
+    _git(repo, "config", "core.autocrlf", "true")
+    (repo / "src/main.py").write_bytes(b"FIRST = 1\nSECOND = 2\n")
+    candidate_root = tmp_path / "candidate"
+    (candidate_root / "src").mkdir(parents=True)
+    (candidate_root / "src/main.py").write_bytes(
+        b"FIRST = 1\r\nSECOND = 2\r\n"
+    )
+    tree_blob_oid = _git_clean_blob_oid(
+        repo,
+        "src/main.py",
+        repo / "src/main.py",
+    )
+    assert tree_blob_oid is not None
+
+    manifest = _candidate_manifest(
+        repo,
+        candidate_root,
+        ["src/main.py"],
+        [],
+        set(),
+        set(),
+        {"src/main.py": tree_blob_oid},
+    )
+    entry = manifest["entries"][0]
+
+    assert entry["source_candidate_raw_match"] is False
+    assert entry["source_candidate_match"] is True
+    assert entry["source_git_clean_blob_oid"] == entry["candidate_git_clean_blob_oid"]
+    assert entry["source_git_clean_blob_oid"] == entry["candidate_tree_blob_oid"]
+    assert manifest["source_candidate_raw_mismatch_count"] == 1
+    assert manifest["source_candidate_mismatch_count"] == 0
+    assert manifest["verdict"] == "PASS"
+
+    (candidate_root / "src/main.py").write_bytes(
+        b"FIRST = 1\r\nSECOND = 999\r\n"
+    )
+    changed_manifest = _candidate_manifest(
+        repo,
+        candidate_root,
+        ["src/main.py"],
+        [],
+        set(),
+        set(),
+        {"src/main.py": tree_blob_oid},
+    )
+
+    assert changed_manifest["source_candidate_mismatch_count"] == 1
+    assert changed_manifest["verdict"] == "BLOCKED"
 
 
 def test_candidate_rejects_nonempty_export_directory(tmp_path: Path) -> None:

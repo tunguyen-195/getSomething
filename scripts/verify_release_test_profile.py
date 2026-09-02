@@ -176,6 +176,11 @@ def validate_profile(repo_root: Path, profile: dict[str, Any]) -> list[str]:
             != "candidate.workspace_content_fingerprint_sha256"
         ):
             errors.append("candidate_fingerprint_field_invalid")
+        if (
+            binding.get("materialized_fingerprint_field")
+            != "candidate.materialized_content_fingerprint_sha256"
+        ):
+            errors.append("candidate_materialized_fingerprint_field_invalid")
         if binding.get("manifest_verdict_required") != "PASS":
             errors.append("candidate_manifest_requirement_invalid")
         if binding.get("content_scan_blocked_forbidden") is not True:
@@ -262,6 +267,15 @@ def verify_candidate_binding(
     if not isinstance(expected_fingerprint, str) or len(expected_fingerprint) != 64:
         errors.append("candidate_fingerprint_invalid")
         expected_fingerprint = None
+    expected_materialized_fingerprint = candidate.get(
+        "materialized_content_fingerprint_sha256"
+    )
+    if (
+        not isinstance(expected_materialized_fingerprint, str)
+        or len(expected_materialized_fingerprint) != 64
+    ):
+        errors.append("candidate_materialized_fingerprint_invalid")
+        expected_materialized_fingerprint = None
     source_fingerprint = (
         _workspace_fingerprint(source_root, candidate_paths) if candidate_paths else None
     )
@@ -272,7 +286,10 @@ def verify_candidate_binding(
     )
     if expected_fingerprint and source_fingerprint != expected_fingerprint:
         errors.append("candidate_source_stale")
-    if expected_fingerprint and candidate_fingerprint != expected_fingerprint:
+    if (
+        expected_materialized_fingerprint
+        and candidate_fingerprint != expected_materialized_fingerprint
+    ):
         errors.append("candidate_materialization_mismatch")
 
     manifest = rehearsal.get("candidate_manifest")
@@ -341,6 +358,9 @@ def verify_candidate_binding(
         "candidate_tree_oid": candidate.get("tree_oid"),
         "candidate_path_count": len(candidate_paths),
         "expected_workspace_content_fingerprint_sha256": expected_fingerprint,
+        "expected_materialized_content_fingerprint_sha256": (
+            expected_materialized_fingerprint
+        ),
         "source_workspace_content_fingerprint_sha256": source_fingerprint,
         "candidate_content_fingerprint_sha256": candidate_fingerprint,
         "source_stale": "candidate_source_stale" in errors,

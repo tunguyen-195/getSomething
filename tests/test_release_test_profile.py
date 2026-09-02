@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import shutil
 import subprocess
@@ -57,10 +58,13 @@ def _profile() -> dict:
         "candidate_binding": {
             "required": True,
             "accepted_rehearsal_schema_versions": [
-                "stt-release-candidate-rehearsal-v4"
+                "stt-release-candidate-rehearsal-v5"
             ],
             "fingerprint_field": (
                 "candidate.workspace_content_fingerprint_sha256"
+            ),
+            "materialized_fingerprint_field": (
+                "candidate.materialized_content_fingerprint_sha256"
             ),
             "manifest_verdict_required": "PASS",
             "content_scan_blocked_forbidden": True,
@@ -71,13 +75,17 @@ def _profile() -> dict:
 
 def _candidate_report(root: Path, candidate_root: Path, paths: list[str]) -> dict:
     return {
-        "schema_version": "stt-release-candidate-rehearsal-v4",
+        "schema_version": "stt-release-candidate-rehearsal-v5",
         "candidate": {
             "tree_oid": "a" * 40,
             "export_root": str(candidate_root),
             "paths": paths,
             "workspace_content_fingerprint_sha256": _workspace_fingerprint(
                 root,
+                paths,
+            ),
+            "materialized_content_fingerprint_sha256": _workspace_fingerprint(
+                candidate_root,
                 paths,
             ),
         },
@@ -114,6 +122,25 @@ def test_profile_defaults_every_unlisted_test_to_release_blocking(tmp_path: Path
     assert collection["release_blocking_test_count"] == 1
     assert collection["declared_non_release_test_count"] == 1
     assert collection["non_release_category_counts"] == {"historical_evidence": 1}
+
+
+def test_repository_profile_non_release_nodeids_reference_declared_tests() -> None:
+    root = Path(__file__).resolve().parents[1]
+    profile = json.loads(
+        (root / "config/release/backend-source-test-profile.v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    for entry in profile["selection"]["non_release_tests"]:
+        test_path, test_name = entry["nodeid"].split("::", 1)
+        module = ast.parse((root / test_path).read_text(encoding="utf-8"))
+        declared = {
+            node.name
+            for node in ast.walk(module)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        assert test_name in declared, entry["nodeid"]
 
 
 def test_profile_rejects_duplicate_or_missing_exclusion_nodeids(tmp_path: Path) -> None:
@@ -190,6 +217,39 @@ def test_candidate_binding_detects_stale_or_unmanifested_source(tmp_path: Path) 
         candidate_root=candidate_root,
     )
     assert "candidate_materialization_mismatch" in mismatched["errors"]
+
+
+def test_candidate_binding_allows_a_separately_bound_eol_materialization(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    candidate_root = tmp_path / "candidate"
+    source_root.mkdir()
+    candidate_root.mkdir()
+    _init_repo(source_root)
+    (source_root / "src").mkdir()
+    (candidate_root / "src").mkdir()
+    (source_root / "src/main.py").write_bytes(b"FIRST = 1\nSECOND = 2\n")
+    (candidate_root / "src/main.py").write_bytes(
+        b"FIRST = 1\r\nSECOND = 2\r\n"
+    )
+    paths = ["src/main.py"]
+    report = _candidate_report(source_root, candidate_root, paths)
+
+    binding = verify_candidate_binding(
+        source_root,
+        _profile(),
+        report,
+        candidate_root=candidate_root,
+    )
+
+    assert binding["status"] == "PASS"
+    assert (
+        binding["expected_workspace_content_fingerprint_sha256"]
+        != binding["expected_materialized_content_fingerprint_sha256"]
+    )
+    assert binding["source_stale"] is False
+    assert binding["candidate_materialization_matches"] is True
 
 
 def test_candidate_binding_blocks_unmanifested_files_and_redacts_sensitive_names(

@@ -775,6 +775,7 @@ def test_summary_job_persists_ordered_provenance_and_is_idempotent(
             "Verified transcript 1",
         ]
         assert kwargs["user_prompt"] == "Focus on decisions"
+        assert kwargs["gpu_owner"] == f"summary_job:{job_id}"
         return {
             "available": True,
             "summary": "Verified merged summary",
