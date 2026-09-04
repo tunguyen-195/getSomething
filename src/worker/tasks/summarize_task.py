@@ -1188,8 +1188,6 @@ def _run_summary_job_execution(
             variant_results = []
             for summary_type in summary_types:
                 owner = f"summary_job:{summary_job_id}"
-                if len(summary_types) > 1:
-                    owner = f"{owner}:{summary_type}"
                 try:
                     result = summarize_multi_transcripts_v2(
                         transcripts=transcripts,
@@ -1204,11 +1202,18 @@ def _run_summary_job_execution(
                     )
                 except UnsafeGpuHandoff:
                     raise
-                except Exception:
+                except Exception as exc:
                     if len(summary_types) == 1:
                         raise
                     # A provider failure is isolated to this semantic variant;
                     # other requested variants still get an opportunity to run.
+                    logger.error(
+                        "[CELERY_AUDIO_BATCH_SUMMARY] Variant failed | summary_job_id=%s | summary_type=%s | error_type=%s | detail=%s",
+                        summary_job_id,
+                        summary_type,
+                        type(exc).__name__,
+                        str(exc)[:160],
+                    )
                     result = {
                         "available": False,
                         "summary_type": summary_type,

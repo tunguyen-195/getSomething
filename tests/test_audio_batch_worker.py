@@ -849,8 +849,11 @@ def test_summary_job_persists_each_requested_variant_without_overwrite(
 
     monkeypatch.setattr(summarize_task, "_llama_server_handoff", no_handoff)
 
+    gpu_owners = []
+
     def fake_summary(**kwargs):
         summary_type = kwargs["summary_type"]
+        gpu_owners.append(kwargs["gpu_owner"])
         if summary_type in {"investigation", "forensic"}:
             return {
                 "available": False,
@@ -877,6 +880,7 @@ def test_summary_job_persists_each_requested_variant_without_overwrite(
         fake_summary,
     )
     result = summarize_task.summarize_audio_batch_job_task.run(job_id)
+    assert gpu_owners == [f"summary_job:{job_id}"] * 4
     assert result["status"] == "partially_succeeded"
     assert [item["summary_type"] for item in result["summary_results"]] == [
         "brief",
