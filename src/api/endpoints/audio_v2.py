@@ -109,6 +109,7 @@ _SUMMARY_RESPONSE_FIELDS = frozenset(
         "model",
         "requested_model",
         "summary_type",
+        "summary_variants",
         "summary_state",
         "summary_authority",
         "summary_notice",
@@ -132,6 +133,11 @@ def _summary_response_result(result: dict[str, Any]) -> dict[str, Any]:
     response["summary_preview"] = coerce_public_preview_payload(
         response.get("summary_preview")
     )
+    # Service responses may carry a persisted per-type map.  Reuse the same
+    # reader-safe projection used by task/status endpoints.
+    projected = public_task_result_payload(response)
+    if projected.get("summary_variants"):
+        response["summary_variants"] = projected["summary_variants"]
     response["context"] = public_context_analysis_payload(response.get("context"))
     return response
 
@@ -848,6 +854,8 @@ async def get_status_v2(
             "summary_authority": result_data.get("summary_authority"),
             "summary_notice": result_data.get("summary_notice"),
             "summary_preview": result_data.get("summary_preview"),
+            "summary_type": result_data.get("summary_type"),
+            "summary_variants": result_data.get("summary_variants") or {},
             "num_speakers": num_speakers,
             "duration": duration,
             "has_diarization": has_diarization,
@@ -866,6 +874,13 @@ async def get_status_v2(
             "requested_engine": requested_engine,
             "engine_used": engine_used,
             "fallback_reason": fallback_reason,
+            "diarization_scope": result_data.get("diarization_scope"),
+            "file_provenance": result_data.get("file_provenance"),
+            "diarization": result_data.get("diarization"),
+            "source_task_id": result_data.get("source_task_id"),
+            "source_audio_id": result_data.get("source_audio_id"),
+            "source_case_id": result_data.get("source_case_id"),
+            "source_filename": result_data.get("source_filename"),
         }
 
         # Add optional fields if available

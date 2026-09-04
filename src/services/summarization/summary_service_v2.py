@@ -6,7 +6,7 @@ import json
 import logging
 import math
 import re
-from typing import Dict, List
+from typing import Any, Dict, List
 from src.core.config import settings
 from src.services.investigation.narrative_attestation import (
     released_narrative_metadata,
@@ -66,6 +66,38 @@ from .bulletin_writer import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _llm_available_with_retry(llm_manager: Any) -> tuple[bool, int]:
+    """Probe the local provider twice to absorb a transient health race.
+
+    The llama-server process can briefly report an unavailable model while it is
+    waking or reloading its pinned GGUF.  A cached negative result used to turn
+    that short window into a permanent ``LLM_UNAVAILABLE`` job failure.  Keep
+    the retry bounded and never expose provider details in the result payload.
+    The compatibility fallback for test doubles also keeps older managers that
+    do not accept ``force_refresh`` usable.
+    """
+
+    attempts = 0
+    try:
+        attempts += 1
+        if bool(llm_manager.check_availability()):
+            return True, attempts
+    except Exception:
+        # Availability is intentionally fail-closed; the second probe below is
+        # still useful after a transient connection/model wake-up error.
+        pass
+
+    try:
+        attempts += 1
+        try:
+            available = llm_manager.check_availability(force_refresh=True)
+        except TypeError:
+            available = llm_manager.check_availability()
+        return bool(available), attempts
+    except Exception:
+        return False, attempts
 
 SUMMARY_PROMPT_VERSION = "summary-direct-v4-adaptive-single-call"
 MULTI_SUMMARY_PROMPT_VERSION = "multi-summary-direct-v3-ordered-json-sources"
@@ -1116,7 +1148,8 @@ def _summarize_transcript_evidence_preview(
     effective_max_words = length_budget.effective_max_words
     preferred_words = length_budget.preferred_words
     llm_manager = get_llm_manager()
-    if not llm_manager.check_availability():
+    llm_available, availability_attempts = _llm_available_with_retry(llm_manager)
+    if not llm_available:
         return {
             "summary": "",
             "context": context,
@@ -1136,6 +1169,7 @@ def _summarize_transcript_evidence_preview(
                 "scenario_profile": expected_scenario,
                 "writer_status": "unavailable",
                 "writer_prompt_version": BULLETIN_WRITER_PROMPT_VERSION,
+                "availability_attempts": availability_attempts,
             },
         }
 
@@ -1455,7 +1489,8 @@ def _summarize_transcript_v2_unlocked(
     try:
         llm_mgr = get_llm_manager()
 
-        if not llm_mgr.check_availability():
+        llm_available, availability_attempts = _llm_available_with_retry(llm_mgr)
+        if not llm_available:
             logger.warning("[SUMMARY_V2] LLM not available")
             return {
                 "summary": "",
@@ -1468,7 +1503,10 @@ def _summarize_transcript_v2_unlocked(
                     "code": "LLM_UNAVAILABLE",
                     "message": SAFE_SUMMARY_MESSAGES["LLM_UNAVAILABLE"],
                 },
-                "runtime": {"llm_call_count": 0},
+                "runtime": {
+                    "llm_call_count": 0,
+                    "availability_attempts": availability_attempts,
+                },
             }
 
         # Select model if not specified
@@ -1794,7 +1832,8 @@ def _summarize_multi_transcripts_v2_unlocked(
         llm_mgr = get_llm_manager()
         generation_count_start = llm_mgr.get_generation_count()
 
-        if not llm_mgr.check_availability():
+        llm_available, availability_attempts = _llm_available_with_retry(llm_mgr)
+        if not llm_available:
             logger.warning("[SUMMARY_V2] LLM not available for multi-summary")
             return {
                 "summary": "",
@@ -1811,6 +1850,7 @@ def _summarize_multi_transcripts_v2_unlocked(
                 "runtime": {
                     "prompt_version": MULTI_SUMMARY_PROMPT_VERSION,
                     "llm_call_count": 0,
+                    "availability_attempts": availability_attempts,
                 },
             }
 

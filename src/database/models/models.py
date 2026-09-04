@@ -662,6 +662,9 @@ class AudioBatchSummaryJob(BaseModel):
     source_manifest = Column(JSON, nullable=False)
     source_manifest_sha256 = Column(String(64), nullable=False)
     summary_options = Column(JSON, nullable=False, default=dict)
+    # One durable result slot per requested summary type.  The legacy
+    # ``summary_id`` remains the first successful variant for old clients.
+    summary_results = Column(JSON, nullable=False, default=list)
     user_prompt_applied = Column(Boolean, nullable=False, default=False)
     celery_task_id = Column(String(255), nullable=True)
     summary_id = Column(
@@ -680,13 +683,17 @@ class AudioBatchSummaryJob(BaseModel):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('queued', 'processing', 'succeeded', 'failed', "
+            "status IN ('queued', 'processing', 'succeeded', 'partially_succeeded', 'failed', "
             "'cancel_requested', 'cancelled')",
             name="check_audio_batch_summary_job_status",
         ),
         CheckConstraint(
             "selected_count BETWEEN 1 AND 20",
             name="check_audio_batch_summary_job_selected_count",
+        ),
+        CheckConstraint(
+            "summary_results IS NOT NULL",
+            name="check_audio_batch_summary_job_results_array",
         ),
         CheckConstraint(
             "source_manifest_sha256 ~ '^[0-9a-f]{64}$'",

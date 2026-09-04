@@ -18,6 +18,8 @@ import SummarizeDialog from './components/SummarizeDialog';
 import CompactUploader from './components/CompactUploader';
 import FileTable from './components/FileTable';
 import BatchSummaryDialog from './components/BatchSummaryDialog';
+import BatchSummaryResults from './components/BatchSummaryResults';
+import SummaryVariants from './components/SummaryVariants';
 import VisualizationDialog from './components/VisualizationDialog';
 import AnalysisPanel from './components/AnalysisPanel';
 import DiarizationPanel from './components/DiarizationPanel';
@@ -66,8 +68,8 @@ const batchStatusLabel: Record<string, string> = {
   created: 'Đã upload',
   queued: 'Đang chờ',
   processing: 'Đang xử lý',
-  partially_succeeded: 'Hoàn tất một phần',
   succeeded: 'Hoàn tất',
+  partially_succeeded: 'Hoàn tất một phần',
   failed: 'Thất bại',
   cancel_requested: 'Đang hủy',
   cancelled: 'Đã hủy',
@@ -249,13 +251,16 @@ function App() {
     visualization_data: f.visualization_data,
     transcript: f.transcript,
     summary: f.summary,
+    summary_type: f.summary_type,
     summary_state: f.summary_state,
     summary_authority: f.summary_authority,
     summary_notice: f.summary_notice,
     summary_preview: f.summary_preview,
+    summary_variants: f.summary_variants || f.result?.summary_variants,
     summary_runtime: f.summary_runtime,
     formatted_transcript: f.formatted_transcript,
     segments: f.segments,
+    diarization: f.diarization || f.result?.diarization,
     context_analysis: f.context_analysis,
     created_at: f.created_at,
     download_url: f.download_url,
@@ -1372,8 +1377,12 @@ function App() {
             {/* Diarization Tab (tab 2) */}
             {tab === 2 && (
               <DiarizationPanel
-                segments={files.filter(f => f.segments?.length > 0).flatMap(f => f.segments || [])}
-                duration={files.reduce((sum, f) => sum + (f.duration || 0), 0)}
+                fileGroups={files.map(file => ({
+                  task_id: file.task_id,
+                  filename: file.filename,
+                  duration: file.duration,
+                  segments: file.segments?.length ? file.segments : file.diarization?.segments,
+                }))}
               />
             )}
             {/* Summary Tab (tab 3) */}
@@ -1382,7 +1391,7 @@ function App() {
                 {batchSummaryJob && (
                   <Box sx={{ pb: 2, mb: 3, borderBottom: '1px solid', borderColor: 'divider' }}>
                     <Box display="flex" alignItems="center" gap={1} flexWrap="wrap" mb={1.5}>
-                      <Typography variant="h6" fontWeight={700}>Merged summary</Typography>
+                      <Typography variant="h6" fontWeight={700}>Summary theo từng loại</Typography>
                       <Chip size="small" label={batchStatusLabel[batchSummaryJob.status] ?? batchSummaryJob.status} />
                       {batchSummaryJob.user_prompt_applied && (
                         <Chip size="small" variant="outlined" label="Prompt tùy chọn đã áp dụng" />
@@ -1402,64 +1411,34 @@ function App() {
                         </Typography>
                       ))}
                     </Box>
-                    {batchSummaryJob.status === 'succeeded' && batchSummaryJob.summary && (
-                      <Box>
-                        <Box display="flex" justifyContent="flex-end" mb={1}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            startIcon={<ContentCopyIcon />}
-                            onClick={() => {
-                              navigator.clipboard.writeText(batchSummaryJob.summary ?? '');
-                              setSnackbar({ open: true, message: 'Đã copy merged summary.', severity: 'success' });
-                            }}
-                          >
-                            Copy
-                          </Button>
-                        </Box>
-                        <Typography sx={{ whiteSpace: 'pre-line', lineHeight: 1.8, overflowWrap: 'anywhere' }}>
-                          {batchSummaryJob.summary}
-                        </Typography>
-                      </Box>
-                    )}
+                    <BatchSummaryResults job={batchSummaryJob} />
                   </Box>
                 )}
 
-                {files.filter(f => summaryDisplayText(f)).length > 0 && (
+                {files.filter(f => summaryDisplayText(f) || Object.keys(f.summary_variants || {}).length > 0).length > 0 && (
                   <Box>
                     <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} gap={1} flexWrap="wrap">
                       <Typography variant="h6" fontWeight={700}>Summary từng file</Typography>
-                      <Chip label={`${files.filter(f => summaryDisplayText(f)).length} file`} size="small" />
+                      <Chip label={`${files.filter(f => summaryDisplayText(f) || Object.keys(f.summary_variants || {}).length > 0).length} file`} size="small" />
                     </Box>
-                    {files.filter(f => summaryDisplayText(f)).map((file, idx) => (
+                    {files.filter(f => summaryDisplayText(f) || Object.keys(f.summary_variants || {}).length > 0).map((file, idx) => (
                       <Accordion key={file.task_id} defaultExpanded={!batchSummaryJob && idx === 0} sx={{ mb: 2, borderRadius: '8px !important', border: '1px solid', borderColor: 'divider', '&:before': { display: 'none' } }}>
                         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                           <Typography fontWeight={600} sx={{ overflowWrap: 'anywhere' }}>{file.filename}</Typography>
                         </AccordionSummary>
                         <AccordionDetails sx={{ pt: 1 }}>
-                          <Box display="flex" justifyContent="flex-end" mb={1}>
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              startIcon={<ContentCopyIcon />}
-                              onClick={() => {
-                                navigator.clipboard.writeText(summaryDisplayText(file));
-                                setSnackbar({ open: true, message: 'Đã copy nội dung.', severity: 'success' });
-                              }}
-                            >
-                              Copy
-                            </Button>
-                          </Box>
-                          <Typography sx={{ whiteSpace: 'pre-line', lineHeight: 1.8, overflowWrap: 'anywhere' }}>
-                            {summaryDisplayText(file)}
-                          </Typography>
+                          <SummaryVariants
+                            summary={file.summary}
+                            summary_type={file.summary_type}
+                            summary_variants={file.summary_variants}
+                          />
                         </AccordionDetails>
                       </Accordion>
                     ))}
                   </Box>
                 )}
 
-                {!batchSummaryJob && files.filter(f => summaryDisplayText(f)).length === 0 && (
+                {!batchSummaryJob && files.filter(f => summaryDisplayText(f) || Object.keys(f.summary_variants || {}).length > 0).length === 0 && (
                   <Paper sx={{ p: 4, textAlign: 'center', borderRadius: '8px' }}>
                     <Typography color="text.secondary">Chưa có summary nào. Hãy chọn các transcript đã hoàn tất để tạo summary.</Typography>
                   </Paper>

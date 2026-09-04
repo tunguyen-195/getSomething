@@ -127,6 +127,16 @@ class TaskResult(BaseModel):
     fast_mode: Optional[bool] = False
     audio_url: Optional[str] = None
     caption: Optional[str] = None
+    # Diarization labels are local to a single file.  Cross-file consumers
+    # should use speaker_key/provenance rather than treating SPEAKER_00 as a
+    # case-wide identity.
+    diarization_scope: Optional[str] = "file"
+    file_provenance: Dict[str, Any] = Field(default_factory=dict)
+    diarization: Dict[str, Any] = Field(default_factory=dict)
+    source_task_id: Optional[str] = None
+    source_audio_id: Optional[int] = None
+    source_case_id: Optional[int] = None
+    source_filename: Optional[str] = None
     # Có thể mở rộng thêm các trường khác nếu cần
 
     class Config:

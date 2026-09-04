@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Sequence
 from uuid import uuid4
 
@@ -52,6 +53,7 @@ from src.services.audio_storage import (
     stage_upload,
 )
 from src.services.task_service import released_investigation_run_identity
+from src.services.summarization.contracts import DEFAULT_SUMMARY_TYPE
 
 
 class AudioBatchServiceError(RuntimeError):
@@ -77,6 +79,50 @@ class AudioBatchServiceError(RuntimeError):
             "message": self.message,
             "retryable": self.retryable,
         }
+
+
+_SAFE_SUMMARY_RESULT_ERROR_CODE = re.compile(r"^[A-Z0-9_]{1,80}$")
+
+
+def _public_summary_runtime(value: object) -> dict[str, object] | None:
+    """Project persisted variant runtime metadata without trusting legacy JSON."""
+
+    if not isinstance(value, dict):
+        return None
+    projected: dict[str, object] = {}
+    for key, maximum in (
+        ("prompt_version", 255),
+        ("summary_generation", 80),
+        ("provider", 80),
+    ):
+        candidate = value.get(key)
+        if isinstance(candidate, str) and candidate.strip() and len(candidate) <= maximum:
+            projected[key] = candidate.strip()
+    for key in ("llm_call_count", "availability_attempts"):
+        candidate = value.get(key)
+        if type(candidate) is int and candidate >= 0:
+            projected[key] = candidate
+    candidate = value.get("user_prompt_applied")
+    if type(candidate) is bool:
+        projected["user_prompt_applied"] = candidate
+    return projected or None
+
+
+def _public_summary_model(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized[:255] if normalized else None
+
+
+def _public_summary_error(value: object) -> dict[str, object] | None:
+    if not isinstance(value, str) or not _SAFE_SUMMARY_RESULT_ERROR_CODE.fullmatch(value):
+        return None
+    return {
+        "code": value,
+        "message": "Merged summary processing failed.",
+        "retryable": value == "SUMMARY_ENQUEUE_FAILED",
+    }
 
 
 def _cleanup_uploads(
@@ -706,16 +752,53 @@ def audio_batch_summary_job_response(
             status_code=409,
         )
 
-    summary_text: str | None = None
-    if job.status == "succeeded":
-        summary = job.summary
-        if not isinstance(summary, Summary) or not isinstance(summary.content, str):
-            raise AudioBatchServiceError(
-                "SUMMARY_RESULT_INVALID",
-                "Merged summary result is invalid.",
-                status_code=409,
-            )
-        summary_text = summary.content
+    options = job.summary_options if isinstance(job.summary_options, dict) else {}
+    requested_types = options.get("summary_types")
+    if not isinstance(requested_types, list) or not requested_types:
+        requested_types = [options.get("summary_type", DEFAULT_SUMMARY_TYPE)]
+    legacy_summary_type = options.get("summary_type", DEFAULT_SUMMARY_TYPE)
+    if legacy_summary_type not in {"brief", "detailed"}:
+        legacy_summary_type = next(
+            (item for item in requested_types if item in {"brief", "detailed"}),
+            DEFAULT_SUMMARY_TYPE,
+        )
+    stored_results = job.summary_results if isinstance(job.summary_results, list) else []
+    by_type = {
+        item.get("summary_type"): item
+        for item in stored_results
+        if isinstance(item, dict) and isinstance(item.get("summary_type"), str)
+    }
+    summary_results: list[dict[str, object]] = []
+    for summary_type in requested_types:
+        item = by_type.get(summary_type) or {}
+        result_status = item.get("status")
+        if result_status not in {"queued", "processing", "succeeded", "failed", "cancelled"}:
+            result_status = job.status if job.status in {"queued", "processing", "succeeded", "failed", "cancelled"} else "processing"
+        result_summary = item.get("summary") if result_status == "succeeded" else None
+        if result_summary is None and result_status == "succeeded" and len(requested_types) == 1:
+            summary = job.summary
+            if isinstance(summary, Summary) and isinstance(summary.content, str):
+                result_summary = summary.content
+        error_code = item.get("error_code")
+        result_error = None
+        if result_status != "succeeded":
+            code = error_code if isinstance(error_code, str) else (job.error_code if len(requested_types) == 1 else None)
+            if code:
+                result_error = _public_summary_error(code)
+        summary_results.append(
+            {
+                "summary_type": summary_type,
+                "status": result_status,
+                "summary": result_summary,
+                "summary_model": _public_summary_model(item.get("summary_model")),
+                "runtime": _public_summary_runtime(item.get("runtime")),
+                "error": result_error,
+            }
+        )
+    summary_text: str | None = next(
+        (item["summary"] for item in summary_results if isinstance(item.get("summary"), str) and item["summary"].strip()),
+        None,
+    )
     error = None
     if job.error_code:
         error = {
@@ -728,7 +811,9 @@ def audio_batch_summary_job_response(
             "batch_id": job.batch_id,
             "summary_job_id": job.id,
             "status": job.status,
+            "summary_type": legacy_summary_type,
             "summary": summary_text,
+            "summary_results": summary_results,
             "source_manifest": [
                 {
                     "position": item.position,

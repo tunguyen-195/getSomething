@@ -820,3 +820,104 @@ def test_summary_job_persists_ordered_provenance_and_is_idempotent(
         assert db.query(Summary).count() == 1
     finally:
         db.close()
+
+
+def test_summary_job_persists_each_requested_variant_without_overwrite(
+    tmp_path, monkeypatch
+) -> None:
+    job_id, paths = _make_transcribed_summary_job(tmp_path)
+    monkeypatch.setattr(
+        summarize_task,
+        "resolve_audio_path",
+        lambda value: paths[str(value)],
+    )
+
+    db = SessionLocal()
+    try:
+        job = db.query(AudioBatchSummaryJob).filter(AudioBatchSummaryJob.id == job_id).one()
+        job.summary_options = {
+            **job.summary_options,
+            "summary_types": ["brief", "detailed", "investigation", "forensic"],
+        }
+        db.commit()
+    finally:
+        db.close()
+
+    @contextmanager
+    def no_handoff(*_args, **_kwargs):
+        yield
+
+    monkeypatch.setattr(summarize_task, "_llama_server_handoff", no_handoff)
+
+    def fake_summary(**kwargs):
+        summary_type = kwargs["summary_type"]
+        if summary_type in {"investigation", "forensic"}:
+            return {
+                "available": False,
+                "summary": "",
+                "summary_type": summary_type,
+                "error": {"code": f"{summary_type.upper()}_UNAVAILABLE"},
+            }
+        return {
+            "available": True,
+            "summary": f"Variant {summary_type}",
+            "num_transcripts": 2,
+            "model": f"fixture-{summary_type}",
+            "summary_type": summary_type,
+            "runtime": {
+                "user_prompt_applied": False,
+                "llm_call_count": 1,
+                "provider": "fixture-provider",
+                "last_generation": {"raw_provider_detail": "must-not-persist"},
+            },
+        }
+
+    monkeypatch.setattr(
+        "src.services.summarization.summary_service_v2.summarize_multi_transcripts_v2",
+        fake_summary,
+    )
+    result = summarize_task.summarize_audio_batch_job_task.run(job_id)
+    assert result["status"] == "partially_succeeded"
+    assert [item["summary_type"] for item in result["summary_results"]] == [
+        "brief",
+        "detailed",
+        "investigation",
+        "forensic",
+    ]
+    assert [item["status"] for item in result["summary_results"]] == [
+        "succeeded",
+        "succeeded",
+        "failed",
+        "failed",
+    ]
+    assert [item["summary_model"] for item in result["summary_results"]] == [
+        "fixture-brief",
+        "fixture-detailed",
+        None,
+        None,
+    ]
+    assert result["summary_results"][0]["runtime"] == {
+        "llm_call_count": 1,
+        "provider": "fixture-provider",
+        "user_prompt_applied": False,
+    }
+
+    db = SessionLocal()
+    try:
+        job = db.query(AudioBatchSummaryJob).filter(AudioBatchSummaryJob.id == job_id).one()
+        assert len(job.summary_results) == 4
+        assert "raw_provider_detail" not in repr(job.summary_results)
+        summaries = db.query(Summary).order_by(Summary.id.asc()).all()
+        assert [summary.content for summary in summaries] == [
+            "Variant brief",
+            "Variant detailed",
+        ]
+        assert all(
+            source["diarization"]["scope"] == "file"
+            and source["diarization"]["scope_id"].startswith("audio:")
+            and source["diarization"]["position"] == source["position"]
+            for summary in summaries
+            for source in summary.files
+        )
+    finally:
+        db.close()

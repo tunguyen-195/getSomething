@@ -40,11 +40,19 @@ _PUBLIC_TASK_RESULT_FIELDS = frozenset(
         "model_name",
         "summary_model",
         "summary_type",
+        "summary_variants",
         "requested_engine",
         "engine_used",
         "audio_integrity_status",
         "audio_id",
         "download_url",
+        "diarization_scope",
+        "file_provenance",
+        "diarization",
+        "source_task_id",
+        "source_audio_id",
+        "source_case_id",
+        "source_filename",
         "user_context_prompt",
         "summary_state",
     }
@@ -252,11 +260,94 @@ def _project_error(root: dict[str, Any]) -> dict[str, str] | None:
 def _public_segments(value: Any) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for item in _records(value):
-        row = _copy_fields(item, ("text", "speaker"))
+        row = _copy_fields(
+            item,
+            (
+                "text",
+                "speaker",
+                "speaker_id",
+                "speaker_key",
+                "speaker_scope_id",
+                "source_task_id",
+                "source_audio_id",
+                "source_case_id",
+                "source_filename",
+                "source_scope",
+                "source_batch_id",
+                "source_batch_item_id",
+                "source_position",
+            ),
+        )
         row.update(_copy_numeric_fields(item, ("start", "end", "confidence")))
+        row.update(
+            _copy_numeric_fields(
+                item,
+                ("source_audio_id", "source_case_id", "source_batch_item_id", "source_position"),
+            )
+        )
         if row:
             rows.append(row)
     return rows
+
+
+def _public_file_provenance(value: Any) -> dict[str, Any] | None:
+    source = _record(value)
+    if source.get("scope") != "file":
+        return None
+    projected: dict[str, Any] = {"scope": "file"}
+    for key in (
+        "schema_version",
+        "scope_id",
+        "task_id",
+        "audio_id",
+        "case_id",
+        "filename",
+        "batch_id",
+        "batch_item_id",
+        "position",
+    ):
+        value = source.get(key)
+        if isinstance(value, (str, int)) and not isinstance(value, bool):
+            projected[key] = value
+    return projected
+
+
+def _public_diarization(value: Any) -> dict[str, Any] | None:
+    source = _record(value)
+    if source.get("scope") != "file":
+        return None
+    projected: dict[str, Any] = {"scope": "file"}
+    for key in ("schema_version", "scope_id", "namespace", "status", "method"):
+        if text := _text(source.get(key)):
+            projected[key] = text
+    for key in ("speaker_count",):
+        number = source.get(key)
+        if isinstance(number, int) and not isinstance(number, bool):
+            projected[key] = number
+    source_projection = _public_file_provenance(source.get("source"))
+    if source_projection is not None:
+        projected["source"] = source_projection
+    speaker_ids = _string_list(source.get("speaker_ids"))
+    if speaker_ids:
+        projected["speaker_ids"] = speaker_ids
+    speakers: list[dict[str, str]] = []
+    for item in _records(source.get("speakers")):
+        speaker_id = _text(item.get("speaker_id"))
+        speaker_key = _text(item.get("speaker_key"))
+        if speaker_id and speaker_key:
+            speakers.append({"speaker_id": speaker_id, "speaker_key": speaker_key})
+    if speakers:
+        projected["speakers"] = speakers
+    batch_source = _record(source.get("batch"))
+    batch: dict[str, Any] = {}
+    for key in ("batch_id", "batch_item_id", "position"):
+        value = batch_source.get(key)
+        if isinstance(value, (str, int)) and not isinstance(value, bool):
+            batch[key] = value
+    if batch:
+        projected["batch"] = batch
+    projected["segments"] = _public_segments(source.get("segments"))
+    return projected
 
 
 def _public_summary_authority(value: Any) -> dict[str, Any] | None:
@@ -276,6 +367,44 @@ def _public_summary_signal(value: Any) -> dict[str, Any] | None:
     for name in ("retryable", "needs_review"):
         if isinstance(source.get(name), bool):
             projected[name] = source[name]
+    return projected
+
+
+_PUBLIC_SUMMARY_TYPES = frozenset({"brief", "detailed", "investigation", "forensic"})
+
+
+def _public_summary_variants(value: Any) -> dict[str, dict[str, Any]]:
+    """Project per-type summary snapshots without leaking runtime metadata."""
+
+    if not isinstance(value, dict):
+        return {}
+    projected: dict[str, dict[str, Any]] = {}
+    for key, raw in value.items():
+        if key not in _PUBLIC_SUMMARY_TYPES or not isinstance(raw, dict):
+            continue
+        row: dict[str, Any] = {"summary_type": key}
+        summary = sanitize_legacy_preview_text(raw.get("summary"))
+        if summary:
+            row["summary"] = summary
+        state = _public_safe_status(raw.get("summary_state"))
+        if state:
+            row["summary_state"] = state
+        model = _text(raw.get("summary_model"))
+        if model:
+            row["summary_model"] = model
+        if authority := _public_summary_authority(raw.get("summary_authority")):
+            row["summary_authority"] = authority
+        if notice := _public_summary_signal(raw.get("summary_notice")):
+            row["summary_notice"] = notice
+        if error := _public_summary_signal(raw.get("summary_error")):
+            row["summary_error"] = error
+        row["summary_preview"] = coerce_public_preview_payload(
+            raw.get("summary_preview")
+        )
+        context = public_context_analysis_payload(raw.get("context_analysis"))
+        if context:
+            row["context_analysis"] = context
+        projected[key] = row
     return projected
 
 
@@ -371,6 +500,10 @@ def public_task_result_payload(value: Any) -> dict[str, Any]:
         if key in _PUBLIC_TASK_RESULT_FIELDS
     }
     projected["summary"] = sanitize_legacy_preview_text(projected.get("summary")) or None
+    projected["summary_variants"] = _public_summary_variants(root.get("summary_variants"))
+    # These fields contain nested provenance and must never pass through raw.
+    projected.pop("file_provenance", None)
+    projected.pop("diarization", None)
     projected["segments"] = _public_segments(projected.get("segments"))
     if "context_analysis" in root:
         projected["context_analysis"] = public_context_analysis_payload(
@@ -385,6 +518,19 @@ def public_task_result_payload(value: Any) -> dict[str, Any]:
     projected["summary_preview"] = coerce_public_preview_payload(
         root.get("summary_preview")
     )
+    if file_provenance := _public_file_provenance(root.get("file_provenance")):
+        projected["file_provenance"] = file_provenance
+    if diarization := _public_diarization(root.get("diarization")):
+        projected["diarization"] = diarization
+    for key in (
+        "source_task_id",
+        "source_audio_id",
+        "source_case_id",
+        "source_filename",
+    ):
+        candidate = root.get(key)
+        if isinstance(candidate, (str, int)) and not isinstance(candidate, bool):
+            projected[key] = candidate
     if fallback_reason := _public_safe_status(root.get("fallback_reason")):
         projected["fallback_reason"] = fallback_reason
 

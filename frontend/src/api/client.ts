@@ -22,7 +22,12 @@ export const DEFAULT_INVESTIGATION_SUMMARY_MIN_LENGTH = 120;
 export const DEFAULT_INVESTIGATION_SUMMARY_MAX_LENGTH = 400;
 export const DEFAULT_MULTI_SUMMARY_MIN_LENGTH = 100;
 export const DEFAULT_MULTI_SUMMARY_MAX_LENGTH = 400;
-export type AudioBatchSummaryType = 'brief' | 'detailed';
+/**
+ * Batch summaries use the same semantic allow-list as single-file summaries.
+ * Keeping this alias instead of a second list prevents the UI from silently
+ * dropping investigation/forensic results returned by newer API versions.
+ */
+export type AudioBatchSummaryType = SummaryType;
 export const DEFAULT_BATCH_SUMMARY_TYPE: AudioBatchSummaryType = 'detailed';
 export const SUMMARY_USER_PROMPT_MAX_LENGTH = 2000;
 
@@ -129,6 +134,8 @@ export interface AudioBatchSummaryRequest {
   task_ids: string[];
   model_name?: string | null;
   summary_type: AudioBatchSummaryType;
+  /** Request independent outputs for one or more semantic summary modes. */
+  summary_types?: AudioBatchSummaryType[];
   min_length: number;
   max_length: number;
   length_mode: SummaryLengthMode;
@@ -138,6 +145,7 @@ export interface AudioBatchSummaryRequest {
 export type AudioBatchSummaryStatus =
   | 'queued'
   | 'processing'
+  | 'partially_succeeded'
   | 'succeeded'
   | 'failed'
   | 'cancel_requested'
@@ -148,6 +156,17 @@ export interface AudioBatchSummaryJob {
   summary_job_id: string;
   status: AudioBatchSummaryStatus;
   summary: string | null;
+  /** Type of the legacy/single result, when the server returns one. */
+  summary_type?: AudioBatchSummaryType;
+  /**
+   * New multi-result projection. Each type is persisted independently; the
+   * root `summary` remains as a backwards-compatible legacy projection.
+   */
+  summary_results?: AudioBatchSummaryResult[];
+  /** Alias accepted during rolling upgrades. */
+  summaries?: Record<string, string | AudioBatchSummaryResult | null>;
+  /** Single-file projection alias used by the v2 task result endpoint. */
+  summary_variants?: Record<string, string | AudioBatchSummaryResult | null>;
   source_manifest: Array<{
     position: number;
     task_id: string;
@@ -155,6 +174,22 @@ export interface AudioBatchSummaryJob {
   }>;
   user_prompt_applied: boolean;
   error: SafeApiErrorEnvelope | null;
+}
+
+export interface AudioBatchSummaryResult {
+  summary_type: AudioBatchSummaryType;
+  summary: string | null;
+  summary_model?: string | null;
+  runtime?: {
+    prompt_version?: string | null;
+    summary_generation?: string | null;
+    provider?: string | null;
+    llm_call_count?: number | null;
+    availability_attempts?: number | null;
+    user_prompt_applied?: boolean | null;
+  } | null;
+  status?: AudioBatchSummaryStatus;
+  error?: SafeApiErrorEnvelope | null;
 }
 
 export interface AudioBatchResumeRecord {
@@ -170,6 +205,7 @@ const AUDIO_BATCH_TERMINAL_STATUSES = new Set<AudioBatchStatus>([
   'cancelled',
 ]);
 const AUDIO_BATCH_SUMMARY_TERMINAL_STATUSES = new Set<AudioBatchSummaryStatus>([
+  'partially_succeeded',
   'succeeded',
   'failed',
   'cancelled',
@@ -362,7 +398,7 @@ function requireAudioBatchSummaryJob(
   expectedBatchId: string,
   expectedSummaryJobId?: string,
 ): AudioBatchSummaryJob {
-  const validStatus = ['queued', 'processing', 'succeeded', 'failed', 'cancel_requested', 'cancelled']
+  const validStatus = ['queued', 'processing', 'partially_succeeded', 'succeeded', 'failed', 'cancel_requested', 'cancelled']
     .includes(payload.status);
   if (!UUID_PATTERN.test(payload.batch_id)
     || payload.batch_id !== expectedBatchId
@@ -372,7 +408,32 @@ function requireAudioBatchSummaryJob(
     throw new AudioBatchApiError(200, 'INVALID_BATCH_SUMMARY_RESPONSE', false);
   }
   if (payload.status === 'succeeded'
-    && (typeof payload.summary !== 'string' || payload.summary.trim().length === 0)) {
+    && (typeof payload.summary !== 'string' || payload.summary.trim().length === 0)
+    && (!Array.isArray(payload.summary_results)
+      || !payload.summary_results.some(result => (
+        typeof result?.summary === 'string' && result.summary.trim().length > 0
+      )))) {
+    throw new AudioBatchApiError(200, 'INVALID_BATCH_SUMMARY_RESPONSE', false);
+  }
+  if (payload.summary_type !== undefined && !SUMMARY_TYPES.includes(payload.summary_type)) {
+    throw new AudioBatchApiError(200, 'INVALID_BATCH_SUMMARY_RESPONSE', false);
+  }
+  if (payload.summary_results !== undefined) {
+    if (!Array.isArray(payload.summary_results)
+      || payload.summary_results.length > SUMMARY_TYPES.length
+      || payload.summary_results.some(result => (
+        !result
+        || !SUMMARY_TYPES.includes(result.summary_type)
+        || (result.summary !== null && typeof result.summary !== 'string')
+        || (result.status !== undefined && !AUDIO_BATCH_SUMMARY_TERMINAL_STATUSES.has(result.status)
+          && !['queued', 'processing', 'cancel_requested'].includes(result.status))
+      ))
+      || new Set(payload.summary_results.map(result => result.summary_type)).size !== payload.summary_results.length) {
+      throw new AudioBatchApiError(200, 'INVALID_BATCH_SUMMARY_RESPONSE', false);
+    }
+  }
+  if (payload.summaries !== undefined
+    && (!payload.summaries || typeof payload.summaries !== 'object' || Array.isArray(payload.summaries))) {
     throw new AudioBatchApiError(200, 'INVALID_BATCH_SUMMARY_RESPONSE', false);
   }
   if (!Array.isArray(payload.source_manifest)

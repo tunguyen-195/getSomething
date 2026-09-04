@@ -1,7 +1,7 @@
 {
   "schema_version": "rtk-evidence-v1",
   "artifact_type": "pyannote-migration-config-audit",
-  "observed_at": "2026-08-26T11:43:04.671751+07:00",
+  "observed_at": "2026-09-04T13:00:48.644182+07:00",
   "repo_root": "E:\\research\\STT",
   "canonical_workspace": true,
   "scope": "read_only_no_model_download_no_model_activation",
@@ -23,8 +23,8 @@
     "src/services/model_runtime/local_artifacts.py": "500a4679e25de468e14c339a76155a62755eb5d9de630135e6813c4759879767",
     "src/services/transcription/models/pyannote_manager.py": "bb6291510483306440b03feff7f7dfae1dac3dbded44185d0e1b72411baa7542",
     "src/cherry_core/adapters/diarization/pyannote_adapter.py": "74e227941975e53ec8e22ba37f0e2d17918ca30f7ba562d32766dc298a3af7eb",
-    "src/services/transcription/transcribe_service_v2.py": "086171d26af3899d90344a8195a335e5eebb25dae67529c3952aed4124ff51b4",
-    "src/services/transcription/cherry_transcription_service.py": "24671503e131cd8cced67406b325329268ab953ddeb1f0a60a8ce423be89ea63",
+    "src/services/transcription/transcribe_service_v2.py": "e9bc12c497751a0750ad5c22c6644426bd9992f354edeb43e745c563c6f752a1",
+    "src/services/transcription/cherry_transcription_service.py": "dba7a13da5a1b60d946337294e6233ede3d2b02894dca79122c0021700fcc687",
     "src/core/config.py": "9d5aa223245f5fd02aae3fbfb78152ec1ded0d09fd5654b94413af2bc07f566f",
     "requirements.txt": "1e8555869c29ca772207e7aedc638bf42b27ac0eb5f10ac592a3b05cb249fd9f",
     "requirements-torch-cu121.txt": "3bf0ddcd4d004273d2350feadc0340684663c367778df190725f377b97c5fe25"

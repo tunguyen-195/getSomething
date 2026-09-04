@@ -107,6 +107,19 @@ def test_direct_summary_rejects_invalid_bounds_before_gpu_or_model(monkeypatch) 
     assert touched == []
 
 
+def test_batch_summary_validates_investigation_bounds_for_selected_variants() -> None:
+    from src.services.audio_batch_contracts import AudioBatchSummaryRequest
+
+    with pytest.raises(ValueError, match="investigation max_length"):
+        AudioBatchSummaryRequest(
+            task_ids=["task-1"],
+            summary_types=["investigation"],
+            length_mode="manual",
+            min_length=0,
+            max_length=5,
+        )
+
+
 def test_tiny_investigation_maximum_is_rejected_before_model_work(monkeypatch) -> None:
     touched: list[str] = []
     monkeypatch.setattr(

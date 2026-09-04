@@ -39,6 +39,7 @@ from src.services.summarization.contracts import (
     DEFAULT_SUMMARY_MAX_WORDS,
     DEFAULT_SUMMARY_MIN_WORDS,
     DEFAULT_SUMMARY_TYPE,
+    SUMMARY_TYPE_VALUES,
     SummaryType,
     validate_summary_request_options,
 )
@@ -482,6 +483,12 @@ _SAFE_BATCH_SUMMARY_MESSAGES: Final[dict[str, str]] = {
     "SUMMARY_PERSISTENCE_FAILED": _SAFE_TASK_MESSAGES["SUMMARY_PERSISTENCE_FAILED"],
     "SUMMARY_RESULT_INVALID": _SAFE_TASK_MESSAGES["SUMMARY_RESULT_INVALID"],
     "SUMMARY_UNAVAILABLE": _SAFE_TASK_MESSAGES["SUMMARY_UNAVAILABLE"],
+    "MULTI_INVESTIGATION_RELEASE_REQUIRED": _SAFE_TASK_MESSAGES[
+        "MULTI_INVESTIGATION_RELEASE_REQUIRED"
+    ],
+    "FORENSIC_LEGACY_PROVIDER_DISABLED": _SAFE_TASK_MESSAGES[
+        "FORENSIC_LEGACY_PROVIDER_DISABLED"
+    ],
     "SUMMARY_UNSAFE_HANDOFF": _SAFE_TASK_MESSAGES["SUMMARY_UNSAFE_HANDOFF"],
 }
 
@@ -508,11 +515,18 @@ def _summary_job_request_id(task: Any, summary_job_id: str) -> str:
 
 
 def _summary_job_payload(job: AudioBatchSummaryJob) -> dict[str, object]:
+    options = job.summary_options if isinstance(job.summary_options, dict) else {}
+    summary_types = options.get("summary_types")
+    if not isinstance(summary_types, list) or not summary_types:
+        summary_types = [options.get("summary_type", DEFAULT_SUMMARY_TYPE)]
     return {
         "status": job.status,
         "summary_job_id": job.id,
         "batch_id": job.batch_id,
         "summary_id": job.summary_id,
+        "summary_type": summary_types[0],
+        "summary_types": summary_types,
+        "summary_results": job.summary_results if isinstance(job.summary_results, list) else [],
         "source_manifest_sha256": job.source_manifest_sha256,
         "user_prompt_applied": bool(job.user_prompt_applied),
         "error_code": job.error_code,
@@ -534,7 +548,7 @@ def _claim_summary_job(
             )
             if job is None:
                 return "missing", {}
-            if job.status in {"succeeded", "failed", "cancelled"}:
+            if job.status in {"succeeded", "partially_succeeded", "failed", "cancelled"}:
                 payload = _summary_job_payload(job)
                 db.commit()
                 return "terminal", payload
@@ -565,7 +579,7 @@ def _validated_summary_job_options(
     raw_options: object,
     *,
     user_prompt: object,
-) -> tuple[object, str | None]:
+) -> tuple[object, str | None, list[str]]:
     if not isinstance(raw_options, dict):
         raise SafeAudioBatchSummaryJobError("SUMMARY_REQUEST_CONTRACT_MISMATCH")
     allowed_keys = {
@@ -574,6 +588,7 @@ def _validated_summary_job_options(
         "min_length",
         "max_length",
         "length_mode",
+        "summary_types",
     }
     if set(raw_options) - allowed_keys:
         raise SafeAudioBatchSummaryJobError("SUMMARY_REQUEST_CONTRACT_MISMATCH")
@@ -597,7 +612,49 @@ def _validated_summary_job_options(
         raise SafeAudioBatchSummaryJobError(
             "SUMMARY_REQUEST_CONTRACT_MISMATCH"
         ) from exc
-    return options, model_name
+    raw_types = raw_options.get("summary_types")
+    if not isinstance(raw_types, list) or not raw_types:
+        summary_types = [options.summary_type]
+    else:
+        if (
+            len(raw_types) > 4
+            or len(raw_types) != len(set(raw_types))
+            or any(type(item) is not str or item not in SUMMARY_TYPE_VALUES for item in raw_types)
+        ):
+            raise SafeAudioBatchSummaryJobError("SUMMARY_REQUEST_CONTRACT_MISMATCH")
+        summary_types = list(raw_types)
+    return options, model_name, summary_types
+
+
+def _safe_summary_runtime(value: object) -> dict[str, object] | None:
+    """Keep only bounded observability fields from a provider runtime payload."""
+
+    if not isinstance(value, dict):
+        return None
+    projected: dict[str, object] = {}
+    for key, maximum in (
+        ("prompt_version", 255),
+        ("summary_generation", 80),
+        ("provider", 80),
+    ):
+        candidate = value.get(key)
+        if isinstance(candidate, str) and candidate.strip() and len(candidate) <= maximum:
+            projected[key] = candidate.strip()
+    for key in ("llm_call_count", "availability_attempts"):
+        candidate = value.get(key)
+        if type(candidate) is int and candidate >= 0:
+            projected[key] = candidate
+    candidate = value.get("user_prompt_applied")
+    if type(candidate) is bool:
+        projected["user_prompt_applied"] = candidate
+    return projected or None
+
+
+def _safe_summary_model(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized[:255] if normalized else None
 
 
 def _expected_source_revision_id(task_result: dict[str, object], digest: str) -> str:
@@ -718,6 +775,46 @@ def _load_verified_summary_sources(
             raise SafeAudioBatchSummaryJobError("SUMMARY_SOURCE_AUDIO_MISMATCH")
 
         transcripts.append(transcript)
+        segments = task_result.get("segments")
+        segment_rows = segments if isinstance(segments, list) else []
+        speaker_rows: dict[str, dict[str, object]] = {}
+        for segment in segment_rows:
+            if not isinstance(segment, dict):
+                continue
+            label = segment.get("speaker") or segment.get("speaker_id")
+            if not isinstance(label, str) or not label.strip():
+                continue
+            label = label.strip()
+            speaker_key = segment.get("speaker_key")
+            if not isinstance(speaker_key, str) or not speaker_key.strip():
+                # Legacy task results did not persist a namespaced key.  The
+                # immutable audio id still provides a stable file boundary.
+                speaker_key = f"audio:{entry.audio_id}:speaker:{label}"
+            speaker_rows.setdefault(
+                label,
+                {"speaker_id": label, "speaker_key": speaker_key.strip()},
+            )
+        existing_diarization = task_result.get("diarization")
+        diarization_snapshot: dict[str, object] = {
+            "scope": "file",
+            "scope_id": f"audio:{entry.audio_id}",
+            # Compatibility/display namespace.  Stable identity is carried by
+            # scope_id and each speaker_key; position is deliberately not used
+            # as the speaker identity.
+            "namespace": f"file:{entry.position}",
+            "status": task_result.get("diarization_status")
+            or ("success" if task_result.get("has_diarization") else "disabled"),
+            "method": task_result.get("diarization_method_used")
+            or task_result.get("diarization_method"),
+            "speaker_count": task_result.get("num_speakers")
+            if isinstance(task_result.get("num_speakers"), int)
+            else len(speaker_rows),
+            "speakers": sorted(speaker_rows.values(), key=lambda item: str(item["speaker_id"])),
+        }
+        if isinstance(existing_diarization, dict):
+            existing_scope = existing_diarization.get("scope_id")
+            if isinstance(existing_scope, str) and existing_scope.strip():
+                diarization_snapshot["scope_id"] = existing_scope.strip()
         provenance.append(
             {
                 "position": entry.position,
@@ -728,6 +825,13 @@ def _load_verified_summary_sources(
                 "audio_sha256": item.verified_audio_sha256,
                 "transcript_sha256": entry.transcript_sha256,
                 "source_revision_id": entry.source_revision_id,
+                "diarization": {
+                    **diarization_snapshot,
+                    # Position is retained for display ordering, while
+                    # scope_id/speaker_key remain stable when selection order
+                    # changes on a later summary request.
+                    "position": entry.position,
+                },
             }
         )
     return transcripts, provenance
@@ -751,7 +855,7 @@ def _fail_summary_job(
                 .with_for_update()
                 .one_or_none()
             )
-            if job is None or job.status in {"succeeded", "cancelled"}:
+            if job is None or job.status in {"succeeded", "partially_succeeded", "cancelled"}:
                 db.commit()
                 return
             if job.celery_task_id and job.celery_task_id != celery_task_id:
@@ -833,7 +937,7 @@ def _prepare_summary_job_execution(
             )
             if job is None:
                 raise SafeAudioBatchSummaryJobError("SUMMARY_JOB_NOT_FOUND")
-            if job.status in {"succeeded", "failed", "cancelled"}:
+            if job.status in {"succeeded", "partially_succeeded", "failed", "cancelled"}:
                 payload = _summary_job_payload(job)
                 db.commit()
                 return payload, None
@@ -849,7 +953,7 @@ def _prepare_summary_job_execution(
                 db.commit()
                 return payload, None
 
-            options, model_name = _validated_summary_job_options(
+            options, model_name, summary_types = _validated_summary_job_options(
                 job.summary_options,
                 user_prompt=user_prompt,
             )
@@ -858,6 +962,7 @@ def _prepare_summary_job_execution(
             return None, {
                 "options": options,
                 "model_name": model_name,
+                "summary_types": summary_types,
                 "transcripts": transcripts,
                 "provenance": provenance,
                 "case_id": job.case_id,
@@ -867,30 +972,72 @@ def _prepare_summary_job_execution(
             raise
 
 
-def _persist_summary_job_success(
+def _persist_summary_job_results(
     *,
     summary_job_id: str,
     celery_task_id: str,
-    result: object,
+    results: list[tuple[str, object]],
     expected_transcript_count: int,
     expected_provenance: list[dict[str, object]],
     user_prompt_applied: bool,
 ) -> dict[str, object]:
-    if not isinstance(result, dict) or not result.get("available"):
-        code = _result_error_code(result, "SUMMARY_UNAVAILABLE")
-        raise SafeAudioBatchSummaryJobError(code)
-    summary_text = result.get("summary")
-    runtime = result.get("runtime")
-    if (
-        not isinstance(summary_text, str)
-        or not summary_text.strip()
-        or result.get("num_transcripts") != expected_transcript_count
-        or not isinstance(runtime, dict)
-        or runtime.get("user_prompt_applied") is not user_prompt_applied
-        or type(runtime.get("llm_call_count")) is not int
-        or runtime["llm_call_count"] < 1
-    ):
+    if not results:
         raise SafeAudioBatchSummaryJobError("SUMMARY_RESULT_INVALID")
+
+    # Validate each model result independently. Unsupported/released-only types
+    # become a typed failed variant while successful variants are still kept.
+    validated: list[dict[str, object]] = []
+    for summary_type, result in results:
+        result_model = _safe_summary_model(
+            result.get("model") if isinstance(result, dict) else None
+        )
+        result_runtime = _safe_summary_runtime(
+            result.get("runtime") if isinstance(result, dict) else None
+        )
+        if not isinstance(result, dict) or not result.get("available"):
+            validated.append(
+                {
+                    "summary_type": summary_type,
+                    "status": "failed",
+                    "summary": None,
+                    "summary_model": result_model,
+                    "runtime": result_runtime,
+                    "error_code": _result_error_code(result, "SUMMARY_UNAVAILABLE"),
+                }
+            )
+            continue
+        summary_text = result.get("summary")
+        runtime = result.get("runtime")
+        if (
+            not isinstance(summary_text, str)
+            or not summary_text.strip()
+            or result.get("num_transcripts") != expected_transcript_count
+            or not isinstance(runtime, dict)
+            or runtime.get("user_prompt_applied") is not user_prompt_applied
+            or type(runtime.get("llm_call_count")) is not int
+            or runtime["llm_call_count"] < 1
+        ):
+            validated.append(
+                {
+                    "summary_type": summary_type,
+                    "status": "failed",
+                    "summary": None,
+                    "summary_model": result_model,
+                    "runtime": result_runtime,
+                    "error_code": "SUMMARY_RESULT_INVALID",
+                }
+            )
+            continue
+        validated.append(
+            {
+                "summary_type": summary_type,
+                "status": "succeeded",
+                "summary": summary_text.strip(),
+                "summary_model": result_model,
+                "runtime": result_runtime,
+                "error_code": None,
+            }
+        )
 
     with SessionLocal() as db:
         try:
@@ -910,7 +1057,7 @@ def _persist_summary_job_success(
                 payload = _summary_job_payload(job)
                 db.commit()
                 return payload
-            if job.status in {"succeeded", "failed", "cancelled"}:
+            if job.status in {"succeeded", "partially_succeeded", "failed", "cancelled"}:
                 payload = _summary_job_payload(job)
                 db.commit()
                 return payload
@@ -926,17 +1073,52 @@ def _persist_summary_job_success(
                 raise SafeAudioBatchSummaryJobError(
                     "SUMMARY_SOURCE_TRANSCRIPT_MISMATCH"
                 )
-            summary = Summary(
-                type="multi",
-                case_id=job.case_id,
-                files=current_provenance,
-                content=summary_text.strip(),
-            )
-            db.add(summary)
-            db.flush()
-            job.summary_id = summary.id
-            job.status = "succeeded"
-            job.error_code = None
+            persisted_results: list[dict[str, object]] = []
+            first_summary_id: int | None = None
+            for item in validated:
+                summary_id: int | None = None
+                if item["status"] == "succeeded":
+                    summary = Summary(
+                        type="multi",
+                        case_id=job.case_id,
+                        files=[
+                            {
+                                **source,
+                                # Explicit namespace keeps identical SPEAKER_00
+                                # labels isolated when sources are combined.
+                                "speaker_namespace": f"file:{source['position']}",
+                            }
+                            for source in current_provenance
+                        ],
+                        content=str(item["summary"]),
+                    )
+                    db.add(summary)
+                    db.flush()
+                    summary_id = summary.id
+                    first_summary_id = first_summary_id or summary_id
+                persisted_results.append(
+                    {
+                        "summary_type": item["summary_type"],
+                        "status": item["status"],
+                        "summary_id": summary_id,
+                        "summary": item["summary"],
+                        "summary_model": item["summary_model"],
+                        "runtime": item["runtime"],
+                        "error_code": item["error_code"],
+                    }
+                )
+            success_count = sum(item["status"] == "succeeded" for item in persisted_results)
+            job.summary_results = persisted_results
+            job.summary_id = first_summary_id
+            if success_count == len(persisted_results):
+                job.status = "succeeded"
+                job.error_code = None
+            elif success_count:
+                job.status = "partially_succeeded"
+                job.error_code = None
+            else:
+                job.status = "failed"
+                job.error_code = str(persisted_results[0].get("error_code") or "SUMMARY_UNAVAILABLE")
             job.user_prompt_applied = user_prompt_applied
             payload = _summary_job_payload(job)
             db.commit()
@@ -944,6 +1126,32 @@ def _persist_summary_job_success(
         except Exception:
             db.rollback()
             raise
+
+
+def _persist_summary_job_success(
+    *,
+    summary_job_id: str,
+    celery_task_id: str,
+    result: object,
+    expected_transcript_count: int,
+    expected_provenance: list[dict[str, object]],
+    user_prompt_applied: bool,
+) -> dict[str, object]:
+    """Compatibility wrapper for callers that submit one summary type."""
+
+    summary_type = (
+        result.get("summary_type", DEFAULT_SUMMARY_TYPE)
+        if isinstance(result, dict)
+        else DEFAULT_SUMMARY_TYPE
+    )
+    return _persist_summary_job_results(
+        summary_job_id=summary_job_id,
+        celery_task_id=celery_task_id,
+        results=[(str(summary_type), result)],
+        expected_transcript_count=expected_transcript_count,
+        expected_provenance=expected_provenance,
+        user_prompt_applied=user_prompt_applied,
+    )
 
 
 def _run_summary_job_execution(
@@ -965,6 +1173,9 @@ def _run_summary_job_execution(
     options = execution["options"]
     transcripts = execution["transcripts"]
     provenance = execution["provenance"]
+    summary_types = execution.get("summary_types")
+    if not isinstance(summary_types, list) or not summary_types:
+        summary_types = [options.summary_type]
     if not isinstance(transcripts, list) or not isinstance(provenance, list):
         raise SafeAudioBatchSummaryJobError("SUMMARY_RESULT_INVALID")
 
@@ -974,17 +1185,42 @@ def _run_summary_job_execution(
 
     try:
         with _llama_server_handoff(f"summary_job:{summary_job_id}", "multi_summary"):
-            result = summarize_multi_transcripts_v2(
-                transcripts=transcripts,
-                model_name=execution["model_name"],
-                summary_type=options.summary_type,
-                case_id=str(execution["case_id"]),
-                min_length=options.min_length,
-                max_length=options.max_length,
-                length_mode=options.length_mode,
-                user_prompt=options.user_prompt,
-                gpu_owner=f"summary_job:{summary_job_id}",
-            )
+            variant_results = []
+            for summary_type in summary_types:
+                owner = f"summary_job:{summary_job_id}"
+                if len(summary_types) > 1:
+                    owner = f"{owner}:{summary_type}"
+                try:
+                    result = summarize_multi_transcripts_v2(
+                        transcripts=transcripts,
+                        model_name=execution["model_name"],
+                        summary_type=summary_type,
+                        case_id=str(execution["case_id"]),
+                        min_length=options.min_length,
+                        max_length=options.max_length,
+                        length_mode=options.length_mode,
+                        user_prompt=options.user_prompt,
+                        gpu_owner=owner,
+                    )
+                except UnsafeGpuHandoff:
+                    raise
+                except Exception:
+                    if len(summary_types) == 1:
+                        raise
+                    # A provider failure is isolated to this semantic variant;
+                    # other requested variants still get an opportunity to run.
+                    result = {
+                        "available": False,
+                        "summary_type": summary_type,
+                        "num_transcripts": len(transcripts),
+                        "error": {
+                            "code": "SUMMARY_GENERATION_FAILED",
+                            "message": _SAFE_BATCH_SUMMARY_MESSAGES[
+                                "SUMMARY_GENERATION_FAILED"
+                            ],
+                        },
+                    }
+                variant_results.append((summary_type, result))
     except UnsafeGpuHandoff as exc:
         raise SafeAudioBatchSummaryJobError(
             "SUMMARY_UNSAFE_HANDOFF",
@@ -999,10 +1235,10 @@ def _run_summary_job_execution(
         ) from exc
 
     try:
-        return _persist_summary_job_success(
+        return _persist_summary_job_results(
             summary_job_id=summary_job_id,
             celery_task_id=celery_task_id,
-            result=result,
+            results=variant_results,
             expected_transcript_count=len(transcripts),
             expected_provenance=provenance,
             user_prompt_applied=options.user_prompt is not None,
@@ -1105,10 +1341,12 @@ def summarize_audio_batch_job_task(
         raise
     except Exception as exc:
         logger.error(
-            "[CELERY_AUDIO_BATCH_SUMMARY] Failed | summary_job_id=%s | error_type=%s",
+            "[CELERY_AUDIO_BATCH_SUMMARY] Failed | summary_job_id=%s | error_type=%s | detail=%s",
             normalized_job_id,
             type(exc).__name__,
+            str(exc)[:160],
         )
+        logger.exception("[CELERY_AUDIO_BATCH_SUMMARY] Unexpected failure traceback")
         try:
             _fail_summary_job(
                 summary_job_id=normalized_job_id,

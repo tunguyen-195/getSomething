@@ -3,12 +3,14 @@ import {
     Alert,
     Box,
     Button,
+    Checkbox,
     Dialog,
     DialogActions,
     DialogContent,
     DialogTitle,
     FormControl,
     MenuItem,
+    ListItemText,
     Select,
     TextField,
     Typography,
@@ -24,6 +26,7 @@ import {
     normalizeSummaryUserPrompt,
     submitAudioBatchSummary,
     SUMMARY_USER_PROMPT_MAX_LENGTH,
+    SUMMARY_TYPES,
 } from '../api/client';
 import type { AudioBatchSummaryJob, AudioBatchSummaryType } from '../api/client';
 
@@ -49,7 +52,8 @@ const BatchSummaryDialog: React.FC<BatchSummaryDialogProps> = ({
     onSubmitted,
 }) => {
     const fullScreen = useMediaQuery('(max-width:600px)');
-    const [summaryType, setSummaryType] = useState<AudioBatchSummaryType>(DEFAULT_BATCH_SUMMARY_TYPE);
+    const [summaryType] = useState<AudioBatchSummaryType>(DEFAULT_BATCH_SUMMARY_TYPE);
+    const [summaryTypes, setSummaryTypes] = useState<AudioBatchSummaryType[]>([...SUMMARY_TYPES]);
     const [userPrompt, setUserPrompt] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [requestErrorCode, setRequestErrorCode] = useState<string | null>(null);
@@ -61,8 +65,14 @@ const BatchSummaryDialog: React.FC<BatchSummaryDialogProps> = ({
         && sources.length <= AUDIO_BATCH_MAX_FILES
         && duplicateSourceCount === 0
         && incompleteCount === 0
+        && summaryTypes.length > 0
         && !promptTooLong
         && !submitting;
+    // `summary_type` is the legacy brief/detailed alias. Keep it valid even
+    // when the user selects only the newer investigation/forensic variants.
+    const legacySummaryType: AudioBatchSummaryType = summaryTypes.find(
+        type => type === 'brief' || type === 'detailed',
+    ) ?? summaryType;
 
     useEffect(() => {
         if (open) setRequestErrorCode(null);
@@ -70,7 +80,7 @@ const BatchSummaryDialog: React.FC<BatchSummaryDialogProps> = ({
 
     const handleClose = () => {
         if (submitting) return;
-        setSummaryType(DEFAULT_BATCH_SUMMARY_TYPE);
+        setSummaryTypes([...SUMMARY_TYPES]);
         setUserPrompt('');
         setRequestErrorCode(null);
         onClose();
@@ -83,7 +93,8 @@ const BatchSummaryDialog: React.FC<BatchSummaryDialogProps> = ({
         try {
             const job = await submitAudioBatchSummary(batchId, {
                 task_ids: sources.map(source => source.task_id),
-                summary_type: summaryType,
+                summary_type: legacySummaryType,
+                summary_types: summaryTypes,
                 min_length: DEFAULT_MULTI_SUMMARY_MIN_LENGTH,
                 max_length: DEFAULT_MULTI_SUMMARY_MAX_LENGTH,
                 length_mode: 'auto',
@@ -129,17 +140,29 @@ const BatchSummaryDialog: React.FC<BatchSummaryDialogProps> = ({
                         </Typography>
                     ))}
                 </Box>
-                <Typography variant="subtitle2" fontWeight={700} mb={1}>LOẠI TÓM TẮT</Typography>
+                <Typography variant="subtitle2" fontWeight={700} mb={1}>CÁC LOẠI TÓM TẮT</Typography>
                 <FormControl fullWidth sx={{ mb: 2 }}>
                     <Select
                         size="small"
-                        value={summaryType}
-                        onChange={event => setSummaryType(event.target.value as AudioBatchSummaryType)}
+                        multiple
+                        value={summaryTypes}
+                        renderValue={selected => `${(selected as string[]).length} loại summary được chọn`}
+                        onChange={event => {
+                            const selected = event.target.value as AudioBatchSummaryType[];
+                            setSummaryTypes(selected);
+                        }}
                     >
-                        <MenuItem value="brief">Brief</MenuItem>
-                        <MenuItem value="detailed">Detailed</MenuItem>
+                        {SUMMARY_TYPES.map(type => (
+                            <MenuItem key={type} value={type}>
+                                <Checkbox checked={summaryTypes.includes(type)} size="small" />
+                                <ListItemText primary={type} />
+                            </MenuItem>
+                        ))}
                     </Select>
                 </FormControl>
+                {summaryTypes.length === 0 && (
+                    <Alert severity="warning" sx={{ mb: 2 }}>Chọn ít nhất một loại summary.</Alert>
+                )}
                 <Typography variant="subtitle2" fontWeight={700} mb={1}>YÊU CẦU TÓM TẮT (TÙY CHỌN)</Typography>
                 <TextField
                     value={userPrompt}

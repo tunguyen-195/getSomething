@@ -253,6 +253,11 @@ def read_audio(
             summary_authority = None
             summary_notice = None
             summary_preview = None
+            summary_type = None
+            summary_variants = {}
+            diarization_scope = None
+            file_provenance = None
+            diarization = None
             result_data = {}
 
             task_status = None
@@ -283,6 +288,11 @@ def read_audio(
                         summary_state = result_data.get("summary_state")
                         summary_authority = result_data.get("summary_authority")
                         summary_notice = result_data.get("summary_notice")
+                        summary_type = result_data.get("summary_type")
+                        summary_variants = result_data.get("summary_variants") or {}
+                        diarization_scope = result_data.get("diarization_scope")
+                        file_provenance = result_data.get("file_provenance")
+                        diarization = result_data.get("diarization")
                         summary_preview = coerce_public_preview_payload(
                             result_data.get("summary_preview")
                         )
@@ -328,10 +338,15 @@ def read_audio(
                 "summary_state": summary_state,
                 "summary_authority": summary_authority,
                 "summary_notice": summary_notice,
+                "summary_type": summary_type,
+                "summary_variants": summary_variants,
                 "summary_preview": summary_preview,
                 "formatted_transcript": formatted_transcript,
                 "segments": segments,
                 "context_analysis": context_analysis,
+                "diarization_scope": diarization_scope,
+                "file_provenance": file_provenance,
+                "diarization": diarization,
             })
 
         return result

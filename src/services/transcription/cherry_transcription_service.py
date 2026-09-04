@@ -7,6 +7,11 @@ import time
 from pathlib import Path
 from typing import Dict, List
 from src.cherry_core.domain.entities import Transcript, SpeakerSegment
+from src.services.transcription.diarization_scope import (
+    annotate_segments_with_file_scope,
+    build_diarization_provenance,
+    build_file_provenance,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +35,12 @@ class CherryTranscriberService:
         audio_path: str,
         language: str = "vi",
         enable_diarization: bool = True,
-        model_type: str = "whisper" # 'whisper' or 'phowhisper'
+        model_type: str = "whisper", # 'whisper' or 'phowhisper'
+        *,
+        task_id: str | None = None,
+        audio_id: int | str | None = None,
+        case_id: int | str | None = None,
+        filename: str | None = None,
     ) -> Dict:
         """
         Transcribe audio using Cherry Core adapters.
@@ -109,12 +119,36 @@ class CherryTranscriberService:
         # WhisperV2Adapter returns segments as list of dicts.
         # PhoWhisperAdapter returns segments as list of dicts.
 
-        result_segments = transcript_entity.segments
+        source_filename = filename or audio_path_obj.name
+        result_segments = annotate_segments_with_file_scope(
+            transcript_entity.segments,
+            task_id=task_id,
+            audio_id=audio_id,
+            case_id=case_id,
+            filename=source_filename,
+        )
 
         # Hallucination filtering post-processing (optional, if not already done by adapter)
         # Note: WhisperV2Adapter already does some filtering.
 
         total_time = time.time() - start_time
+
+        file_provenance = build_file_provenance(
+            task_id=task_id,
+            audio_id=audio_id,
+            case_id=case_id,
+            filename=source_filename,
+        )
+        diarization_provenance = build_diarization_provenance(
+            segments=result_segments,
+            task_id=task_id,
+            audio_id=audio_id,
+            case_id=case_id,
+            filename=source_filename,
+            speaker_count=num_speakers,
+            status=diarization_status,
+            method="pyannote" if has_diarization else None,
+        )
 
         return {
             "transcript": transcript_entity.text,
@@ -131,6 +165,13 @@ class CherryTranscriberService:
             "diarization_fallback_reason": diarization_fallback_reason,
             "degraded": enable_diarization and diarization_status != "success",
             "speaker_provenance": speaker_provenance,
+            "diarization_scope": "file",
+            "file_provenance": file_provenance,
+            "diarization": diarization_provenance,
+            "source_task_id": task_id,
+            "source_audio_id": audio_id,
+            "source_case_id": case_id,
+            "source_filename": source_filename,
         }
 
     def _merge_speakers(self, transcript: Transcript, diarization_segments: List[SpeakerSegment]):

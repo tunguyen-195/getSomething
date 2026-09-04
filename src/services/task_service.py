@@ -83,6 +83,7 @@ RESULT_FIELDS = {
     "model_name",
     "summary_model",
     "summary_type",
+    "summary_variants",
     "requested_engine",
     "engine_used",
     "fallback_reason",
@@ -445,7 +446,11 @@ def _deep_merge(
     for key, value in patch.items():
         if key == "has_visualization":
             continue
-        if key in ATOMIC_RESULT_FIELDS:
+        if key == "summary_variants" and isinstance(value, dict) and isinstance(merged.get(key), dict):
+            variants = copy.deepcopy(merged[key])
+            variants.update(copy.deepcopy(value))
+            merged[key] = variants
+        elif key in ATOMIC_RESULT_FIELDS:
             merged[key] = copy.deepcopy(value)
         elif isinstance(value, dict) and isinstance(merged.get(key), dict):
             merged[key] = _deep_merge(
@@ -674,7 +679,28 @@ def update_task(task_id: str, data: Dict[str, Any], db: Session | None = None) -
                 result_patch[normalized_key] = value
 
         if result_patch:
-            task.result = _deep_merge(_as_dict(task.result), result_patch)
+            current_result = _as_dict(task.result)
+            # Materialize an independent snapshot for every summary type while
+            # preserving the legacy top-level latest-summary projection.
+            summary_type = result_patch.get("summary_type")
+            if isinstance(summary_type, str) and summary_type in {
+                "brief", "detailed", "investigation", "forensic"
+            }:
+                variant = {
+                    key: copy.deepcopy(value)
+                    for key, value in result_patch.items()
+                    if (key.startswith("summary") and key != "summary_variants")
+                    or key == "context_analysis"
+                }
+                existing_variants = current_result.get("summary_variants")
+                merged_variants = (
+                    copy.deepcopy(existing_variants)
+                    if isinstance(existing_variants, dict)
+                    else {}
+                )
+                merged_variants[summary_type] = variant
+                result_patch = {**result_patch, "summary_variants": merged_variants}
+            task.result = _deep_merge(current_result, result_patch)
         if status_update:
             task.status = canonical_status(status_update, _as_dict(task.result))
             if task.status != "failed" and "error" not in data:

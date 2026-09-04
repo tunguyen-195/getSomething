@@ -145,6 +145,8 @@ test('merged summary dialog preserves source order and reuses optional prompt bo
   assert.match(dialog, /SUMMARY_USER_PROMPT_MAX_LENGTH/);
   assert.match(dialog, /normalizeSummaryUserPrompt\(userPrompt\)/);
   assert.match(dialog, /user_prompt: normalizeSummaryUserPrompt\(userPrompt\)/);
+  assert.match(dialog, /legacySummaryType[\s\S]*type === 'brief' \|\| type === 'detailed'/);
+  assert.match(dialog, /summary_type: legacySummaryType/);
   assert.doesNotMatch(dialog, /value="investigation"|value="forensic"/);
   assert.doesNotMatch(dialog, /error\.message|response\.detail|provider/i);
 });

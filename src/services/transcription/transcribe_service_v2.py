@@ -3,6 +3,7 @@ Transcription Service v2 - Refactored with Model Managers
 Uses WhisperManager and PyannoteManager for better performance
 """
 import time
+from pathlib import Path
 from typing import Dict
 from fastapi import HTTPException
 from faster_whisper.audio import decode_audio
@@ -16,6 +17,11 @@ from src.core.config import settings
 from src.core.logging import logger
 from src.services.audio_storage import compute_sha256, resolve_audio_path
 from src.services.model_runtime import gpu_lease
+from src.services.transcription.diarization_scope import (
+    annotate_segments_with_file_scope,
+    build_diarization_provenance,
+    build_file_provenance,
+)
 
 
 SUPPORTED_DIARIZATION_METHODS = {"none", "pyannote"}
@@ -304,10 +310,15 @@ def _transcribe_audio_v2_unlocked(
         audio_file = db.query(AudioFile).filter(AudioFile.task_id == task_id).first()
         if not audio_file:
             raise HTTPException(status_code=404, detail="Audio file not found")
+        # Lightweight test/dry-run rows may not have a persisted numeric id;
+        # task_id remains a deterministic fallback scope in that case.
+        source_audio_id = getattr(audio_file, "id", None)
+        source_case_id = getattr(audio_file, "case_id", None)
 
         audio_path = resolve_audio_path(audio_file.file_path)
         if not audio_path.exists():
             raise HTTPException(status_code=404, detail=f"Audio file not found: {audio_path}")
+        source_filename = getattr(audio_file, "filename", None) or Path(audio_path).name
 
         source_metadata = getattr(audio_file, "extra_metadata", None) or {}
         expected_sha256 = source_metadata.get("sha256")
@@ -356,12 +367,30 @@ def _transcribe_audio_v2_unlocked(
                 model_type_sel = "whisper"
 
                 # Use Cherry Transcriber
-                cherry_result = cherry_svc.transcribe(
-                    audio_path=str(audio_path),
-                    language=language,
-                    enable_diarization=diarization_enabled,
-                    model_type=model_type_sel
-                )
+                try:
+                    cherry_result = cherry_svc.transcribe(
+                        audio_path=str(audio_path),
+                        language=language,
+                        enable_diarization=diarization_enabled,
+                        model_type=model_type_sel,
+                        task_id=task_id,
+                        audio_id=source_audio_id,
+                        case_id=source_case_id,
+                        filename=source_filename,
+                    )
+                except TypeError as error:
+                    # Third-party/test adapters written against the original
+                    # four-argument Cherry contract remain usable.  Only
+                    # retry when the error is an unexpected provenance kwarg;
+                    # provider TypeErrors must still fail normally.
+                    if "unexpected keyword" not in str(error).casefold():
+                        raise
+                    cherry_result = cherry_svc.transcribe(
+                        audio_path=str(audio_path),
+                        language=language,
+                        enable_diarization=diarization_enabled,
+                        model_type=model_type_sel,
+                    )
 
                 # Adapt result to existing variables
                 segments = cherry_result['segments']
@@ -511,6 +540,16 @@ def _transcribe_audio_v2_unlocked(
             engine_used = "legacy"
 
         # Step 3: Format output (Common)
+        # Speaker labels are local to one file.  Preserve that label for
+        # backwards compatibility, but attach an immutable file-scoped key so
+        # case-level consumers cannot merge SPEAKER_00 from different files.
+        segments = annotate_segments_with_file_scope(
+            segments,
+            task_id=task_id,
+            audio_id=source_audio_id,
+            case_id=source_case_id,
+            filename=source_filename,
+        )
         formatted_transcript = ""
         full_transcript = " ".join(full_text_parts)
 
@@ -545,6 +584,22 @@ def _transcribe_audio_v2_unlocked(
             if diarization_fallback_reason is not None
             else []
         )
+        file_provenance = build_file_provenance(
+            task_id=task_id,
+            audio_id=source_audio_id,
+            case_id=source_case_id,
+            filename=source_filename,
+        )
+        diarization_provenance = build_diarization_provenance(
+            segments=segments,
+            task_id=task_id,
+            audio_id=source_audio_id,
+            case_id=source_case_id,
+            filename=source_filename,
+            speaker_count=num_speakers,
+            status=diarization_status,
+            method=diarization_method_used or diarization_method,
+        )
 
         response = {
             "task_id": task_id,
@@ -565,6 +620,13 @@ def _transcribe_audio_v2_unlocked(
             "diarization_fallback_reason": diarization_fallback_reason,
             "diarization_degraded_reasons": diarization_degraded_reasons,
             "speaker_provenance": speaker_provenance,
+            "diarization_scope": "file",
+            "file_provenance": file_provenance,
+            "diarization": diarization_provenance,
+            "source_task_id": task_id,
+            "source_audio_id": source_audio_id,
+            "source_case_id": source_case_id,
+            "source_filename": source_filename,
             "degraded": diarization_enabled and diarization_status != "success",
             "language": info.language if info else "vi",
             "transcript_file": transcript_file,

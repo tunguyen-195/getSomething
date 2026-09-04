@@ -16,6 +16,8 @@ from src.services.summarization.contracts import (
     DEFAULT_MULTI_SUMMARY_MAX_WORDS,
     DEFAULT_MULTI_SUMMARY_MIN_WORDS,
     DEFAULT_SUMMARY_TYPE,
+    MIN_INVESTIGATION_SUMMARY_MAX_WORDS,
+    SUMMARY_TYPE_VALUES,
     SummaryRequestOptions,
 )
 
@@ -46,10 +48,17 @@ AudioBatchItemStatus = Literal[
     "cancelled",
 ]
 AudioBatchSummaryType = Literal["brief", "detailed"]
+AudioBatchSummaryVariantType = Literal[
+    "brief", "detailed", "investigation", "forensic"
+]
+AudioBatchSummaryResultStatus = Literal[
+    "queued", "processing", "succeeded", "failed", "cancelled"
+]
 AudioBatchSummaryJobStatus = Literal[
     "queued",
     "processing",
     "succeeded",
+    "partially_succeeded",
     "failed",
     "cancel_requested",
     "cancelled",
@@ -356,6 +365,9 @@ class AudioBatchSummaryRequest(SummaryRequestOptions):
     summary_type: AudioBatchSummaryType = DEFAULT_SUMMARY_TYPE
     min_length: int = Field(default=DEFAULT_MULTI_SUMMARY_MIN_WORDS, ge=0)
     max_length: int = Field(default=DEFAULT_MULTI_SUMMARY_MAX_WORDS, ge=1)
+    summary_types: list[AudioBatchSummaryVariantType] = Field(
+        default_factory=list, max_length=4
+    )
 
     @field_validator("task_ids")
     @classmethod
@@ -379,6 +391,39 @@ class AudioBatchSummaryRequest(SummaryRequestOptions):
         if isinstance(value, str) and value.strip().casefold() == "auto":
             return None
         return value
+
+    @field_validator("summary_types")
+    @classmethod
+    def validate_summary_types(
+        cls, values: list[AudioBatchSummaryVariantType]
+    ) -> list[AudioBatchSummaryVariantType]:
+        if not values:
+            return values
+        if any(value not in SUMMARY_TYPE_VALUES for value in values):
+            raise ValueError("summary_types contains an unsupported summary type")
+        if len(values) != len(set(values)):
+            raise ValueError("summary_types must not contain duplicates")
+        return values
+
+    @model_validator(mode="after")
+    def normalize_legacy_summary_type(self) -> "AudioBatchSummaryRequest":
+        # Older clients submit one summary_type.  Normalize it to the ordered
+        # collection while retaining summary_type as the compatibility alias.
+        if not self.summary_types:
+            self.summary_types = [self.summary_type]
+        else:
+            if self.summary_types[0] in {"brief", "detailed"}:
+                self.summary_type = self.summary_types[0]
+        if (
+            "investigation" in self.summary_types
+            and self.length_mode == "manual"
+            and self.max_length < MIN_INVESTIGATION_SUMMARY_MAX_WORDS
+        ):
+            raise ValueError(
+                "investigation max_length must be at least "
+                f"{MIN_INVESTIGATION_SUMMARY_MAX_WORDS}"
+            )
+        return self
 
 
 class AudioBatchSummaryManifestItem(BaseModel):
@@ -425,13 +470,51 @@ class AudioBatchSafeErrorResponse(BaseModel):
     retryable: bool = False
 
 
+class AudioBatchSummaryRuntimeResponse(BaseModel):
+    """Allowlisted, reader-safe runtime metadata for one summary variant."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+
+    prompt_version: str | None = Field(default=None, max_length=255)
+    summary_generation: str | None = Field(default=None, max_length=80)
+    provider: str | None = Field(default=None, max_length=80)
+    llm_call_count: int | None = Field(default=None, ge=0)
+    availability_attempts: int | None = Field(default=None, ge=0)
+    user_prompt_applied: bool | None = None
+
+
+class AudioBatchSummaryResultResponse(BaseModel):
+    """One independently persisted summary variant in a merged job."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+
+    summary_type: AudioBatchSummaryVariantType
+    status: AudioBatchSummaryResultStatus
+    summary: str | None = None
+    summary_model: str | None = Field(default=None, max_length=255)
+    runtime: AudioBatchSummaryRuntimeResponse | None = None
+    error: AudioBatchSafeErrorResponse | None = None
+
+    @model_validator(mode="after")
+    def validate_result_terminal_projection(self) -> "AudioBatchSummaryResultResponse":
+        if self.status == "succeeded" and not (self.summary or "").strip():
+            raise ValueError("succeeded summary variants require summary text")
+        if self.status != "succeeded" and self.summary is not None:
+            raise ValueError("non-succeeded summary variants cannot expose summary text")
+        return self
+
+
 class AudioBatchSummaryJobResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
 
     batch_id: str = Field(min_length=36, max_length=36)
     summary_job_id: str = Field(min_length=36, max_length=36)
     status: AudioBatchSummaryJobStatus
+    summary_type: AudioBatchSummaryType
     summary: str | None = None
+    summary_results: list[AudioBatchSummaryResultResponse] = Field(
+        min_length=1, max_length=4
+    )
     source_manifest: list[AudioBatchSummarySourceResponse] = Field(
         min_length=1, max_length=BATCH_MAX_FILES
     )
@@ -447,8 +530,12 @@ class AudioBatchSummaryJobResponse(BaseModel):
     def validate_terminal_projection(self) -> "AudioBatchSummaryJobResponse":
         if self.status == "succeeded" and not (self.summary or "").strip():
             raise ValueError("succeeded summary jobs require summary text")
-        if self.status != "succeeded" and self.summary is not None:
+        if self.status not in {"succeeded", "partially_succeeded"} and self.summary is not None:
             raise ValueError("non-succeeded summary jobs cannot expose summary text")
+        if self.status == "succeeded" and not any(
+            item.status == "succeeded" for item in self.summary_results
+        ):
+            raise ValueError("succeeded summary jobs require a successful variant")
         positions = [source.position for source in self.source_manifest]
         if positions != list(range(len(self.source_manifest))):
             raise ValueError("summary sources must retain contiguous selection order")
@@ -557,6 +644,10 @@ __all__ = [
     "AudioBatchStatus",
     "AudioBatchSummaryJobResponse",
     "AudioBatchSummaryJobStatus",
+    "AudioBatchSummaryResultResponse",
+    "AudioBatchSummaryRuntimeResponse",
+    "AudioBatchSummaryResultStatus",
+    "AudioBatchSummaryVariantType",
     "AudioBatchSummaryManifestItem",
     "AudioBatchSummaryRequest",
     "AudioBatchSummarySourceResponse",

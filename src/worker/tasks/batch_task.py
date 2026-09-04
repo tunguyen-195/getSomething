@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Final
 
@@ -20,6 +21,10 @@ from src.services.audio_batch_contracts import (
 )
 from src.services.audio_storage import compute_sha256, resolve_audio_path
 from src.worker.worker import celery_app
+from src.services.transcription.diarization_scope import (
+    build_diarization_provenance,
+    build_file_provenance,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -397,6 +402,67 @@ def _sync_scoped_source_failure(
     audio.error_message = message
 
 
+def _bind_file_batch_provenance(
+    *,
+    task: Task,
+    audio: AudioFile,
+    batch: AudioBatch,
+    item: AudioBatchItem,
+) -> None:
+    """Bind an item position without changing local speaker identities.
+
+    Transcription runs with only task/audio scope.  The batch worker is the
+    first component that knows the immutable request position, so it enriches
+    the already-persisted JSON result here.  This makes a later merged summary
+    able to render each file independently and still preserve source order.
+    """
+
+    current = task.result if isinstance(task.result, dict) else {}
+    payload = deepcopy(current)
+    file_provenance = build_file_provenance(
+        task_id=task.id,
+        audio_id=audio.id,
+        case_id=batch.case_id,
+        filename=audio.filename,
+        batch_id=batch.id,
+        batch_item_id=item.id,
+        position=item.position,
+    )
+    payload["file_provenance"] = file_provenance
+    payload["diarization_scope"] = "file"
+    payload["source_task_id"] = task.id
+    payload["source_audio_id"] = audio.id
+    payload["source_case_id"] = batch.case_id
+    payload["source_filename"] = audio.filename
+    segments = payload.get("segments")
+    if isinstance(segments, list):
+        for segment in segments:
+            if not isinstance(segment, dict):
+                continue
+            segment["source_task_id"] = task.id
+            segment["source_audio_id"] = audio.id
+            segment["source_case_id"] = batch.case_id
+            segment["source_filename"] = audio.filename
+            segment["source_scope"] = "file"
+            segment["source_batch_id"] = batch.id
+            segment["source_batch_item_id"] = item.id
+            segment["source_position"] = item.position
+    payload["diarization"] = build_diarization_provenance(
+        segments=segments or [],
+        task_id=task.id,
+        audio_id=audio.id,
+        case_id=batch.case_id,
+        filename=audio.filename,
+        speaker_count=payload.get("num_speakers"),
+        status=payload.get("diarization_status"),
+        method=payload.get("diarization_method_used") or payload.get("diarization_method"),
+        batch_id=batch.id,
+        batch_item_id=item.id,
+        position=item.position,
+    )
+    task.result = payload
+
+
 def _finish_item(
     *,
     batch_id: str,
@@ -431,6 +497,7 @@ def _finish_item(
                 return
 
             task = db.query(Task).filter(Task.id == item.task_id).one_or_none()
+            audio = db.query(AudioFile).filter(AudioFile.id == item.audio_id).one_or_none()
             if failure_code is None:
                 task_result = (
                     task.result
@@ -448,6 +515,14 @@ def _finish_item(
                     or task_result.get("audio_sha256") != item.verified_audio_sha256
                 ):
                     failure_code = "BATCH_TRANSCRIPT_INVALID"
+
+            if failure_code is None and task is not None and audio is not None:
+                _bind_file_batch_provenance(
+                    task=task,
+                    audio=audio,
+                    batch=batch,
+                    item=item,
+                )
 
             if failure_code is None:
                 item.status = "transcribed"

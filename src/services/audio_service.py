@@ -174,14 +174,53 @@ def process_task_with_diarization(task_id: str, model_name: str, db, diarization
         pipeline = get_pipeline(diarization_method)
         if pipeline:
             segments = pipeline.run(audio_path_str)
+            from src.services.transcription.diarization_scope import (
+                annotate_segments_with_file_scope,
+                build_diarization_provenance,
+                build_file_provenance,
+            )
+            segments = annotate_segments_with_file_scope(
+                segments,
+                task_id=task_id,
+                audio_id=audio_file.id,
+                case_id=audio_file.case_id,
+                filename=audio_file.filename,
+            )
             transcript = " ".join([seg["text"] for seg in segments])
             summary = summarize_transcript(transcript, context=None, model_name=model_name)
+            file_provenance = build_file_provenance(
+                task_id=task_id,
+                audio_id=audio_file.id,
+                case_id=audio_file.case_id,
+                filename=audio_file.filename,
+            )
+            diarization_provenance = build_diarization_provenance(
+                segments=segments,
+                task_id=task_id,
+                audio_id=audio_file.id,
+                case_id=audio_file.case_id,
+                filename=audio_file.filename,
+                speaker_count=len({
+                    str(seg.get("speaker"))
+                    for seg in segments
+                    if seg.get("speaker") is not None
+                }),
+                status="success",
+                method=diarization_method,
+            )
             result = {
                 "status": "summarized",
                 "filename": audio_file.filename,
                 "segments": segments,
                 "summary": summary,
                 "diarization_method": diarization_method,
+                "diarization_scope": "file",
+                "file_provenance": file_provenance,
+                "diarization": diarization_provenance,
+                "source_task_id": task_id,
+                "source_audio_id": audio_file.id,
+                "source_case_id": audio_file.case_id,
+                "source_filename": audio_file.filename,
                 "download_url": f"/api/v1/audio/{audio_file.id}/download"
             }
             update_task(task_id, {"status": "summarized", "result": result})
@@ -214,6 +253,45 @@ def process_task_with_diarization(task_id: str, model_name: str, db, diarization
             else:
                 # Use old method without diarization
                 result = transcriber.transcribe(audio_path_str, fast_mode=fast_mode)
+
+            # Legacy callers may not know the batch/file boundary.  Bind the
+            # returned segments here as well so every persisted task result has
+            # the same file-scoped speaker contract as Transcribe v2.
+            from src.services.transcription.diarization_scope import (
+                annotate_segments_with_file_scope,
+                build_diarization_provenance,
+                build_file_provenance,
+            )
+            result_segments = annotate_segments_with_file_scope(
+                result.get("segments") if isinstance(result, dict) else [],
+                task_id=task_id,
+                audio_id=audio_file.id,
+                case_id=audio_file.case_id,
+                filename=audio_file.filename,
+            )
+            if isinstance(result, dict):
+                result["segments"] = result_segments
+                result["diarization_scope"] = "file"
+                result["file_provenance"] = build_file_provenance(
+                    task_id=task_id,
+                    audio_id=audio_file.id,
+                    case_id=audio_file.case_id,
+                    filename=audio_file.filename,
+                )
+                result["diarization"] = build_diarization_provenance(
+                    segments=result_segments,
+                    task_id=task_id,
+                    audio_id=audio_file.id,
+                    case_id=audio_file.case_id,
+                    filename=audio_file.filename,
+                    speaker_count=result.get("num_speakers"),
+                    status=result.get("diarization_status"),
+                    method=result.get("diarization_method_used") or diarization_method,
+                )
+                result["source_task_id"] = task_id
+                result["source_audio_id"] = audio_file.id
+                result["source_case_id"] = audio_file.case_id
+                result["source_filename"] = audio_file.filename
 
             logger.info(f"[AUDIO_SERVICE] Kết quả transcribe | task_id={task_id} | fast_mode={fast_mode} | diarization={enable_diarization} | result_keys={list(result.keys())}")
             wer, cer, noise_score = benchmark_asr(result.get("transcription"), audio_path_str)

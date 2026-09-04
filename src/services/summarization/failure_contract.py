@@ -25,6 +25,12 @@ SAFE_SUMMARY_MESSAGES = {
         "The investigation summary writer is unavailable."
     ),
     "LLM_UNAVAILABLE": "The summarization service is unavailable.",
+    "MULTI_INVESTIGATION_RELEASE_REQUIRED": (
+        "Multi-file investigation summaries require a released case narrative."
+    ),
+    "FORENSIC_LEGACY_PROVIDER_DISABLED": (
+        "Evidence-grounded forensic multi-summary is unavailable."
+    ),
     "MULTI_SUMMARY_SOURCE_INVALID": (
         "Every selected transcript must be present and non-empty."
     ),

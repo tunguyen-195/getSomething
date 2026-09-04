@@ -1138,6 +1138,82 @@ def test_lightweight_v2_status_projects_summary_signals(auth_enabled):
     assert "secret traceback" not in serialized
 
 
+def test_full_v2_status_exposes_file_scoped_analysis_provenance(auth_enabled):
+    user_id, username, password = _create_user()
+    case_id = _create_case_for_user(user_id)
+    task_id = _create_task_for_user(user_id, case_id)
+    audio_id = _create_audio_for_task(user_id, case_id, task_id)
+    _replace_task_result(
+        task_id,
+        {
+            "transcription": "Noi dung file.",
+            "summary": "Tom tat file.",
+            "summary_type": "detailed",
+            "summary_variants": {
+                "detailed": {
+                    "summary_type": "detailed",
+                    "summary": "Tom tat file.",
+                    "summary_state": "generated",
+                }
+            },
+            "file_provenance": {
+                "schema_version": "audio-file-provenance-v1",
+                "scope": "file",
+                "scope_id": f"audio:{audio_id}",
+                "task_id": task_id,
+                "audio_id": audio_id,
+                "case_id": case_id,
+                "filename": "source.wav",
+            },
+            "diarization_scope": "file",
+            "diarization": {
+                "schema_version": "diarization-file-scope-v1",
+                "scope": "file",
+                "scope_id": f"audio:{audio_id}",
+                "speaker_ids": ["SPEAKER_00"],
+                "speakers": [
+                    {
+                        "speaker_id": "SPEAKER_00",
+                        "speaker_key": f"audio:{audio_id}:speaker:SPEAKER_00",
+                    }
+                ],
+                "segments": [
+                    {
+                        "start": 0.0,
+                        "end": 1.0,
+                        "text": "Noi dung file.",
+                        "speaker": "SPEAKER_00",
+                        "speaker_key": f"audio:{audio_id}:speaker:SPEAKER_00",
+                    }
+                ],
+            },
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 1.0,
+                    "text": "Noi dung file.",
+                    "speaker": "SPEAKER_00",
+                    "speaker_key": f"audio:{audio_id}:speaker:SPEAKER_00",
+                }
+            ],
+        },
+    )
+    client = _login_client(username, password)
+
+    response = client.get(f"/api/v1/audio/v2/tasks/{task_id}/status")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["summary_variants"]["detailed"]["summary"] == "Tom tat file."
+    assert payload["file_provenance"]["scope_id"] == f"audio:{audio_id}"
+    assert payload["diarization"]["speakers"][0]["speaker_key"] == (
+        f"audio:{audio_id}:speaker:SPEAKER_00"
+    )
+    assert payload["segments"][0]["speaker_key"] == (
+        f"audio:{audio_id}:speaker:SPEAKER_00"
+    )
+
+
 def test_case_list_remains_compact_when_client_requests_rich_bulk_data(auth_enabled):
     user_id, username, password = _create_user()
     case_id = _create_case_for_user(user_id)
